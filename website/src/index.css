@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet: remove default white box around div icons (image markers). */
+.user-map-image-icon {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  outline: none !important;
+}
+
+.user-map-image-icon img {
+  display: block;
+  background: transparent !important;
+}
+
+.leaflet-div-icon.user-map-image-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.leaflet-marker-icon.user-map-image-icon {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-div-icon.user-map-image-icon img {
+  background: transparent !important;
+}

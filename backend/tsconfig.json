@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    /* Cấu hình cơ bản */
+    "target": "ES2020" /* Phiên bản JavaScript đầu ra */,
+    "module": "CommonJS" /* Chuyển đổi import/export về require để Node.js hiểu ngay */,
+    "rootDir": "./src" /* Thư mục chứa code nguồn */,
+    "outDir": "./dist" /* Thư mục chứa code sau khi build */,
+    "esModuleInterop": true /* Cho phép import các thư viện cũ dễ dàng hơn */,
+    "forceConsistentCasingInFileNames": true /* Bắt buộc viết đúng hoa thường tên file */,
+    "strict": true /* Bật chế độ kiểm tra lỗi kỹ càng */,
+    "skipLibCheck": true /* Bỏ qua kiểm tra file thư viện (giúp build nhanh hơn) */,
+    "verbatimModuleSyntax": false /* Tắt chế độ kiểm tra cú pháp quá khắt khe */,
+    "moduleResolution": "node" /* Cách tìm file chuẩn của Node.js */,
+    "ignoreDeprecations": "6.0" /* Tắt cảnh báo deprecation moduleResolution=node10 */
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
