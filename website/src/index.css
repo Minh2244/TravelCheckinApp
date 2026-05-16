@@ -1,6 +1,181 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.fo-shell {
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+}
+
+.fo-surface {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #eef2ff 100%);
+  padding: 12px;
+}
+
+.fo-surface::before {
+  content: "";
+  position: absolute;
+  inset: auto -120px -140px auto;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.18), transparent 65%);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.fo-card {
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.fo-stat {
+  border-radius: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #ffffff;
+}
+
+.fo-stat-slate {
+  background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.fo-stat-emerald {
+  background: linear-gradient(145deg, #ecfdf5 0%, #ffffff 70%);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.fo-stat-amber {
+  background: linear-gradient(145deg, #fffbeb 0%, #ffffff 70%);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.fo-stat-sky {
+  background: linear-gradient(145deg, #eff6ff 0%, #ffffff 70%);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.fo-pill {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  color: #475569;
+  background: #ffffff;
+}
+
+.user-theme {
+  font-family: "Sora", "Space Grotesk", "Segoe UI", sans-serif;
+}
+
+.user-bg {
+  background: radial-gradient(circle at top left, #f8fbff 0%, #f1f5f9 45%, #eef2f7 100%);
+}
+
+.user-sidebar {
+  background: linear-gradient(180deg, #f8fbff 0%, #eef2f7 100%);
+  color: #0f172a;
+  border-right: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.user-card {
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+}
+
+.user-card-compact {
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: #ffffff;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+}
+
+.user-glass-card {
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.user-glass-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 0 26px rgba(14, 165, 233, 0.18);
+}
+
+.user-sos-pulse {
+  position: relative;
+}
+
+.user-sos-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  border: 2px solid rgba(244, 63, 94, 0.35);
+  animation: sosPulse 2.4s ease-out infinite;
+}
+
+@keyframes sosPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.user-chip {
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.user-chip-active {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.user-chip-idle {
+  background: rgba(255, 255, 255, 0.8);
+  color: #334155;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.user-nav-item {
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-weight: 600;
+  color: #0f172a;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.user-nav-item:hover {
+  background: rgba(14, 165, 233, 0.12);
+}
+
+.user-nav-item-active {
+  background: rgba(14, 165, 233, 0.18);
+  color: #075985;
+}
 
 /* Leaflet: remove default white box around div icons (image markers). */
 .user-map-image-icon {

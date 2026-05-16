@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
-  Card,
   Input,
   InputNumber,
   Modal,
@@ -19,9 +18,11 @@ import {
   type IScannerControls,
 } from "@zxing/browser";
 import ownerApi from "../../api/ownerApi";
-import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { asRecord, getErrorMessage } from "../../utils/safe";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
+import PosCard from "../../modules/frontOffice/components/PosCard";
+import PosStatCard from "../../modules/frontOffice/components/PosStatCard";
+import useTouristTicketSync from "../../modules/frontOffice/hooks/useTouristTicketSync";
 
 type ServiceStat = {
   service_id: number;
@@ -117,10 +118,8 @@ export default function FrontOfficeTourist(props: {
   const [cameraReady, setCameraReady] = useState(false);
 
   const [scanReader] = useState(() => new BrowserMultiFormatReader());
-  const [scanControls, setScanControls] = useState<IScannerControls | null>(
-    null,
-  );
-  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const scanControlsRef = useRef<IScannerControls | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [sellServiceId, setSellServiceId] = useState<number | null>(null);
   const [sellQty, setSellQty] = useState<number>(1);
@@ -152,57 +151,10 @@ export default function FrontOfficeTourist(props: {
     void loadToday();
   }, [loadToday]);
 
-  // Fallback auto-refresh: nếu SSE bị chặn/không ổn định thì vẫn tự đồng bộ
-  useEffect(() => {
-    const tick = () => {
-      void loadToday();
-    };
-
-    const id = window.setInterval(() => {
-      if (document.hidden) return;
-      tick();
-    }, 5000);
-
-    const onVisibility = () => {
-      if (!document.hidden) tick();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [loadToday]);
-
-  // Realtime: auto-sync vé giữa nhiều màn hình vận hành
-  useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    const url = resolveBackendUrl(
-      `/api/events?token=${encodeURIComponent(token)}`,
-    );
-    if (!url) return;
-
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          location_id?: number;
-        };
-        if (data?.type !== "tourist_updated") return;
-        if (Number(data.location_id) !== Number(locationId)) return;
-        void loadToday();
-      } catch {
-        // ignore
-      }
-    };
-
-    return () => {
-      es.close();
-    };
-  }, [loadToday, locationId]);
+  const { sseState } = useTouristTicketSync({
+    locationId,
+    onSync: () => void loadToday(),
+  });
 
   useEffect(() => {
     if (sellServiceId != null) return;
@@ -236,16 +188,35 @@ export default function FrontOfficeTourist(props: {
 
   const stopCamera = useCallback(() => {
     try {
-      scanControls?.stop();
+      scanControlsRef.current?.stop();
     } catch {
       // ignore
     }
-    setScanControls(null);
+    scanControlsRef.current = null;
+    // Explicitly stop media stream tracks to release camera hardware
+    const video = videoRef.current;
+    if (video?.srcObject) {
+      const stream = video.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
     setCameraReady(false);
-  }, [scanControls]);
+  }, []);
+
+  // Keep scan function in a ref to avoid stale closure in startCamera callback
+  const scanRef = useRef(scan);
+  useEffect(() => {
+    scanRef.current = scan;
+  }, [scan]);
+
+  // Guard to prevent concurrent startCamera calls
+  const startingRef = useRef(false);
 
   const startCamera = useCallback(async () => {
-    if (!videoEl) return;
+    if (startingRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+    startingRef.current = true;
     setScanError(null);
     setCameraReady(false);
     stopCamera();
@@ -253,35 +224,47 @@ export default function FrontOfficeTourist(props: {
     try {
       const controls = await scanReader.decodeFromVideoDevice(
         undefined,
-        videoEl,
+        video,
         (result, err) => {
           if (result) {
             const text = result.getText();
             stopCamera();
             setScanModalOpen(false);
-            void scan(text);
+            void scanRef.current(text);
           } else if (err) {
             // ignore decode misses
           }
         },
       );
-      setScanControls(controls);
+      scanControlsRef.current = controls;
       setCameraReady(true);
     } catch (error) {
       console.error(error);
       setScanError(
         "Không mở được camera. Hãy cấp quyền camera hoặc dùng nhập mã thủ công.",
       );
+    } finally {
+      startingRef.current = false;
     }
-  }, [scanReader, stopCamera, videoEl]);
+  }, [scanReader, stopCamera]);
 
+  // Start camera when modal opens, wait for video element via rAF polling
   useEffect(() => {
     if (!scanModalOpen) {
       stopCamera();
       return;
     }
-    void startCamera();
+    let rafId: number;
+    const tryStart = () => {
+      if (videoRef.current) {
+        void startCamera();
+      } else {
+        rafId = requestAnimationFrame(tryStart);
+      }
+    };
+    rafId = requestAnimationFrame(tryStart);
     return () => {
+      cancelAnimationFrame(rafId);
       stopCamera();
     };
   }, [scanModalOpen, startCamera, stopCamera]);
@@ -394,6 +377,25 @@ export default function FrontOfficeTourist(props: {
     );
     return { totalQty, totalAmount };
   }, [cart]);
+
+  const syncBadge = useMemo(() => {
+    if (sseState === "connected") {
+      return {
+        text: "Realtime",
+        className: "fo-pill border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (sseState === "disconnected") {
+      return {
+        text: "Auto 30s",
+        className: "fo-pill border-amber-200 bg-amber-50 text-amber-700",
+      };
+    }
+    return {
+      text: "Dang ket noi",
+      className: "fo-pill border-slate-200 bg-slate-50 text-slate-600",
+    };
+  }, [sseState]);
 
   const buildPayItems = useCallback(() => {
     return cart.map((c) => ({
@@ -659,88 +661,111 @@ export default function FrontOfficeTourist(props: {
   );
 
   return (
-    <div style={{ width: "100%" }}>
+    <>
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Card title="Soát vé (Tourist)" loading={loading}>
-            <Space style={{ width: "100%" }} wrap>
-              <Input
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="Nhập ticket_code / QR payload"
-                style={{ maxWidth: 420 }}
-                onPressEnter={() => void scan()}
-              />
-              <Button
-                type="primary"
-                size="large"
-                onClick={() => setScanModalOpen(true)}
-              >
-                Quét vé
-              </Button>
-              <Button
-                onClick={() => void scan()}
-                disabled={scanning || !code.trim()}
-              >
-                Kiểm tra mã
-              </Button>
-            </Space>
-            {lastScanInfo ? (
-              <div className="text-sm text-gray-700 mt-2">{lastScanInfo}</div>
-            ) : (
-              <div className="text-xs text-gray-500 mt-2">
-                Có thể quét QR bằng camera hoặc nhập mã thủ công.
+        <div className="space-y-4">
+          <PosCard
+              title={
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-semibold">Soát vé</span>
+                  <span className={syncBadge.className}>{syncBadge.text}</span>
+                </div>
+              }
+              extra={
+                <span className="text-xs text-slate-500">
+                  {summary?.date ? `Ngày ${summary.date}` : "Hôm nay"}
+                </span>
+              }
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="Nhập ticket_code / QR payload"
+                  style={{ maxWidth: 420 }}
+                  size="large"
+                  onPressEnter={() => void scan()}
+                />
+                <Button
+                  type="primary"
+                  size="large"
+                  className="h-12 rounded-full px-6"
+                  onClick={() => setScanModalOpen(true)}
+                >
+                  Quét QR
+                </Button>
+                <Button
+                  size="large"
+                  className="h-12 rounded-full px-6"
+                  onClick={() => void scan()}
+                  disabled={scanning || !code.trim()}
+                >
+                  Kiểm tra mã
+                </Button>
               </div>
-            )}
-          </Card>
+              {lastScanInfo ? (
+                <div className="mt-3 text-sm font-semibold text-emerald-700">
+                  {lastScanInfo}
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-slate-500">
+                  Quét QR bằng camera hoặc nhập mã thủ công để soát vé.
+                </div>
+              )}
+          </PosCard>
 
-          <Card
+          <PosCard
             title={`Tồn vé hôm nay${summary?.date ? ` (${summary.date})` : ""}`}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl border bg-white p-3">
-                <div className="text-xs text-gray-500">Tổng vé/ngày</div>
-                <div className="text-lg font-semibold">{totalStats.total}</div>
-              </div>
-              <div className="rounded-xl border bg-white p-3">
-                <div className="text-xs text-gray-500">Đã bán</div>
-                <div className="text-lg font-semibold">{totalStats.sold}</div>
-              </div>
-              <div className="rounded-xl border bg-white p-3">
-                <div className="text-xs text-gray-500">Còn lại</div>
-                <div className="text-lg font-semibold">
-                  {totalStats.remaining}
-                </div>
-              </div>
-              <div className="rounded-xl border bg-white p-3">
-                <div className="text-xs text-gray-500">Đã soát</div>
-                <div className="text-lg font-semibold">{totalStats.used}</div>
-              </div>
+              <PosStatCard
+                label="Tổng vé/ngày"
+                value={totalStats.total}
+                tone="slate"
+              />
+              <PosStatCard
+                label="Đã bán"
+                value={totalStats.sold}
+                tone="sky"
+              />
+              <PosStatCard
+                label="Còn lại"
+                value={totalStats.remaining}
+                tone="emerald"
+              />
+              <PosStatCard
+                label="Đã soát"
+                value={totalStats.used}
+                tone="amber"
+              />
             </div>
 
             <div className="mt-4">
               <Table
+                size="small"
                 rowKey={(r) => String(r.service_id)}
                 dataSource={summary?.services || []}
                 pagination={{ pageSize: 10 }}
                 columns={serviceColumns}
+                loading={loading}
               />
             </div>
-          </Card>
-        </Space>
+          </PosCard>
+        </div>
 
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          <Card
+        <div className="space-y-4">
+          <PosCard
             title="Bán vé offline (tại quầy)"
             extra={
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-slate-500">
                 Tổng SL: <b>{cartTotals.totalQty}</b> | Tổng tiền:{" "}
                 <b>{cartTotals.totalAmount.toLocaleString("vi-VN")}</b>
               </div>
             }
           >
-            <Space style={{ width: "100%" }} wrap>
+            <div className="flex flex-wrap items-center gap-3">
               <Select
+                size="large"
                 style={{ width: 320, maxWidth: "100%" }}
                 options={serviceOptions}
                 value={sellServiceId ?? undefined}
@@ -753,22 +778,35 @@ export default function FrontOfficeTourist(props: {
                 value={sellQty}
                 onChange={(v) => setSellQty(Number(v ?? 1))}
                 style={{ width: 120 }}
+                size="large"
               />
-              <Button onClick={addToCart} disabled={!sellServiceId}>
+              <Button
+                size="large"
+                className="h-12 rounded-full px-6"
+                onClick={addToCart}
+                disabled={!sellServiceId}
+              >
                 Thêm
               </Button>
               <Button
                 type="primary"
+                size="large"
+                className="h-12 rounded-full px-6"
                 onClick={() => void checkoutOffline()}
                 disabled={cart.length === 0}
               >
                 Thanh toán
               </Button>
-              <Button onClick={() => setCart([])} disabled={cart.length === 0}>
+              <Button
+                size="large"
+                className="h-12 rounded-full px-6"
+                onClick={() => setCart([])}
+                disabled={cart.length === 0}
+              >
                 Xóa giỏ
               </Button>
-            </Space>
-            <div className="text-xs text-gray-500 mt-2">
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
               {selectedService
                 ? `Còn lại hôm nay: ${Number(selectedService.remaining_today || 0)}`
                 : "Chọn loại vé để xem tồn"}
@@ -784,13 +822,14 @@ export default function FrontOfficeTourist(props: {
                 locale={{ emptyText: "Chưa có vé trong giỏ" }}
               />
             </div>
-          </Card>
+          </PosCard>
 
-          <Card
+          <PosCard
             title="Lịch sử vé hôm nay"
             extra={
               <Button
                 size="small"
+                className="rounded-full"
                 onClick={() => {
                   const base =
                     props.role === "employee"
@@ -805,11 +844,11 @@ export default function FrontOfficeTourist(props: {
               </Button>
             }
           >
-            <div className="text-sm text-gray-600">
-              Đã tách lịch sử vé sang trang riêng (có biểu đồ).
+            <div className="text-sm text-slate-600">
+              Lịch sử vé chi tiết đã chuyển sang trang riêng (có biểu đồ).
             </div>
-          </Card>
-        </Space>
+          </PosCard>
+        </div>
       </div>
 
       <Modal
@@ -1145,14 +1184,14 @@ export default function FrontOfficeTourist(props: {
         open={scanModalOpen}
         onCancel={() => setScanModalOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="text-sm text-gray-600 mb-2">
           Đưa QR vào khung hình để hệ thống tự quét.
         </div>
         <div className="overflow-hidden rounded-xl border border-gray-100 bg-black">
           <video
-            ref={(el) => setVideoEl(el)}
+            ref={videoRef}
             className="h-[340px] w-full object-cover"
             muted
             playsInline
@@ -1180,6 +1219,6 @@ export default function FrontOfficeTourist(props: {
           </Button>
         </Space>
       </Modal>
-    </div>
+    </>
   );
 }

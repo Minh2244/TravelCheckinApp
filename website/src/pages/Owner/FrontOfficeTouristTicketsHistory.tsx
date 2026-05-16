@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   Button,
-  Card,
   DatePicker,
   Segmented,
   Space,
@@ -19,6 +18,8 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import PosCard from "../../modules/frontOffice/components/PosCard";
+import PosStatCard from "../../modules/frontOffice/components/PosStatCard";
 
 type RangeKey = "day" | "week" | "month" | "year" | "all";
 
@@ -353,6 +354,7 @@ export default function FrontOfficeTouristTicketsHistory() {
         render: (items: TicketInvoiceItem[]) =>
           renderInvoiceItemsSummary(Array.isArray(items) ? items : []),
       },
+      Table.EXPAND_COLUMN as any,
     ],
     [],
   );
@@ -397,52 +399,51 @@ export default function FrontOfficeTouristTicketsHistory() {
       onBack={() => navigate(frontOfficePath, { replace: true })}
     >
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-        <Card>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Segmented
-              options={segmentedOptions}
-              value={range}
-              onChange={(v) => setRange(v as RangeKey)}
-            />
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <DatePicker
-                value={dayjs(pickedDate, "YYYY-MM-DD") as any}
-                format={DATE_UI_FORMAT}
-                onChange={(_d: any, dateString: string | null) => {
-                  if (!dateString) return;
-                  const next = dayjs(dateString, DATE_UI_FORMAT);
-                  if (!next.isValid()) return;
-                  setPickedDate(next.format("YYYY-MM-DD"));
-                }}
-                allowClear={false}
+            <PosCard>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <Segmented
+                  options={segmentedOptions}
+                  value={range}
+                  onChange={(v) => setRange(v as RangeKey)}
+                />
+                <div className="flex flex-wrap items-center gap-3 justify-end">
+                  <DatePicker
+                    value={dayjs(pickedDate, "YYYY-MM-DD") as any}
+                    format={DATE_UI_FORMAT}
+                    onChange={(_d: any, dateString: string | null) => {
+                      if (!dateString) return;
+                      const next = dayjs(dateString, DATE_UI_FORMAT);
+                      if (!next.isValid()) return;
+                      setPickedDate(next.format("YYYY-MM-DD"));
+                    }}
+                    allowClear={false}
+                  />
+                  <Button onClick={() => void loadData()} loading={loading}>
+                    Tải lại
+                  </Button>
+                </div>
+              </div>
+            </PosCard>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <PosStatCard
+                label="Tổng doanh thu"
+                value={formatMoney(summary.total)}
+                tone="slate"
               />
-              <Button onClick={() => void loadData()} loading={loading}>
-                Tải lại
-              </Button>
+              <PosStatCard
+                label="Tiền mặt"
+                value={formatMoney(summary.cash)}
+                tone="amber"
+              />
+              <PosStatCard
+                label="Chuyển khoản"
+                value={formatMoney(summary.transfer)}
+                tone="sky"
+              />
             </div>
-          </div>
-        </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tổng doanh thu</div>
-            <div className="text-lg font-bold">
-              {formatMoney(summary.total)}
-            </div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tiền mặt</div>
-            <div className="text-lg font-bold">{formatMoney(summary.cash)}</div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Chuyển khoản</div>
-            <div className="text-lg font-bold">
-              {formatMoney(summary.transfer)}
-            </div>
-          </Card>
-        </div>
-
-        <Card title="Biểu đồ doanh thu">
+            <PosCard title="Biểu đồ doanh thu">
           {range === "week" && weekMeta ? (
             <div className="mb-2 text-xs text-gray-500">
               Tuần: {weekMeta.start.format(DATE_UI_FORMAT)} -{" "}
@@ -810,50 +811,51 @@ export default function FrontOfficeTouristTicketsHistory() {
               })()}
             </div>
           )}
-        </Card>
+            </PosCard>
 
-        <Card title="Lịch sử vé" loading={loading}>
-          <Table
-            rowKey={(r) =>
-              `${r.source}-${String(r.payment_id ?? "")}-${String(
-                r.booking_id ?? "",
-              )}-${String(r.payment_time || "")}`
-            }
-            dataSource={topInvoices}
-            size="middle"
-            pagination={false}
-            sticky
-            scroll={{ x: true, y: 260 }}
-            columns={invoiceColumns}
-            expandable={{
-              expandIconColumnIndex: invoiceColumns.length,
-              columnTitle: <span className="whitespace-nowrap">Chi tiết</span>,
-              columnWidth: 90,
-              expandedRowRender: (row) => {
-                const items = Array.isArray(row.items)
-                  ? (row.items as TicketInvoiceItem[])
-                  : [];
-                return (
-                  <div className="px-6 py-2">
-                    <Table
-                      rowKey={(it, idx) =>
-                        `${String(it.service_id ?? "x")}-${idx}`
-                      }
-                      dataSource={items}
-                      size="small"
-                      pagination={false}
-                      scroll={{ x: true }}
-                      columns={itemColumns}
-                    />
-                  </div>
-                );
-              },
-              rowExpandable: (row) =>
-                Array.isArray(row.items) && row.items.length > 0,
-            }}
-            locale={{ emptyText: "Chưa có dữ liệu." }}
-          />
-        </Card>
+            <PosCard title="Lịch sử vé" className="mt-1" bodyClassName="px-1">
+              <Table
+                rowKey={(r) =>
+                  `${r.source}-${String(r.payment_id ?? "")}-${String(
+                    r.booking_id ?? "",
+                  )}-${String(r.payment_time || "")}`
+                }
+                dataSource={topInvoices}
+                size="middle"
+                pagination={false}
+                sticky
+                scroll={{ x: true, y: 260 }}
+                columns={invoiceColumns}
+                expandable={{
+                  columnTitle: (
+                    <span className="whitespace-nowrap">Chi tiết</span>
+                  ),
+                  columnWidth: 90,
+                  expandedRowRender: (row) => {
+                    const items = Array.isArray(row.items)
+                      ? (row.items as TicketInvoiceItem[])
+                      : [];
+                    return (
+                      <div className="px-6 py-2">
+                        <Table
+                          rowKey={(it, idx) =>
+                            `${String(it.service_id ?? "x")}-${idx}`
+                          }
+                          dataSource={items}
+                          size="small"
+                          pagination={false}
+                          scroll={{ x: true }}
+                          columns={itemColumns}
+                        />
+                      </div>
+                    );
+                  },
+                  rowExpandable: (row) =>
+                    Array.isArray(row.items) && row.items.length > 0,
+                }}
+                locale={{ emptyText: "Chưa có dữ liệu." }}
+              />
+            </PosCard>
       </Space>
     </FrontOfficeLayout>
   );

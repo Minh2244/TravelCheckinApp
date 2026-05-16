@@ -26,7 +26,7 @@ const FrontOfficeLayout = ({
   return (
     <Layout className="min-h-screen">
       <Header
-        className="flex items-center justify-between gap-3"
+        className="flex items-center justify-between gap-3 border-b border-slate-100"
         style={{ background: "#fff" }}
       >
         <div className="flex items-center gap-3">
@@ -55,7 +55,9 @@ const FrontOfficeLayout = ({
         </div>
         <div className="flex items-center gap-2">{extra}</div>
       </Header>
-      <Content className="p-4 md:p-6">{children}</Content>
+      <Content className="p-4 md:p-6 fo-shell">
+        <div className="fo-surface">{children}</div>
+      </Content>
     </Layout>
   );
 };

@@ -14126,7 +14126,44 @@ export const scanTouristTicket = async (
     };
 
     const locationId = Number(location_id);
-    const code = String(ticket_code || "").trim();
+    const rawCode = String(ticket_code || "").trim();
+
+    const normalizeTicketCode = (input: string): string => {
+      const trimmed = input.trim();
+      if (!trimmed) return "";
+
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        try {
+          const parsed = JSON.parse(trimmed) as any;
+          if (parsed && typeof parsed.ticket_code === "string") {
+            return String(parsed.ticket_code).trim();
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        try {
+          const url = new URL(trimmed);
+          const codeParam =
+            url.searchParams.get("ticket_code") ||
+            url.searchParams.get("code") ||
+            url.searchParams.get("ticket") ||
+            "";
+          if (codeParam) return codeParam.trim();
+        } catch {
+          // ignore
+        }
+      }
+
+      const match = trimmed.match(/ticket_code=([A-Za-z0-9_-]+)/i);
+      if (match && match[1]) return match[1].trim();
+
+      return trimmed;
+    };
+
+    const code = normalizeTicketCode(rawCode);
     if (!Number.isFinite(locationId) || !code) {
       res
         .status(400)

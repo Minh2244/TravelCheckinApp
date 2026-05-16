@@ -402,7 +402,7 @@ const UserDashboard = () => {
       showSearch={false}
       flushTop
     >
-      <section className="relative z-0 -mx-4 min-h-[260px] overflow-hidden rounded-3xl border border-white/70 bg-white shadow-sm sm:-mx-6 sm:min-h-[300px] lg:-mx-8">
+      <section className="relative z-0 -mx-4 min-h-[300px] overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_16px_30px_rgba(15,23,42,0.08)] sm:-mx-6 sm:min-h-[340px] lg:-mx-8">
         <div
           className="absolute inset-0"
           style={
@@ -414,15 +414,14 @@ const UserDashboard = () => {
                 }
               : {
                   background:
-                    "linear-gradient(120deg, rgba(59,130,246,0.18), rgba(14,165,233,0.10), rgba(99,102,241,0.12))",
+                    "linear-gradient(120deg, rgba(15,23,42,0.04), rgba(56,189,248,0.10), rgba(34,211,238,0.12))",
                 }
           }
         />
-        {/* Keep text readable on busy photos: stronger overlay on left side */}
-        <div className="absolute inset-0 bg-gradient-to-r from-white/80 via-white/45 to-white/20" />
-        <div className="relative px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/65 to-white/25" />
+        <div className="relative px-4 sm:px-6 lg:px-8 py-9 sm:py-12">
           <div className="md:absolute md:right-6 md:top-4 lg:right-8 lg:top-5">
-            <div className="rounded-2xl border border-white/60 bg-white/80 px-3 py-2 shadow-sm backdrop-blur max-w-[260px]">
+            <div className="rounded-2xl border border-white/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur max-w-[260px]">
               {weather.status === "ready" ? (
                 <div>
                   <div className="flex items-center justify-between gap-3">
@@ -450,21 +449,20 @@ const UserDashboard = () => {
             </div>
           </div>
 
-          <h2 className="mt-5 text-3xl font-semibold leading-tight text-gray-900 sm:mt-0 sm:text-4xl">
-            Chào {user.full_name}, bạn muốn
+          <h2 className="mt-4 text-[26px] font-semibold leading-tight text-slate-900 sm:mt-0 sm:text-[34px]">
+            Chào {user.full_name},
             <br className="hidden sm:block" />
-            đi đâu hôm nay?
+            bạn muốn đi đâu hôm nay?
           </h2>
-          <p className="mt-2 max-w-2xl">
-            <span className="inline-flex rounded-full bg-white/70 px-3 py-1 text-sm sm:text-base text-gray-800 shadow-sm backdrop-blur">
-              Khám phá ngay nhiều địa điểm thú vị và tiện ích tận hưởng.
-            </span>
+          <p className="mt-3 max-w-2xl text-sm text-slate-600 sm:text-base">
+            Khám phá nhanh các điểm đến, lịch trình gợi ý và tiện ích giúp chuyến
+            đi mượt mà hơn.
           </p>
 
           <div className="mt-5 max-w-2xl">
             <div className="relative">
               <input
-                className="w-full rounded-full border border-white/60 bg-white/75 py-3 pl-11 pr-4 text-sm shadow-sm backdrop-blur focus:border-blue-400 focus:outline-none"
+                className="w-full rounded-full border border-white/80 bg-white/85 py-3 pl-11 pr-4 text-sm shadow-sm backdrop-blur focus:border-slate-400 focus:outline-none"
                 placeholder="Tìm kiếm địa điểm, nhà hàng, khách sạn..."
                 value={searchValue}
                 onChange={(event) => setSearchValue(event.target.value)}
@@ -492,10 +490,8 @@ const UserDashboard = () => {
                   key={item}
                   type="button"
                   onClick={() => setCategory(item)}
-                  className={`rounded-full px-4 py-2 text-xs font-medium transition ${
-                    category === item
-                      ? "bg-blue-600 text-white"
-                      : "bg-white/70 text-gray-700 hover:bg-white"
+                  className={`user-chip ${
+                    category === item ? "user-chip-active" : "user-chip-idle"
                   }`}
                 >
                   {item}
@@ -507,14 +503,14 @@ const UserDashboard = () => {
       </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <section className="rounded-3xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur sm:p-5">
+        <section className="user-card p-4 sm:p-5">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">
-              Đề xuất địa điểm phù hợp cho bạn
+            <h3 className="text-base font-semibold text-slate-900">
+              Đề xuất phù hợp với bạn
             </h3>
             <button
               type="button"
-              className="text-sm text-blue-600 hover:text-blue-700"
+              className="text-sm font-semibold text-slate-700 hover:text-slate-900"
               onClick={() => setCategory("Tất cả")}
             >
               Xem thêm
@@ -523,36 +519,42 @@ const UserDashboard = () => {
 
           <div className="mt-4">
             {loading ? (
-              <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+              <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
                 Đang tải danh sách địa điểm...
               </div>
             ) : null}
 
             {error ? (
-              <div className="rounded-2xl border border-red-100 bg-red-50 p-6 text-center text-sm text-red-600">
+              <div className="rounded-2xl border border-rose-100 bg-rose-50 p-6 text-center text-sm text-rose-600">
                 {error}
               </div>
             ) : null}
 
             {!loading && locations.length === 0 ? (
-              <div className="rounded-2xl border border-gray-100 p-6 text-center text-sm text-gray-500">
+              <div className="rounded-2xl border border-slate-100 p-6 text-center text-sm text-slate-500">
                 Chưa có địa điểm phù hợp với bộ lọc hiện tại.
               </div>
             ) : null}
 
             {!loading && locations.length > 0 ? (
               <div className="-mx-1 overflow-x-auto px-1 pb-2">
-                <div className="grid w-max grid-flow-col gap-3 auto-cols-[280px] sm:auto-cols-[300px] lg:auto-cols-[320px]">
+                <div className="grid w-max grid-flow-col gap-4 auto-cols-[230px] sm:auto-cols-[250px] lg:auto-cols-[260px]">
                   {locations.map((locationItem) => {
                     const imageUrl = resolveBackendUrl(
                       locationItem.first_image,
                     );
                     return (
-                      <div
+                      <button
                         key={locationItem.location_id}
-                        className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-md transition"
+                        type="button"
+                        className="user-glass-card overflow-hidden text-left"
+                        onClick={() =>
+                          navigate(
+                            `/user/location/${locationItem.location_id}`,
+                          )
+                        }
                       >
-                        <div className="w-full aspect-[16/10]">
+                        <div className="w-full aspect-video">
                           {imageUrl ? (
                             <img
                               src={imageUrl}
@@ -565,51 +567,36 @@ const UserDashboard = () => {
                         </div>
 
                         <div className="p-3">
-                          <h4 className="font-semibold text-gray-900">
+                          <h4 className="text-sm font-semibold text-slate-900">
                             {locationItem.location_name}
                           </h4>
-                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                             {locationItem.address}
                           </p>
 
                           <div className="mt-3 flex items-center justify-between gap-3">
-                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-[10px] font-medium text-blue-700">
+                            <span className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                               {locationItem.location_type}
                             </span>
-                            <div className="flex min-w-0 flex-1 items-end justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-xs font-semibold text-amber-700">
-                                  ★{" "}
-                                  {Number(locationItem.rating || 0).toFixed(1)}{" "}
-                                  ({Number(locationItem.total_reviews || 0)})
-                                </div>
-                                <div className="text-[11px] text-gray-500"></div>
+                            <div className="text-right">
+                              <div className="text-xs font-semibold text-amber-700">
+                                ★ {Number(locationItem.rating || 0).toFixed(1)}
                               </div>
-                              <div className="shrink-0 text-right">
-                                <div className="text-[11px] uppercase tracking-wide text-gray-400">
-                                  Tổng lượt
-                                </div>
-                                <div className="text-xs font-semibold text-slate-700">
-                                  {Number(locationItem.total_reviews || 0)} đánh
-                                  giá
-                                </div>
+                              <div className="text-[11px] text-slate-500">
+                                {Number(locationItem.total_reviews || 0)} đánh giá
                               </div>
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 text-sm text-white hover:bg-blue-700"
-                            onClick={() =>
-                              navigate(
-                                `/user/location/${locationItem.location_id}`,
-                              )
-                            }
-                          >
-                            Xem chi tiết
-                          </button>
+                          <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+                            <span>Xem chi tiet</span>
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M5 12h14" />
+                              <path d="m13 6 6 6-6 6" />
+                            </svg>
+                          </div>
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -619,17 +606,17 @@ const UserDashboard = () => {
         </section>
 
         <aside className="space-y-4">
-          <div className="rounded-3xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
+          <div className="user-card-compact p-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 className="text-base font-semibold text-slate-900">
                 Lịch trình thông minh
               </h3>
-              <span className="text-xs text-gray-500">AI</span>
+              <span className="text-xs text-teal-600 font-semibold">AI</span>
             </div>
 
             <div className="mt-4 space-y-2">
               {smartItineraries.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
                   Chưa có lịch trình. Bạn có thể tạo chuyến đi hoặc dùng AI gợi
                   ý.
                 </div>
@@ -638,13 +625,13 @@ const UserDashboard = () => {
                   <button
                     key={it.itinerary_id}
                     type="button"
-                    className="w-full rounded-2xl border border-gray-100 bg-white px-4 py-2.5 text-left hover:bg-gray-50"
+                    className="w-full rounded-2xl border border-slate-100 bg-white px-4 py-2.5 text-left hover:bg-slate-50"
                     onClick={() => navigate("/user/itinerary")}
                   >
-                    <p className="text-sm font-semibold text-gray-900">
+                    <p className="text-sm font-semibold text-slate-900">
                       {it.name}
                     </p>
-                    <p className="mt-1 text-xs text-gray-500 line-clamp-2">
+                    <p className="mt-1 text-xs text-slate-500 line-clamp-2">
                       {it.description || "Lịch trình của bạn"}
                     </p>
                   </button>
@@ -654,27 +641,27 @@ const UserDashboard = () => {
 
             <button
               type="button"
-              className="mt-3 w-full rounded-2xl bg-blue-600 py-2.5 text-sm text-white hover:bg-blue-700"
+              className="mt-3 w-full rounded-2xl bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
               onClick={() => navigate("/user/itinerary")}
             >
               Gợi ý ngay
             </button>
           </div>
 
-          <div className="rounded-3xl border border-white/70 bg-white/80 shadow-sm backdrop-blur p-4">
-            <h3 className="text-base font-semibold text-gray-900">
+          <div className="user-card-compact p-4">
+            <h3 className="text-base font-semibold text-slate-900">
               Tiện ích tín hiệu SOS
             </h3>
             <div className="mt-4 flex items-center justify-center">
               <button
                 type="button"
-                className="h-24 w-24 rounded-full bg-red-500 text-white text-xl font-bold shadow-lg hover:bg-red-600"
+                className="user-sos-pulse h-20 w-20 rounded-full bg-rose-500 text-white text-lg font-bold shadow-lg hover:bg-rose-600"
                 onClick={() => navigate("/user/sos")}
               >
                 SOS
               </button>
             </div>
-            <p className="mt-4 text-xs text-gray-500 text-center">
+            <p className="mt-4 text-xs text-slate-500 text-center">
               Gửi tín hiệu khi cần hỗ trợ khẩn cấp.
             </p>
           </div>
