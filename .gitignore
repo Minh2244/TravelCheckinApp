@@ -1,0 +1,10 @@
+# Chặn thư mục thư viện gốc (Cái cục nặng nhất nãy giờ)
+node_modules/
+
+# Chặn file log hoặc lịch sử chạy cục bộ của Claude (Tránh lộ token)
+.claude/
+.claude_session/
+
+# Nếu bạn không muốn đẩy file package của thư mục gốc lên Git:
+# package.json
+# package-lock.json
