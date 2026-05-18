@@ -222,10 +222,10 @@ const QrCheckin = () => {
       activeKey="/user/qr-checkin"
     >
       <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.6fr] gap-6">
-        <section className="bg-white rounded-3xl shadow-sm p-6">
+        <section className="user-section p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Quét QR</h2>
+              <h2 className="text-xl font-semibold text-gray-900 font-heading">Quét QR</h2>
               <p className="text-sm text-gray-500 mt-1">
                 Hỗ trợ mã dạng: số ID, "location:123", URL có /location/123,
                 hoặc ?location_id=123
@@ -240,17 +240,30 @@ const QrCheckin = () => {
             </button>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-black">
+          <div className="mt-4 relative overflow-hidden rounded-3xl border-2 border-teal-400/40 bg-gradient-to-br from-slate-900 to-slate-800 shadow-xl shadow-teal-500/10">
             <video
               ref={videoRef}
               className="h-[420px] w-full object-cover"
               muted
               playsInline
             />
+            {/* Scanner overlay corners */}
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute top-4 left-4 w-12 h-12 border-t-3 border-l-3 border-teal-400 rounded-tl-lg" />
+              <div className="absolute top-4 right-4 w-12 h-12 border-t-3 border-r-3 border-teal-400 rounded-tr-lg" />
+              <div className="absolute bottom-4 left-4 w-12 h-12 border-b-3 border-l-3 border-teal-400 rounded-bl-lg" />
+              <div className="absolute bottom-4 right-4 w-12 h-12 border-b-3 border-r-3 border-teal-400 rounded-br-lg" />
+            </div>
+            {/* Scan line animation */}
+            {scanning ? (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div className="w-3/4 h-0.5 bg-gradient-to-r from-transparent via-teal-400 to-transparent animate-pulse" />
+              </div>
+            ) : null}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-            <p className="text-xs text-gray-500">Kết quả</p>
+          <div className="mt-4 rounded-2xl border border-teal-200/60 bg-gradient-to-br from-teal-50/50 to-white p-4 shadow-sm">
+            <p className="text-xs text-teal-600 font-semibold uppercase tracking-wide">Kết quả</p>
             <p className="mt-1 text-sm text-gray-900 break-all">
               {rawText ? rawText : scanning ? "Đang quét..." : "Chưa có"}
             </p>
@@ -281,8 +294,8 @@ const QrCheckin = () => {
         </section>
 
         <aside className="space-y-4">
-          <div className="bg-white rounded-3xl shadow-sm p-6">
-            <h3 className="text-base font-semibold text-gray-900">
+          <div className="user-section p-6">
+            <h3 className="text-base font-semibold text-gray-900 font-heading">
               Check-in theo ID
             </h3>
             <p className="text-xs text-gray-500 mt-1">
@@ -298,18 +311,18 @@ const QrCheckin = () => {
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 placeholder="Ví dụ: 12"
-                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
               />
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ghi chú (tuỳ chọn)"
-                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                 rows={3}
               />
               <button
                 type="button"
-                className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white hover:bg-blue-700"
+                className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200 shadow-lg shadow-teal-500/25"
                 onClick={handleCheckin}
                 disabled={
                   submitting || !parsedLocationId || (!locLoading && !isOpenNow)
@@ -327,7 +340,7 @@ const QrCheckin = () => {
               ) : null}
               <button
                 type="button"
-                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors duration-200"
                 onClick={() => navigate("/user/map")}
               >
                 Về bản đồ check-in
@@ -335,8 +348,8 @@ const QrCheckin = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-sm p-6">
-            <h3 className="text-base font-semibold text-gray-900">Gợi ý</h3>
+          <div className="user-section p-6">
+            <h3 className="text-base font-semibold text-gray-900 font-heading">Gợi ý</h3>
             <ul className="mt-3 space-y-2 text-sm text-gray-600">
               <li>- QR nên chứa `location_id` hoặc link chi tiết địa điểm.</li>
               <li>- Nếu check-in bị chặn, có thể do chống spam.</li>

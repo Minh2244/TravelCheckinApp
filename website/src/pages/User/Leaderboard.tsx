@@ -64,10 +64,10 @@ const Leaderboard = () => {
 
   return (
     <UserLayout title="Bảng xếp hạng" activeKey="/user/leaderboard">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
+      <section className="user-section p-6 sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">{title}</h2>
+            <h2 className="text-2xl font-semibold text-gray-900 font-heading">{title}</h2>
             <p className="text-sm text-gray-500 mt-1">
               Xếp hạng theo số lần check-in trong tháng.
             </p>
@@ -95,7 +95,7 @@ const Leaderboard = () => {
         </div>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-center text-sm text-gray-500">
             Đang tải bảng xếp hạng...
           </div>
         ) : null}
@@ -106,7 +106,7 @@ const Leaderboard = () => {
         ) : null}
 
         {!loading && !error && rows.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-center text-sm text-gray-500">
             Chưa có dữ liệu bảng xếp hạng.
           </div>
         ) : null}
@@ -115,14 +115,32 @@ const Leaderboard = () => {
           {rows.map((row, index) => (
             <div
               key={row.user_id}
-              className="flex items-center justify-between rounded-2xl border border-gray-100 px-4 py-3"
+              className={`flex items-center justify-between user-sub-card px-5 py-4 card-lift ${
+                index === 0
+                  ? "!border-amber-200 !bg-gradient-to-r !from-amber-50 !to-yellow-50"
+                  : index === 1
+                    ? "!border-slate-200 !bg-gradient-to-r !from-slate-50 !to-gray-50"
+                    : index === 2
+                      ? "!border-orange-200 !bg-gradient-to-r !from-orange-50 !to-amber-50"
+                      : ""
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold">
-                  {index + 1}
+                <div
+                  className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm ${
+                    index === 0
+                      ? "bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-md shadow-amber-500/30"
+                      : index === 1
+                        ? "bg-gradient-to-br from-slate-300 to-slate-400 text-white shadow-md shadow-slate-400/30"
+                        : index === 2
+                          ? "bg-gradient-to-br from-orange-400 to-amber-500 text-white shadow-md shadow-orange-500/30"
+                          : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {index === 0 ? "1st" : index === 1 ? "2nd" : index === 2 ? "3rd" : index + 1}
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900">
+                  <p className="font-semibold text-gray-900 font-heading">
                     {row.full_name || "Người dùng"}
                   </p>
                   <p className="text-xs text-gray-500">ID #{row.user_id}</p>

@@ -56,19 +56,19 @@ const Itinerary = () => {
 
   return (
     <UserLayout title="Lịch trình" activeKey="/user/itinerary">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Lịch trình</h2>
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">Lịch trình</h2>
         <p className="text-sm text-gray-500 mt-2">
           AI gợi ý lịch trình sẽ được cập nhật khi backend có dữ liệu.
         </p>
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[0.9fr_1.1fr] gap-6">
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-gray-700">
                 Tên lịch trình
               </label>
               <input
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm"
+                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />
@@ -76,7 +76,7 @@ const Itinerary = () => {
             <div>
               <label className="text-sm font-medium text-gray-700">Mô tả</label>
               <textarea
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm"
+                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                 rows={4}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
@@ -84,7 +84,7 @@ const Itinerary = () => {
             </div>
             <button
               type="button"
-              className="w-full rounded-xl bg-blue-600 py-2 text-sm text-white hover:bg-blue-700"
+              className="w-full rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200 shadow-lg shadow-teal-500/25"
               onClick={handleCreate}
               disabled={saving}
             >
@@ -94,7 +94,7 @@ const Itinerary = () => {
 
           <div>
             {loading ? (
-              <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+              <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
                 Đang tải lịch trình...
               </div>
             ) : null}
@@ -104,7 +104,7 @@ const Itinerary = () => {
               </div>
             ) : null}
             {!loading && items.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+              <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
                 Chưa có dữ liệu lịch trình từ hệ thống.
               </div>
             ) : null}
@@ -112,7 +112,7 @@ const Itinerary = () => {
               {items.map((item) => (
                 <div
                   key={item.itinerary_id}
-                  className="rounded-2xl border border-gray-100 p-4"
+                  className="user-sub-card p-4 card-lift"
                 >
                   <p className="text-sm font-semibold text-gray-900">
                     {item.name}

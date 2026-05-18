@@ -43,15 +43,15 @@ const AiChat = () => {
 
   return (
     <UserLayout title="Chat AI" activeKey="/user/ai-chat">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Chat AI</h2>
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">Chat AI</h2>
         <p className="text-sm text-gray-500 mt-2">
           Lịch sử chat được lấy từ backend, AI sẽ phản hồi khi dịch vụ sẵn sàng.
         </p>
 
         <div className="mt-6 space-y-3">
           {loading ? (
-            <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+            <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
               Đang tải...
             </div>
           ) : null}
@@ -61,14 +61,14 @@ const AiChat = () => {
             </div>
           ) : null}
           {history.length === 0 && !loading ? (
-            <div className="rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+            <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
               Chưa có dữ liệu hội thoại từ hệ thống.
             </div>
           ) : null}
           {history.map((item) => (
             <div
               key={item.history_id}
-              className="rounded-2xl border border-gray-100 p-4"
+              className="user-sub-card p-4 card-lift"
             >
               <p className="text-xs text-gray-500">{item.prompt}</p>
               <p className="text-sm text-gray-900 mt-2">{item.response}</p>
@@ -81,14 +81,14 @@ const AiChat = () => {
 
         <div className="mt-6 flex flex-col sm:flex-row gap-3">
           <input
-            className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm"
+            className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
             placeholder="Nhập câu hỏi..."
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
           />
           <button
             type="button"
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+            className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200 shadow-lg shadow-teal-500/25"
             onClick={handleSend}
             disabled={loading}
           >

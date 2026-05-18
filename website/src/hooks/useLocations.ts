@@ -14,13 +14,9 @@ interface UseLocationsState {
 
 const normalizeCategoryToType = (category: string): string | undefined => {
   if (category === "Tất cả") return undefined;
-  if (category === "Cà phê") return "cafe";
-  if (category === "Nhà hàng") return "restaurant";
-  if (category === "Khách sạn") return "hotel";
-  if (category === "Giải trí") return "tourist";
-  if (category === "Ăn uống") return "restaurant";
-  if (category === "Vui chơi") return "tourist";
-  if (category === "Du lịch xanh") return "other";
+  if (category === "Khám phá") return "tourist";
+  if (category === "Ẩm thực") return "restaurant";
+  if (category === "Lưu trú") return "hotel";
   return undefined;
 };
 

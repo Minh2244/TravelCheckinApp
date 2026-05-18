@@ -111,8 +111,8 @@ const Sos = () => {
 
   return (
     <UserLayout title="SOS" activeKey="/user/sos">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">
           Gửi tín hiệu SOS
         </h2>
         <p className="text-sm text-gray-500 mt-2">
@@ -122,10 +122,10 @@ const Sos = () => {
         <div className="mt-10 flex flex-col items-center gap-6">
           <button
             type="button"
-            className={`h-48 w-48 rounded-full text-white text-3xl font-bold shadow-lg ${
+            className={`h-48 w-48 rounded-full text-white text-3xl font-bold user-sos-pulse transition-all duration-200 ${
               tracking
-                ? "bg-slate-700 hover:bg-slate-800"
-                : "bg-red-500 hover:bg-red-600"
+                ? "bg-slate-700 hover:bg-slate-800 shadow-xl shadow-slate-500/30"
+                : "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-xl shadow-red-500/40"
             }`}
             onClick={tracking ? handleStop : handleSendSos}
             disabled={loading}

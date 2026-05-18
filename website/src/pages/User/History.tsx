@@ -129,8 +129,8 @@ const History = () => {
 
   return (
     <UserLayout title="Lịch sử" activeKey="/user/history">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">
           Lịch sử check-in
         </h2>
         <p className="text-sm text-gray-500 mt-2">
@@ -138,7 +138,7 @@ const History = () => {
         </p>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Đang tải dữ liệu lịch sử...
           </div>
         ) : null}
@@ -148,7 +148,7 @@ const History = () => {
           </div>
         ) : null}
         {!loading && items.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Chưa có dữ liệu lịch sử check-in từ hệ thống.
           </div>
         ) : null}
@@ -183,7 +183,7 @@ const History = () => {
               {polyline.length > 1 ? (
                 <Polyline
                   positions={polyline}
-                  pathOptions={{ color: "#2563eb", weight: 4 }}
+                  pathOptions={{ color: "#0d9488", weight: 4 }}
                 />
               ) : null}
               {timelinePoints.map((point, index) => (
@@ -216,7 +216,7 @@ const History = () => {
           {items.map((item) => (
             <div
               key={item.checkin_id}
-              className="flex items-center justify-between rounded-2xl border border-gray-100 p-4"
+              className="flex items-center justify-between user-sub-card p-4 card-lift"
             >
               <div>
                 <p className="text-sm font-semibold text-gray-900">
@@ -226,7 +226,7 @@ const History = () => {
                   {new Date(item.checkin_time).toLocaleString()}
                 </p>
               </div>
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-600">
+              <span className="rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-700 font-semibold">
                 {item.status}
               </span>
             </div>

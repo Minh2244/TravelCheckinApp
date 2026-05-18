@@ -185,7 +185,7 @@ const TicketCart = () => {
 
   return (
     <UserLayout title="Giỏ vé" subtitle="Giỏ vé" activeKey="/user/tickets">
-      <section className="relative overflow-hidden rounded-[28px] border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-slate-50 p-6 shadow-sm">
+      <section className="relative overflow-hidden user-section p-6 sm:p-8">
         <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-emerald-100/50 blur-2xl" />
         <div className="absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-slate-100/60 blur-2xl" />
 
@@ -194,7 +194,7 @@ const TicketCart = () => {
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
               Vé đã mua
             </div>
-            <h2 className="mt-3 text-2xl font-semibold text-gray-900">
+            <h2 className="mt-3 text-2xl font-semibold text-gray-900 font-heading">
               {locationName ? `Địa điểm: ${locationName}` : "Danh sách vé"}
             </h2>
             <p className="mt-1 text-xs text-gray-500">
@@ -219,7 +219,7 @@ const TicketCart = () => {
         {loading ? (
           <div className="mt-4 text-sm text-gray-500">Đang tải vé...</div>
         ) : tickets.length === 0 ? (
-          <div className="mt-4 rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
+          <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white px-4 py-6 text-sm text-gray-500">
             Chưa có vé đã thanh toán cho địa điểm này.
           </div>
         ) : (

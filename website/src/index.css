@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -61,8 +61,8 @@
 
 .fo-pill {
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 5px 12px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -72,8 +72,22 @@
 }
 
 .user-theme {
-  font-family: "Sora", "Space Grotesk", "Segoe UI", sans-serif;
+  font-family: "Nunito Sans", "DM Sans", "Segoe UI", sans-serif;
 }
+
+/* Font size +2px cho toàn bộ khu vực user */
+.user-theme .text-\[10px\] { font-size: 12px !important; }
+.user-theme .text-\[11px\] { font-size: 13px !important; }
+.user-theme .text-\[13px\] { font-size: 15px !important; }
+.user-theme .text-\[32px\] { font-size: 34px !important; }
+.user-theme .text-xs { font-size: 14px !important; }
+.user-theme .text-sm { font-size: 16px !important; }
+.user-theme .text-base { font-size: 18px !important; }
+.user-theme .text-lg { font-size: 20px !important; }
+.user-theme .text-xl { font-size: 22px !important; }
+.user-theme .text-2xl { font-size: 26px !important; }
+.user-theme .text-3xl { font-size: 32px !important; }
+.user-theme .text-4xl { font-size: 38px !important; }
 
 .user-bg {
   background: radial-gradient(circle at top left, #f8fbff 0%, #f1f5f9 45%, #eef2f7 100%);
@@ -87,16 +101,51 @@
 
 .user-card {
   border-radius: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  background: #ffffff;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafb 100%);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
 .user-card-compact {
   border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.7);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafb 100%);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+/* Section wrapper — nền xám nhẹ phân tách nội dung */
+.user-section {
+  position: relative;
+  border-radius: 24px;
   border: 1px solid rgba(226, 232, 240, 0.8);
-  background: #ffffff;
-  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05), 0 1px 4px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+}
+
+.user-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #0d9488, #14b8a6, #2dd4bf, #14b8a6, #0d9488);
+  border-radius: 24px 24px 0 0;
+}
+
+/* Sub-card — thẻ con trong section, nhẹ hơn */
+.user-sub-card {
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.user-sub-card:hover {
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.07);
+  border-color: rgba(20, 184, 166, 0.2);
 }
 
 .user-glass-card {
@@ -143,21 +192,27 @@
 
 .user-chip {
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: 7px 16px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 
 .user-chip-active {
-  background: #0f172a;
-  color: #f8fafc;
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);
 }
 
 .user-chip-idle {
   background: rgba(255, 255, 255, 0.8);
   color: #334155;
   border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.user-chip-idle:hover {
+  background: rgba(20, 184, 166, 0.08);
+  border-color: rgba(20, 184, 166, 0.3);
 }
 
 .user-nav-item {
@@ -206,4 +261,45 @@
 
 .leaflet-div-icon.user-map-image-icon img {
   background: transparent !important;
+}
+
+/* === Heading font === */
+h1, h2, h3, h4, h5, h6,
+.font-heading {
+  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+}
+
+/* === Stagger animation delay === */
+.stagger-delay-1 { animation-delay: 0.05s; }
+.stagger-delay-2 { animation-delay: 0.1s; }
+.stagger-delay-3 { animation-delay: 0.15s; }
+.stagger-delay-4 { animation-delay: 0.2s; }
+.stagger-delay-5 { animation-delay: 0.25s; }
+
+/* === Skeleton shimmer loading === */
+.skeleton-box {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 12px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* === Card hover lift effect === */
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08), 0 4px 10px rgba(15, 23, 42, 0.04);
+}
+
+/* === Focus ring teal === */
+input:focus, textarea:focus, select:focus {
+  outline: none;
 }

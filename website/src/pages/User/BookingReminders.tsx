@@ -30,8 +30,8 @@ const BookingReminders = () => {
 
   return (
     <UserLayout title="Nhắc lịch trình" activeKey="/user/booking-reminders">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">
           Nhắc lịch trình
         </h2>
         <p className="text-sm text-gray-500 mt-2">
@@ -39,7 +39,7 @@ const BookingReminders = () => {
         </p>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Đang tải dữ liệu...
           </div>
         ) : null}
@@ -49,7 +49,7 @@ const BookingReminders = () => {
           </div>
         ) : null}
         {!loading && !error && items.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Chưa có lịch trình sắp tới.
           </div>
         ) : null}
@@ -58,7 +58,7 @@ const BookingReminders = () => {
           {items.map((item) => (
             <div
               key={item.booking_id}
-              className="rounded-2xl border border-gray-100 px-4 py-3"
+              className="user-sub-card px-4 py-3 card-lift"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -71,7 +71,7 @@ const BookingReminders = () => {
                   className={`rounded-full px-3 py-1 text-xs ${
                     item.reminder_sent
                       ? "bg-emerald-50 text-emerald-600"
-                      : "bg-blue-50 text-blue-600"
+                      : "bg-teal-50 text-teal-700"
                   }`}
                 >
                   {item.reminder_sent ? "Đã nhắc" : "Sắp nhắc"}

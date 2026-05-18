@@ -1714,10 +1714,10 @@ const UserMap = () => {
       searchPlaceholder="Tìm địa điểm..."
     >
       <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.9fr] gap-6">
-        <section className="bg-white rounded-3xl shadow-sm p-6">
+        <section className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900 font-heading font-heading">
                 Bản đồ địa điểm
               </h2>
               <p className="text-sm text-gray-500">
@@ -1726,7 +1726,7 @@ const UserMap = () => {
             </div>
             <button
               type="button"
-              className="rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-600 hover:bg-blue-100"
+              className="rounded-full border border-teal-100 bg-teal-50 px-4 py-2 text-sm text-teal-600 hover:bg-teal-100"
               onClick={handleLocate}
               disabled={locating}
             >
@@ -1744,7 +1744,7 @@ const UserMap = () => {
                   setSearchSelected(null);
                 }}
                 placeholder="Nhập địa danh, quán, khu du lịch..."
-                className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
               />
               <button
                 type="button"
@@ -1780,7 +1780,7 @@ const UserMap = () => {
               </div>
             ) : null}
             {searchSelected && searchResults.length === 0 ? (
-              <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+              <div className="mt-3 rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-teal-700">
                 Đã chọn: {searchSelected.display_name}
               </div>
             ) : null}
@@ -1932,7 +1932,7 @@ const UserMap = () => {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           {focusCheckin.status ? (
-                            <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-600">
+                            <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-600">
                               {focusCheckin.status}
                             </span>
                           ) : null}
@@ -2005,7 +2005,7 @@ const UserMap = () => {
                             setPickedName(event.target.value)
                           }
                           placeholder="Tên địa điểm (tuỳ chọn)"
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
+                          className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                         />
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -2040,7 +2040,7 @@ const UserMap = () => {
                           </button>
                           <button
                             type="button"
-                            className="rounded-full bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                            className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white hover:bg-teal-700"
                             onClick={() => handleFreeAction("checkin")}
                             disabled={freeAction === "checkin"}
                           >
@@ -2105,7 +2105,7 @@ const UserMap = () => {
                               <div className="flex gap-2">
                                 <button
                                   type="button"
-                                  className="rounded-full bg-blue-600 px-3 py-1 text-xs text-white"
+                                  className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                   onClick={() =>
                                     navigate(
                                       `/user/location/${entry.item.location_id}`,
@@ -2182,7 +2182,7 @@ const UserMap = () => {
                 type="button"
                 className={`rounded-full px-3 py-1 text-xs ${
                   routeMode === "motorbike"
-                    ? "bg-blue-600 text-white"
+                    ? "bg-teal-600 text-white"
                     : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
                 onClick={() => setRouteMode("motorbike")}
@@ -2193,7 +2193,7 @@ const UserMap = () => {
                 type="button"
                 className={`rounded-full px-3 py-1 text-xs ${
                   routeMode === "car"
-                    ? "bg-blue-600 text-white"
+                    ? "bg-teal-600 text-white"
                     : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
                 onClick={() => setRouteMode("car")}
@@ -2265,14 +2265,14 @@ const UserMap = () => {
         </section>
 
         <aside className="space-y-4">
-          <div className="bg-white rounded-3xl shadow-sm p-6">
-            <h3 className="text-base font-semibold text-gray-900">
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
+            <h3 className="text-base font-semibold text-gray-900 font-heading">
               Check-in nhanh
             </h3>
             {selected ? (
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-semibold">
+                  <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-semibold">
                     {selected.location_name.charAt(0)}
                   </div>
                   <div>
@@ -2286,12 +2286,12 @@ const UserMap = () => {
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
                   placeholder="Ghi chú nhanh (tuỳ chọn)"
-                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   rows={3}
                 />
                 <button
                   type="button"
-                  className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white hover:bg-blue-700"
+                  className="w-full rounded-2xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
                   onClick={handleCheckin}
                   disabled={checkingIn || !isSelectedOpenNow}
                 >
@@ -2326,15 +2326,15 @@ const UserMap = () => {
                 </button>
               </div>
             ) : (
-              <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 text-center">
+              <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
                 Chọn một địa điểm trên bản đồ để check-in.
               </div>
             )}
           </div>
 
           {!routeOnlyMode ? (
-            <div className="bg-white rounded-3xl shadow-sm p-6">
-              <h3 className="text-base font-semibold text-gray-900">
+            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
+              <h3 className="text-base font-semibold text-gray-900 font-heading">
                 Gợi ý địa điểm gần bạn
               </h3>
               <p className="text-xs text-gray-500 mt-1">
@@ -2348,7 +2348,7 @@ const UserMap = () => {
                     type="button"
                     className={`rounded-full px-3 py-1 text-xs ${
                       nearbyRadius === radius
-                        ? "bg-blue-600 text-white"
+                        ? "bg-teal-600 text-white"
                         : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                     }`}
                     onClick={() => setNearbyRadius(radius)}
@@ -2384,14 +2384,14 @@ const UserMap = () => {
               </div>
 
               {!myPosition ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-xs text-gray-500 text-center">
+                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-xs text-gray-500 text-center">
                   Hãy bấm “Lấy vị trí của tôi” để xem địa điểm gần.
                 </div>
               ) : null}
 
               <div className="mt-4 space-y-3 max-h-[260px] overflow-auto pr-1">
                 {myPosition && nearbyLocations.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-200 p-4 text-xs text-gray-500 text-center">
+                  <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-xs text-gray-500 text-center">
                     Không có địa điểm phù hợp trong bán kính đã chọn.
                   </div>
                 ) : null}
@@ -2419,7 +2419,7 @@ const UserMap = () => {
                         {formatDistance(entry.distance)} · {entry.item.address}
                       </p>
                     </div>
-                    <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] text-blue-600">
+                    <span className="rounded-full bg-teal-50 px-2 py-1 text-[11px] text-teal-600">
                       Đi tới
                     </span>
                   </button>
@@ -2429,12 +2429,12 @@ const UserMap = () => {
           ) : null}
 
           {!routeOnlyMode ? (
-            <div className="bg-white rounded-3xl shadow-sm p-6">
-              <h3 className="text-base font-semibold text-gray-900">
+            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
+              <h3 className="text-base font-semibold text-gray-900 font-heading">
                 Danh sách địa điểm
               </h3>
               {loading ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 text-center">
+                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
                   Đang tải địa điểm...
                 </div>
               ) : null}
@@ -2444,7 +2444,7 @@ const UserMap = () => {
                 </div>
               ) : null}
               {!loading && locations.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 text-center">
+                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
                   Chưa có địa điểm phù hợp.
                 </div>
               ) : null}
@@ -2460,7 +2460,7 @@ const UserMap = () => {
                       type="button"
                       className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${
                         selected?.location_id === item.location_id
-                          ? "border-blue-200 bg-blue-50"
+                          ? "border-teal-200 bg-teal-50"
                           : "border-gray-100 hover:bg-gray-50"
                       }`}
                       onClick={() => handleSelectLocation(item)}
@@ -2487,8 +2487,8 @@ const UserMap = () => {
             </div>
           ) : null}
 
-          <div className="bg-white rounded-3xl shadow-sm p-6">
-            <h3 className="text-base font-semibold text-gray-900">
+          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
+            <h3 className="text-base font-semibold text-gray-900 font-heading">
               Đánh giá nhanh trên map
             </h3>
             <p className="text-xs text-gray-500 mt-1">
@@ -2510,7 +2510,7 @@ const UserMap = () => {
                         type="button"
                         className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                           active
-                            ? "bg-blue-600 text-white"
+                            ? "bg-teal-600 text-white"
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                         }`}
                         onClick={() => setReviewFilter(star)}
@@ -2544,7 +2544,7 @@ const UserMap = () => {
                   value={reviewComment}
                   onChange={(event) => setReviewComment(event.target.value)}
                   placeholder="Nhận xét (tuỳ chọn)"
-                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   rows={3}
                 />
 
@@ -2651,14 +2651,14 @@ const UserMap = () => {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
               <div>
                 <p className="text-xs text-gray-500">Bản đồ check-in</p>
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-base font-semibold text-gray-900 font-heading">
                   Xem bản đồ toàn màn hình
                 </h3>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-xs text-blue-600 hover:bg-blue-100"
+                  className="rounded-full border border-teal-100 bg-teal-50 px-4 py-2 text-xs text-teal-600 hover:bg-teal-100"
                   onClick={handleLocate}
                   disabled={locating}
                 >
@@ -2690,7 +2690,7 @@ const UserMap = () => {
                 </button>
                 <button
                   type="button"
-                  className="rounded-full bg-blue-600 px-4 py-2 text-xs text-white hover:bg-blue-700"
+                  className="rounded-full bg-teal-600 px-4 py-2 text-xs text-white hover:bg-teal-700"
                   onClick={() => setFullMapOpen(false)}
                 >
                   Đóng
@@ -2708,7 +2708,7 @@ const UserMap = () => {
                       setSearchSelected(null);
                     }}
                     placeholder="Nhập địa danh, quán, khu du lịch..."
-                    className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    className="flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   />
                   <button
                     type="button"
@@ -2744,7 +2744,7 @@ const UserMap = () => {
                   </div>
                 ) : null}
                 {searchSelected && searchResults.length === 0 ? (
-                  <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                  <div className="mt-3 rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-teal-700">
                     Đã chọn: {searchSelected.display_name}
                   </div>
                 ) : null}
@@ -2756,7 +2756,7 @@ const UserMap = () => {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-xs text-gray-500">Địa điểm</p>
-                          <h4 className="mt-1 truncate text-lg font-semibold text-gray-900">
+                          <h4 className="mt-1 truncate text-lg font-semibold text-gray-900 font-heading">
                             {selected.location_name}
                           </h4>
                         </div>
@@ -2855,7 +2855,7 @@ const UserMap = () => {
                             type="button"
                             className={`rounded-full px-3 py-1 text-xs ${
                               panelTab === tab.key
-                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                ? "bg-teal-600 text-white hover:bg-teal-700"
                                 : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                             }`}
                             onClick={() => setPanelTab(tab.key)}
@@ -2896,7 +2896,7 @@ const UserMap = () => {
                                     href={selected.website}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-blue-600 hover:text-blue-700"
+                                    className="text-teal-600 hover:text-teal-700"
                                   >
                                     {selected.website}
                                   </a>
@@ -2929,7 +2929,7 @@ const UserMap = () => {
                             ) : null}
                             <button
                               type="button"
-                              className="mt-3 w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white hover:bg-blue-700"
+                              className="mt-3 w-full rounded-2xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
                               onClick={handleBookSelectedLocation}
                               disabled={selectedServicesLoading}
                             >
@@ -2961,7 +2961,7 @@ const UserMap = () => {
                                     type="button"
                                     className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                                       active
-                                        ? "bg-blue-600 text-white"
+                                        ? "bg-teal-600 text-white"
                                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                     }`}
                                     onClick={() => setReviewFilter(star)}
@@ -2990,7 +2990,7 @@ const UserMap = () => {
                                 setReviewComment(event.target.value)
                               }
                               placeholder="Nhận xét (tuỳ chọn)"
-                              className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                              className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                               rows={3}
                             />
                             <div>
@@ -3224,7 +3224,7 @@ const UserMap = () => {
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               {focusCheckin.status ? (
-                                <span className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-600">
+                                <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-600">
                                   {focusCheckin.status}
                                 </span>
                               ) : null}
@@ -3297,7 +3297,7 @@ const UserMap = () => {
                                 setPickedName(event.target.value)
                               }
                               placeholder="Tên địa điểm (tuỳ chọn)"
-                              className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
+                              className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                             />
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -3332,7 +3332,7 @@ const UserMap = () => {
                               </button>
                               <button
                                 type="button"
-                                className="rounded-full bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700"
+                                className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white hover:bg-teal-700"
                                 onClick={() => handleFreeAction("checkin")}
                                 disabled={
                                   freeAction === "checkin" || !isPickedOpenNow
@@ -3460,7 +3460,7 @@ const UserMap = () => {
                                   <div className="flex gap-2">
                                     <button
                                       type="button"
-                                      className="rounded-full bg-blue-600 px-3 py-1 text-xs text-white"
+                                      className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                       onClick={() =>
                                         navigate(
                                           `/user/location/${entry.item.location_id}`,
@@ -3513,7 +3513,7 @@ const UserMap = () => {
                       type="button"
                       className={`rounded-full px-3 py-1 text-xs ${
                         routeMode === "motorbike"
-                          ? "bg-blue-600 text-white"
+                          ? "bg-teal-600 text-white"
                           : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                       }`}
                       onClick={() => setRouteMode("motorbike")}
@@ -3524,7 +3524,7 @@ const UserMap = () => {
                       type="button"
                       className={`rounded-full px-3 py-1 text-xs ${
                         routeMode === "car"
-                          ? "bg-blue-600 text-white"
+                          ? "bg-teal-600 text-white"
                           : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                       }`}
                       onClick={() => setRouteMode("car")}

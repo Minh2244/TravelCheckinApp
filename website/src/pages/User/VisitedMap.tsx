@@ -11,14 +11,14 @@ const VisitedMap = () => {
       subtitle="Deprecated"
       activeKey="/user/visited-map"
     >
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-xl font-semibold text-gray-900">Tính năng đã gỡ</h2>
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-xl font-semibold text-gray-900 font-heading">Tính năng đã gỡ</h2>
         <p className="text-sm text-gray-500 mt-2">
           Bản đồ đã đi bị trùng với bản đồ check-in nên đã được bỏ.
         </p>
         <button
           type="button"
-          className="mt-4 rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white hover:bg-blue-700"
+          className="mt-4 rounded-2xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
           onClick={() => navigate("/user/map")}
         >
           Về bản đồ check-in

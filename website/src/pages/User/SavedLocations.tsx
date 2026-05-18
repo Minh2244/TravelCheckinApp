@@ -59,17 +59,17 @@ const SavedLocations = () => {
 
   return (
     <UserLayout title="Địa điểm đã lưu" activeKey="/user/saved-locations">
-      <section className="rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+      <section className="user-section p-4 sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900">
+            <h2 className="text-2xl font-semibold text-slate-900 font-heading">
               Địa điểm đã lưu
             </h2>
             <p className="mt-2 text-sm text-slate-500">
               Những địa điểm bạn lưu để xem lại nhanh hoặc đặt trước sau.
             </p>
           </div>
-          <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-medium text-slate-600">
+          <div className="rounded-full bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700">
             {locations.length} địa điểm
           </div>
         </div>
@@ -87,28 +87,28 @@ const SavedLocations = () => {
         ) : null}
 
         {loading ? (
-          <div className="mt-5 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+          <div className="mt-5 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white px-4 py-10 text-center text-sm text-gray-500">
             Đang tải danh sách đã lưu...
           </div>
         ) : null}
 
         {!loading && locations.length === 0 ? (
-          <div className="mt-5 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+          <div className="mt-5 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white px-4 py-10 text-center text-sm text-gray-500">
             Bạn chưa lưu địa điểm nào.
           </div>
         ) : null}
 
         {locations.length > 0 ? (
           <div className="mt-6 max-h-[68vh] overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 items-stretch gap-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {locations.map((item) => {
                 const imageUrl = resolveBackendUrl(item.first_image);
                 return (
                   <article
                     key={item.location_id}
-                    className="flex h-full flex-col overflow-hidden rounded-[20px] border border-slate-100 bg-white shadow-sm"
+                    className="user-sub-card flex h-full flex-col overflow-hidden card-lift"
                   >
-                    <div className="aspect-[16/10] bg-slate-100">
+                    <div className="aspect-[4/3] bg-slate-100">
                       {imageUrl ? (
                         <img
                           src={imageUrl}
@@ -121,7 +121,7 @@ const SavedLocations = () => {
                     </div>
                     <div className="flex flex-1 flex-col gap-3 p-3">
                       <div>
-                        <div className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                        <div className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700">
                           {item.location_type}
                         </div>
                         <h3 className="mt-2 text-base font-semibold text-slate-900 line-clamp-1">
@@ -144,7 +144,7 @@ const SavedLocations = () => {
                       <div className="mt-auto flex gap-2">
                         <button
                           type="button"
-                          className="flex-1 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                          className="flex-1 rounded-xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 transition-colors duration-200"
                           onClick={() =>
                             navigate(`/user/location/${item.location_id}`)
                           }

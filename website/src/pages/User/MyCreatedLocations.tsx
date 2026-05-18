@@ -189,10 +189,10 @@ const MyCreatedLocations = () => {
       subtitle="My created locations"
       activeKey="/user/my-created-locations"
     >
-      <section className="bg-white rounded-3xl shadow-sm p-6">
+      <section className="user-section p-6 sm:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900">
+            <h2 className="text-xl font-semibold text-gray-900 font-heading">
               Danh sách địa điểm do bạn tạo
             </h2>
             <p className="text-sm text-gray-500 mt-1">
@@ -202,7 +202,7 @@ const MyCreatedLocations = () => {
         </div>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-center text-sm text-gray-500">
             Đang tải...
           </div>
         ) : null}
@@ -223,7 +223,7 @@ const MyCreatedLocations = () => {
           {myCreated.map((loc) => (
             <div
               key={loc.location_id}
-              className="rounded-2xl border border-gray-100 p-4 hover:shadow-md transition"
+              className="user-sub-card p-4 card-lift"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -246,7 +246,7 @@ const MyCreatedLocations = () => {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">
+                <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-700">
                   {loc.location_type}
                 </span>
                 {isOwnerCreatedLocation(loc) ? (
@@ -309,7 +309,7 @@ const MyCreatedLocations = () => {
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="border-b border-gray-100 px-6 py-4">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 className="text-base font-semibold text-gray-900 font-heading">
                 Chỉnh sửa địa điểm
               </h3>
               <p className="text-xs text-gray-500 mt-1">
@@ -330,7 +330,7 @@ const MyCreatedLocations = () => {
                           : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   />
                 </div>
 
@@ -348,7 +348,7 @@ const MyCreatedLocations = () => {
                           : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   >
                     <option value="hotel">Khách sạn</option>
                     <option value="restaurant">Ăn uống</option>
@@ -368,7 +368,7 @@ const MyCreatedLocations = () => {
                         prev ? { ...prev, address: e.target.value } : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   />
                 </div>
 
@@ -381,7 +381,7 @@ const MyCreatedLocations = () => {
                         prev ? { ...prev, latitude: e.target.value } : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   />
                 </div>
 
@@ -394,7 +394,7 @@ const MyCreatedLocations = () => {
                         prev ? { ...prev, longitude: e.target.value } : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   />
                 </div>
 
@@ -407,7 +407,7 @@ const MyCreatedLocations = () => {
                         prev ? { ...prev, description: e.target.value } : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                     rows={4}
                   />
                 </div>
@@ -426,7 +426,7 @@ const MyCreatedLocations = () => {
                           : prev,
                       )
                     }
-                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-1 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                   >
                     <option value="active">Đang hoạt động</option>
                     <option value="inactive">Ngừng hoạt động</option>
@@ -444,7 +444,7 @@ const MyCreatedLocations = () => {
                 </button>
                 <button
                   type="button"
-                  className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                  className="rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200 shadow-lg shadow-teal-500/25"
                   onClick={handleSave}
                   disabled={saving}
                 >

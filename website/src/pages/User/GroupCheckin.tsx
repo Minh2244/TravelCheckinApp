@@ -88,8 +88,8 @@ const GroupCheckin = () => {
 
   return (
     <UserLayout title="Đi cùng bạn bè" activeKey="/user/group-checkin">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">Đi cùng bạn bè</h2>
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">Đi cùng bạn bè</h2>
         <p className="text-sm text-gray-500 mt-2">
           Tạo nhóm tạm thời để xem bạn bè check-in gần đây. Nhóm tự hết hạn sau
           24h.
@@ -102,7 +102,7 @@ const GroupCheckin = () => {
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-2xl border border-gray-100 p-4">
+          <div className="user-sub-card p-5">
             <h3 className="text-base font-semibold text-gray-900">
               Tạo nhóm mới
             </h3>
@@ -111,7 +111,7 @@ const GroupCheckin = () => {
             </p>
             <button
               type="button"
-              className="mt-4 w-full rounded-xl bg-blue-600 py-2 text-sm text-white hover:bg-blue-700"
+              className="mt-4 w-full rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200 shadow-lg shadow-teal-500/25"
               onClick={handleCreate}
               disabled={loading}
             >
@@ -119,7 +119,7 @@ const GroupCheckin = () => {
             </button>
           </div>
 
-          <div className="rounded-2xl border border-gray-100 p-4">
+          <div className="user-sub-card p-5">
             <h3 className="text-base font-semibold text-gray-900">
               Tham gia nhóm
             </h3>
@@ -128,14 +128,14 @@ const GroupCheckin = () => {
             </p>
             <div className="mt-4 flex items-center gap-2">
               <input
-                className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                className="flex-1 rounded-xl border border-gray-200 px-3 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                 placeholder="Nhập mã nhóm"
                 value={codeInput}
                 onChange={(e) => setCodeInput(e.target.value)}
               />
               <button
                 type="button"
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+                className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200"
                 onClick={handleJoin}
                 disabled={loading}
               >
@@ -145,7 +145,7 @@ const GroupCheckin = () => {
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-gray-100 p-4">
+        <div className="mt-6 user-sub-card p-5">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold text-gray-900">
@@ -168,7 +168,7 @@ const GroupCheckin = () => {
           </div>
 
           {loading ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500">
+            <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-center text-sm text-gray-500">
               Đang tải dữ liệu nhóm...
             </div>
           ) : null}
@@ -181,17 +181,17 @@ const GroupCheckin = () => {
           ) : null}
         </div>
 
-        <div className="mt-6 rounded-2xl border border-gray-100 p-4">
+        <div className="mt-6 user-sub-card p-5">
           <h3 className="text-base font-semibold text-gray-900">
             Check-in gần đây của nhóm
           </h3>
           {!group ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500">
+            <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-center text-sm text-gray-500">
               Tham gia nhóm để xem check-in.
             </div>
           ) : null}
           {group && recentCheckins.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-center text-sm text-gray-500">
+            <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-center text-sm text-gray-500">
               Chưa có check-in trong 24h gần đây.
             </div>
           ) : null}
@@ -199,7 +199,7 @@ const GroupCheckin = () => {
             {recentCheckins.map((item) => (
               <div
                 key={item.checkin_id}
-                className="rounded-2xl border border-gray-100 px-4 py-3"
+                className="user-sub-card px-4 py-3 card-lift"
               >
                 <p className="font-semibold text-gray-900">
                   {item.user_name || "Bạn"} · {item.location_name}

@@ -113,15 +113,15 @@ const Checkins = () => {
 
   return (
     <UserLayout title="Điểm đã ghé thăm" activeKey="/user/checkins">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">
           Điểm đã ghé thăm
         </h2>
         <p className="text-sm text-gray-500 mt-2">
           Danh sách check-in sẽ được đồng bộ từ backend.
         </p>
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Đang tải dữ liệu check-in...
           </div>
         ) : null}
@@ -136,29 +136,29 @@ const Checkins = () => {
           </div>
         ) : null}
         {!loading && items.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Chưa có dữ liệu check-in từ hệ thống.
           </div>
         ) : null}
         <div className="mt-6 max-h-[68vh] overflow-y-auto pr-1">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {itemsWithKind.map((item) => {
               const imageUrl = resolveBackendUrl(item.first_image);
               return (
                 <div
                   key={item.checkin_id}
-                  className="rounded-2xl border border-gray-100 p-3"
+                  className="user-sub-card overflow-hidden card-lift"
                 >
                   {imageUrl ? (
                     <img
                       src={imageUrl}
                       alt={item.location_name}
-                      className="h-24 w-full rounded-xl object-cover"
+                      className="h-36 w-full object-cover"
                     />
                   ) : (
-                    <div className="h-24 rounded-xl bg-slate-100" />
+                    <div className="h-36 bg-gradient-to-br from-teal-50 to-slate-100" />
                   )}
-                  <div className="mt-3">
+                  <div className="p-4">
                     <p className="text-sm font-semibold text-gray-900 line-clamp-1">
                       {item.location_name}
                     </p>
@@ -169,7 +169,7 @@ const Checkins = () => {
                       {new Date(item.checkin_time).toLocaleString()}
                     </p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[11px] text-blue-600">
+                      <span className="inline-flex rounded-full bg-teal-50 px-2 py-0.5 text-[11px] text-teal-700">
                         {item.status}
                       </span>
                       <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">

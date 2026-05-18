@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --exec \"ts-node --files\" src/server.ts",
+    "dev": "npx kill-port 3000 && nodemon --exec \"ts-node --files\" src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "backfill:pos-tickets-sold-by": "node dist/scripts/backfillPosTicketsSoldBy.js",
@@ -35,13 +35,13 @@
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.0.3",
     "@types/nodemailer": "^7.0.5",
-    "@types/uuid": "^10.0.0",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

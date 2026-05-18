@@ -27,8 +27,8 @@ const Vouchers = () => {
 
   return (
     <UserLayout title="Voucher" activeKey="/user/vouchers">
-      <section className="bg-white rounded-3xl shadow-sm p-6">
-        <h2 className="text-2xl font-semibold text-gray-900">
+      <section className="user-section p-6 sm:p-8">
+        <h2 className="text-2xl font-semibold text-gray-900 font-heading">
           Voucher của tôi
         </h2>
         <p className="text-sm text-gray-500 mt-2">
@@ -36,7 +36,7 @@ const Vouchers = () => {
         </p>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Đang tải voucher...
           </div>
         ) : null}
@@ -46,15 +46,15 @@ const Vouchers = () => {
           </div>
         ) : null}
         {!loading && items.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Chưa có dữ liệu voucher từ hệ thống.
           </div>
         ) : null}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {items.map((voucher) => (
             <div
               key={voucher.voucher_id}
-              className="rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-4"
+              className="user-sub-card p-5 card-lift"
             >
               <div className="flex items-start justify-between">
                 <div>
@@ -65,7 +65,7 @@ const Vouchers = () => {
                     {voucher.campaign_description ?? "Không có mô tả"}
                   </p>
                 </div>
-                <span className="rounded-full bg-white px-3 py-1 text-xs text-blue-600">
+                <span className="rounded-full bg-white px-3 py-1 text-xs text-teal-700 font-semibold shadow-sm">
                   {new Date(voucher.end_date).toLocaleDateString()}
                 </span>
               </div>

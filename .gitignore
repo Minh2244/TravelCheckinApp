@@ -8,3 +8,16 @@ node_modules/
 # Nếu bạn không muốn đẩy file package của thư mục gốc lên Git:
 # package.json
 # package-lock.json
+
+# Chặn thư mục Playwright MCP
+.playwright-mcp/
+
+# Chặn folder lịch sử/feedback của Claude
+claude/
+
+# Chặn .superpowers
+.superpowers/
+
+# Chặn file secrets
+.env
+.env.local

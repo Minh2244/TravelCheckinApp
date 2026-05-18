@@ -280,10 +280,10 @@ const Profile = () => {
 
   return (
     <UserLayout title="Thông tin cá nhân" activeKey="/user/profile">
-      <section className="rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+      <section className="user-section p-4 sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">
+            <h2 className="text-2xl font-semibold text-gray-900 font-heading">
               Hồ sơ của bạn
             </h2>
             <p className="text-sm text-gray-500 mt-2">
@@ -292,7 +292,7 @@ const Profile = () => {
           </div>
           <button
             type="button"
-            className="rounded-full bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+            className="rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/25 hover:bg-teal-700 transition-all duration-200 active:scale-[0.98]"
             onClick={handleSave}
             disabled={saving}
           >
@@ -301,7 +301,7 @@ const Profile = () => {
         </div>
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-dashed border-gray-200 p-6 text-sm text-gray-500 text-center">
+          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             Đang tải hồ sơ...
           </div>
         ) : null}
@@ -316,9 +316,9 @@ const Profile = () => {
           </div>
         ) : null}
 
-        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="overflow-hidden rounded-2xl border border-gray-100 p-4 text-center sm:p-5">
-            <div className="rounded-2xl border border-gray-100 bg-slate-50 px-6 py-8">
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="user-sub-card overflow-hidden p-4 text-center sm:p-5">
+            <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-teal-50/50 to-slate-50 px-6 py-8">
               <div className="flex justify-center">
                 {avatarDisplayUrl ? (
                   <img
@@ -327,7 +327,7 @@ const Profile = () => {
                     className="h-24 w-24 rounded-full object-cover border-4 border-white bg-white shadow-sm"
                   />
                 ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-blue-100 text-3xl font-semibold text-blue-600 border-4 border-white shadow-sm">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-teal-100 text-3xl font-semibold text-teal-600 border-4 border-white shadow-sm">
                     {initials}
                   </div>
                 )}
@@ -336,14 +336,14 @@ const Profile = () => {
                 Ảnh đại diện hiển thị tại đây.
               </div>
             </div>
-            <h3 className="mt-6 text-lg font-semibold text-gray-900">
+            <h3 className="mt-6 text-lg font-semibold text-gray-900 font-heading">
               {profile?.full_name ?? storedUser?.full_name ?? "Người dùng"}
             </h3>
             <p className="text-xs text-gray-500">
               {profile?.email ?? storedUser?.email ?? "Chưa có email"}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-600">
+              <span className="rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-600">
                 {getRoleLabel(profile?.role ?? storedUser?.role ?? "user")}
               </span>
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-600">
@@ -369,14 +369,14 @@ const Profile = () => {
                     e.currentTarget.value = "";
                   }}
                 />
-                <span className="block w-full cursor-pointer rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white hover:bg-blue-700">
+                <span className="block w-full cursor-pointer rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200">
                   Tải ảnh lên
                 </span>
               </label>
 
               <button
                 type="button"
-                className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors duration-200"
                 onClick={() => {
                   setPendingAvatarFile(null);
                   setPendingAvatarRemove(true);
@@ -400,8 +400,8 @@ const Profile = () => {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-2xl border border-gray-100 p-4 sm:p-5">
-              <h4 className="text-base font-semibold text-gray-900">
+            <div className="user-sub-card p-4 sm:p-5">
+              <h4 className="text-base font-semibold text-gray-900 font-heading">
                 Thông tin cá nhân
               </h4>
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -416,7 +416,7 @@ const Profile = () => {
                       }))
                     }
                     maxLength={100}
-                    className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                     placeholder="Nhập họ tên"
                   />
                 </label>
@@ -425,7 +425,7 @@ const Profile = () => {
                   <input
                     value={profile?.email ?? storedUser?.email ?? ""}
                     disabled
-                    className="mt-2 w-full rounded-2xl border border-gray-100 bg-gray-50 px-4 py-2 text-sm text-gray-500"
+                    className="mt-2 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-sm text-gray-500"
                   />
                 </label>
                 <label className="text-sm text-gray-600">
@@ -442,7 +442,7 @@ const Profile = () => {
                     }
                     inputMode="numeric"
                     maxLength={10}
-                    className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                     placeholder="Nhập số điện thoại"
                   />
                 </label>
@@ -456,7 +456,7 @@ const Profile = () => {
                         avatar_url: event.target.value,
                       }))
                     }
-                    className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
                     placeholder="https://..."
                   />
                   <p className="mt-2 text-xs text-gray-400">
@@ -467,9 +467,9 @@ const Profile = () => {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-100 p-4 sm:p-5">
+            <div className="user-sub-card p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-base font-semibold text-gray-900">
+                <h4 className="text-base font-semibold text-gray-900 font-heading">
                   Lịch sử đăng nhập
                 </h4>
                 <span className="text-xs text-gray-500">
@@ -478,19 +478,19 @@ const Profile = () => {
               </div>
 
               {historyLoading ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 text-center">
+                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
                   Đang tải lịch sử đăng nhập...
                 </div>
               ) : null}
               {!historyLoading && history.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-sm text-gray-500 text-center">
+                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
                   Chưa có lịch sử đăng nhập.
                 </div>
               ) : null}
 
               {history.length > 0 ? (
                 <div className="mt-4 overflow-hidden rounded-2xl border border-gray-100">
-                  <div className="hidden md:grid grid-cols-[220px_120px_180px_minmax(260px,1fr)] gap-3 border-b bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <div className="hidden md:grid grid-cols-[220px_120px_180px_minmax(260px,1fr)] gap-3 border-b bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 font-heading">
                     <div>Thời gian</div>
                     <div>Thành công</div>
                     <div>Địa chỉ IP</div>
