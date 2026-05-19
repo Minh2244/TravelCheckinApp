@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   Marker,
@@ -9,6 +9,7 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
+import "leaflet-polylinedecorator";
 import { useLocation, useNavigate } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import { useLocations } from "../../hooks/useLocations";
@@ -232,6 +233,20 @@ const MapRecenter = ({
   return null;
 };
 
+// Dong bo maxZoom mac dinh cho tat ca loai ban do
+const MAX_ZOOM = 17;
+
+const MapMaxZoomSync = () => {
+  const map = useMap();
+  useEffect(() => {
+    map.setMaxZoom(MAX_ZOOM);
+    if (map.getZoom() > MAX_ZOOM) {
+      map.setZoom(MAX_ZOOM, { animate: false });
+    }
+  }, [map]);
+  return null;
+};
+
 const MapResizeObserver = () => {
   const map = useMap();
   useEffect(() => {
@@ -286,6 +301,86 @@ const MapClickHandler = ({ onPick }: { onPick: (coords: LatLng) => void }) => {
       onPick({ lat: event.latlng.lat, lng: event.latlng.lng });
     },
   });
+  return null;
+};
+
+// Mũi tên phương hướng quay theo thiết bị (DeviceOrientationEvent)
+const CompassMarker = ({
+  position,
+  heading,
+}: {
+  position: LatLng;
+  heading: number | null;
+}) => {
+  if (heading === null) return null;
+
+  const icon = L.divIcon({
+    className: "compass-marker",
+    html: `<div style="
+      width: 36px; height: 36px;
+      transform: rotate(${heading}deg);
+      transition: transform 0.3s ease;
+      display: flex; align-items: center; justify-content: center;
+    ">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L4 20L12 16L20 20L12 2Z" fill="#2563eb" stroke="#1d4ed8" stroke-width="1"/>
+      </svg>
+    </div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+  });
+
+  return (
+    <Marker
+      position={[position.lat, position.lng]}
+      icon={icon}
+      zIndexOffset={1000}
+    />
+  );
+};
+
+// Mũi tên hướng đi trên polyline route
+const RouteArrowDecorator = ({
+  routeLines,
+}: {
+  routeLines: LatLng[][] | null;
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!routeLines || routeLines.length === 0) return;
+
+    const decorators: L.PolylineDecorator[] = [];
+    const colors = ["#2563eb", "#10b981", "#f97316"];
+
+    routeLines.forEach((line, index) => {
+      const latLngs = line.map((p) => L.latLng(p.lat, p.lng));
+      const decorator = L.polylineDecorator(latLngs, {
+        patterns: [
+          {
+            offset: "5%",
+            repeat: "15%",
+            symbol: L.Symbol.arrowHead({
+              pixelSize: 12,
+              polygon: false,
+              pathOptions: {
+                color: colors[index] || colors[0],
+                weight: 2,
+                opacity: 0.8,
+              },
+            }),
+          },
+        ],
+      });
+      decorator.addTo(map);
+      decorators.push(decorator);
+    });
+
+    return () => {
+      decorators.forEach((d) => map.removeLayer(d));
+    };
+  }, [map, routeLines]);
+
   return null;
 };
 
@@ -591,6 +686,8 @@ const UserMap = () => {
   const [pickedSuggested, setPickedSuggested] = useState<Location | null>(null);
   const [myPosition, setMyPosition] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
+  const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [checkingIn, setCheckingIn] = useState(false);
   const [freeAction, setFreeAction] = useState<"checkin" | "save" | null>(null);
   const [notes, setNotes] = useState("");
@@ -635,7 +732,7 @@ const UserMap = () => {
   >(null);
   const [nearbyRadius, setNearbyRadius] = useState(1000);
   const [nearbyCategory, setNearbyCategory] = useState<
-    "all" | "food" | "tourist" | "hotel" | "checkin"
+    "all" | "food" | "tourist" | "hotel" | "mine"
   >("all");
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
@@ -646,6 +743,7 @@ const UserMap = () => {
   const [selectedReviewsLoading, setSelectedReviewsLoading] = useState(false);
   const [reviewFilter, setReviewFilter] = useState(0);
   const [favoriteLocationIds, setFavoriteLocationIds] = useState<number[]>([]);
+  const [sidebarTab, setSidebarTab] = useState<"locations" | "checkin" | "reviews">("locations");
 
   const [focusCheckin, setFocusCheckin] = useState<FocusCheckinState | null>(
     null,
@@ -749,6 +847,60 @@ const UserMap = () => {
     void loadFavoriteLocationIds();
   }, [loadFavoriteLocationIds]);
 
+  // Tu dong lay vi tri khi vao trang + watchPosition + device orientation
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationDenied(true);
+      return;
+    }
+
+    let watchId = 0;
+    let orientationHandler: ((event: DeviceOrientationEvent) => void) | null = null;
+
+    const startWatch = (initialPos: LatLng) => {
+      setMyPosition(initialPos);
+      flyTo(initialPos);
+      setLocationDenied(false);
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setMyPosition(newPos);
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      );
+    };
+
+    const requestOrientation = () => {
+      orientationHandler = (event: DeviceOrientationEvent) => {
+        if (event.alpha != null) {
+          setDeviceHeading(event.alpha);
+        }
+      };
+      window.addEventListener("deviceorientation", orientationHandler, true);
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const initialPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        startWatch(initialPos);
+        requestOrientation();
+      },
+      () => {
+        setLocationDenied(true);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 },
+    );
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      if (orientationHandler) {
+        window.removeEventListener("deviceorientation", orientationHandler, true);
+      }
+    };
+  }, []);
+
   const matchesNearbyCategory = useCallback(
     (location: Location) => {
       if (nearbyCategory === "all") return true;
@@ -758,26 +910,33 @@ const UserMap = () => {
       if (nearbyCategory === "tourist") return type === "tourist";
       if (nearbyCategory === "hotel")
         return type === "hotel" || type === "resort";
-      if (nearbyCategory === "checkin")
-        return type === "cafe" || type === "other";
+      if (nearbyCategory === "mine") return isOwnerCreatedLocation(location);
       return true;
     },
     [nearbyCategory],
   );
 
-  const nearbyLocations = useMemo(() => {
-    if (!myPosition) return [];
-    return locationMarkers
+  // Danh sach da gop: loc theo ban kinh + loai, sap xep theo khoang cach
+  const filteredLocations = useMemo(() => {
+    const filtered = locationMarkers
+      .filter((entry) => matchesNearbyCategory(entry.item))
       .map((entry) => {
-        const distance = haversineMeters(myPosition, {
-          lat: entry.lat,
-          lng: entry.lng,
-        });
+        const distance = myPosition
+          ? haversineMeters(myPosition, { lat: entry.lat, lng: entry.lng })
+          : null;
         return { ...entry, distance };
       })
-      .filter((entry) => entry.distance <= nearbyRadius)
-      .filter((entry) => matchesNearbyCategory(entry.item))
-      .sort((a, b) => a.distance - b.distance);
+      .filter((entry) => {
+        if (!myPosition) return true;
+        return entry.distance != null && entry.distance <= nearbyRadius;
+      })
+      .sort((a, b) => {
+        if (a.distance != null && b.distance != null) return a.distance - b.distance;
+        if (a.distance != null) return -1;
+        if (b.distance != null) return 1;
+        return 0;
+      });
+    return filtered;
   }, [locationMarkers, matchesNearbyCategory, myPosition, nearbyRadius]);
 
   const [mapView, setMapView] = useState<MapView>(() => ({
@@ -831,35 +990,35 @@ const UserMap = () => {
     () => [
       {
         key: "osm",
-        label: "Bản đồ tiêu chuẩn (OSM)",
+        label: "Bản đồ tiêu chuẩn",
         url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 19,
+        maxZoom: MAX_ZOOM,
       },
       {
         key: "positron",
-        label: "Bản đồ sáng (Positron)",
+        label: "Bản đồ sáng",
         url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
+        maxZoom: MAX_ZOOM,
       },
       {
         key: "voyager",
-        label: "Bản đồ đường phố (Voyager)",
+        label: "Bản đồ đường phố",
         url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
         attribution:
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19,
+        maxZoom: MAX_ZOOM,
       },
       {
         key: "satellite",
-        label: "Vệ tinh (Esri)",
+        label: "Vệ tinh",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution:
           '&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-        maxZoom: 18,
+        maxZoom: MAX_ZOOM,
       },
     ],
     [],
@@ -1134,14 +1293,48 @@ const UserMap = () => {
     return () => controller.abort();
   }, [myPosition, routeEnabled, routeProfile, routeTarget]);
 
+  // Lưu route vào sessionStorage để persist khi reload
+  useEffect(() => {
+    if (routeEnabled && routeTarget) {
+      sessionStorage.setItem(
+        "userMapRoute",
+        JSON.stringify({
+          target: routeTarget,
+          mode: routeMode,
+          enabled: true,
+        }),
+      );
+    }
+  }, [routeEnabled, routeTarget, routeMode]);
+
+  // Khôi phục route từ sessionStorage khi mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("userMapRoute");
+      if (!saved) return;
+      const data = JSON.parse(saved) as {
+        target: LatLng;
+        mode: RouteMode;
+        enabled: boolean;
+      };
+      if (data.enabled && data.target) {
+        setRouteTarget(data.target);
+        setRouteMode(data.mode);
+        setRouteEnabled(true);
+      }
+    } catch {
+      sessionStorage.removeItem("userMapRoute");
+    }
+  }, []);
+
   const clearRoute = useCallback(() => {
     setRouteEnabled(false);
     setRouteTarget(null);
     setRouteLines(null);
     setRouteInfo(null);
-    // Nếu đang ở chế độ chỉ dẫn đường từ Chi tiết địa điểm thì reset về map bình thường.
     setRouteOnlyMode(false);
     setRouteOnlyDestination(null);
+    sessionStorage.removeItem("userMapRoute");
   }, []);
 
   const getCurrentPosition = useCallback((): Promise<LatLng | null> => {
@@ -1383,10 +1576,10 @@ const UserMap = () => {
       return;
     }
 
-    if (selectedCoords && !isWithinVietnam(selectedCoords)) {
+    if (!myPosition) {
       setFeedback({
         type: "error",
-        message: "Chỉ hỗ trợ check-in trong phạm vi Việt Nam.",
+        message: "Chưa lấy được vị trí. Vui lòng cấp quyền định vị.",
       });
       return;
     }
@@ -1713,30 +1906,10 @@ const UserMap = () => {
       onSearch={setKeyword}
       searchPlaceholder="Tìm địa điểm..."
     >
-      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.9fr] gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-6">
         <section className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 font-heading font-heading">
-                Bản đồ địa điểm
-              </h2>
-              <p className="text-sm text-gray-500">
-                Chọn địa điểm trên bản đồ để check-in nhanh.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="rounded-full border border-teal-100 bg-teal-50 px-4 py-2 text-sm text-teal-600 hover:bg-teal-100"
-              onClick={handleLocate}
-              disabled={locating}
-            >
-              {locating ? "Đang định vị..." : "Lấy vị trí của tôi"}
-            </button>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
-            <p className="text-xs text-gray-500">Tìm kiếm địa danh</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 value={searchQuery}
                 onChange={(event) => {
@@ -1786,7 +1959,7 @@ const UserMap = () => {
             ) : null}
           </div>
 
-          <div className="mt-4 h-[420px] overflow-hidden rounded-2xl border border-gray-100">
+          <div className="mt-4 h-[520px] overflow-hidden rounded-2xl border border-gray-100">
             {!fullMapOpen ? (
               <MapContainer
                 center={[mapView.center.lat, mapView.center.lng]}
@@ -1799,8 +1972,9 @@ const UserMap = () => {
                 <TileLayer
                   attribution={activeTile.attribution}
                   url={activeTile.url}
-                  maxZoom={activeTile.maxZoom}
+                  maxZoom={MAX_ZOOM}
                 />
+                <MapMaxZoomSync />
                 <MapRefBinder mapRef={mainMapRef} />
                 <MapViewTracker onChange={handleMapViewChange} />
                 <MapRecenter target={recenterTarget} trigger={recenterSignal} />
@@ -1815,6 +1989,13 @@ const UserMap = () => {
                     <Popup>Vị trí của bạn</Popup>
                   </Marker>
                 ) : null}
+
+                <CompassMarker
+                  position={myPosition ?? { lat: 0, lng: 0 }}
+                  heading={deviceHeading}
+                />
+
+                <RouteArrowDecorator routeLines={routeLines} />
 
                 {routeOnlyMode && routeOnlyDestination ? (
                   <Marker
@@ -2160,14 +2341,6 @@ const UserMap = () => {
             <button
               type="button"
               className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-              onClick={() => recenterTo(selectedCoords)}
-              disabled={!selectedCoords}
-            >
-              Về điểm check-in
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
               onClick={handleRecenterToMyPosition}
               disabled={locating}
             >
@@ -2222,7 +2395,6 @@ const UserMap = () => {
           ) : null}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500">Loại bản đồ:</span>
             {tileOptions.map((tile) => (
               <button
                 key={tile.key}
@@ -2264,375 +2436,409 @@ const UserMap = () => {
           ) : null}
         </section>
 
-        <aside className="space-y-4">
-          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
-            <h3 className="text-base font-semibold text-gray-900 font-heading">
-              Check-in nhanh
-            </h3>
-            {selected ? (
-              <div className="mt-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-semibold">
-                    {selected.location_name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {selected.location_name}
-                    </p>
-                    <p className="text-xs text-gray-500">{selected.address}</p>
-                  </div>
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Ghi chú nhanh (tuỳ chọn)"
-                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                  rows={3}
-                />
-                <button
-                  type="button"
-                  className="w-full rounded-2xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
-                  onClick={handleCheckin}
-                  disabled={checkingIn || !isSelectedOpenNow}
-                >
-                  {checkingIn ? "Đang gửi check-in..." : "Check-in ngay"}
-                </button>
-
-                {!isSelectedOpenNow ? (
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                    Đang đóng cửa
-                    {selectedOpenClose
-                      ? ` (${selectedOpenClose.open} - ${selectedOpenClose.close})`
-                      : ""}
-                    .
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  className="w-full rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 hover:bg-emerald-100"
-                  onClick={handleNavigateToSelected}
-                  disabled={locating}
-                >
-                  {locating ? "Đang định vị..." : "Đường đi"}
-                </button>
-                <button
-                  type="button"
-                  className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
-                  onClick={() =>
-                    navigate(`/user/location/${selected.location_id}`)
-                  }
-                >
-                  Xem chi tiết địa điểm
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
-                Chọn một địa điểm trên bản đồ để check-in.
-              </div>
-            )}
+        <aside className="flex flex-col bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg overflow-hidden">
+          {/* Tab bar */}
+          <div className="flex border-b border-gray-100">
+            {(
+              [
+                { key: "locations" as const, label: "Địa điểm" },
+                { key: "checkin" as const, label: "Check-in" },
+                { key: "reviews" as const, label: "Đánh giá" },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`flex-1 py-3 text-xs font-semibold transition ${
+                  sidebarTab === tab.key
+                    ? "border-b-2 border-teal-600 text-teal-700 bg-teal-50/50"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+                onClick={() => setSidebarTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {!routeOnlyMode ? (
-            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
-              <h3 className="text-base font-semibold text-gray-900 font-heading">
-                Gợi ý địa điểm gần bạn
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Chọn bán kính và loại địa điểm để gợi ý.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[500, 1000, 5000].map((radius) => (
+          {/* Tab content */}
+          <div className="flex-1 overflow-auto p-5">
+            {/* Tab: Địa điểm */}
+            {sidebarTab === "locations" && !routeOnlyMode ? (
+              <div className="space-y-4">
+                {/* Tìm kiếm */}
+                <div className="flex gap-2">
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
+                      setSearchSelected(null);
+                    }}
+                    placeholder="Tìm kiếm địa điểm..."
+                    className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
+                  />
                   <button
-                    key={radius}
                     type="button"
-                    className={`rounded-full px-3 py-1 text-xs ${
-                      nearbyRadius === radius
-                        ? "bg-teal-600 text-white"
-                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
-                    onClick={() => setNearbyRadius(radius)}
-                  >
-                    {radius < 1000 ? `${radius}m` : `${radius / 1000}km`}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(
-                  [
-                    { key: "all", label: "Tất cả" },
-                    { key: "food", label: "Ăn uống 🍜" },
-                    { key: "tourist", label: "Du lịch 🏞" },
-                    { key: "hotel", label: "Khách sạn 🏨" },
-                    { key: "checkin", label: "Check-in 📸" },
-                  ] as const
-                ).map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={`rounded-full px-3 py-1 text-xs ${
-                      nearbyCategory === item.key
-                        ? "bg-emerald-600 text-white"
-                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
-                    onClick={() => setNearbyCategory(item.key)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              {!myPosition ? (
-                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-xs text-gray-500 text-center">
-                  Hãy bấm “Lấy vị trí của tôi” để xem địa điểm gần.
-                </div>
-              ) : null}
-
-              <div className="mt-4 space-y-3 max-h-[260px] overflow-auto pr-1">
-                {myPosition && nearbyLocations.length === 0 ? (
-                  <div className="rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-xs text-gray-500 text-center">
-                    Không có địa điểm phù hợp trong bán kính đã chọn.
-                  </div>
-                ) : null}
-                {nearbyLocations.map((entry) => (
-                  <button
-                    key={entry.item.location_id}
-                    type="button"
-                    className={`flex w-full items-center justify-between gap-2 rounded-2xl border px-3 py-3 text-left text-xs ${
-                      selected?.location_id === entry.item.location_id
-                        ? "border-emerald-200 bg-emerald-50"
-                        : "border-gray-100 hover:bg-gray-50"
-                    }`}
+                    className="rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100"
                     onClick={() => {
-                      handleSelectLocation(entry.item, {
-                        lat: entry.lat,
-                        lng: entry.lng,
-                      });
+                      setSearchQuery("");
+                      setSearchResults([]);
+                      setSearchMarker(null);
+                      setSearchSelected(null);
                     }}
                   >
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {entry.item.location_name}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {formatDistance(entry.distance)} · {entry.item.address}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-teal-50 px-2 py-1 text-[11px] text-teal-600">
-                      Đi tới
-                    </span>
+                    Xoá
                   </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+                </div>
 
-          {!routeOnlyMode ? (
-            <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
-              <h3 className="text-base font-semibold text-gray-900 font-heading">
-                Danh sách địa điểm
-              </h3>
-              {loading ? (
-                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
-                  Đang tải địa điểm...
-                </div>
-              ) : null}
-              {error ? (
-                <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600 text-center">
-                  {error}
-                </div>
-              ) : null}
-              {!loading && locations.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
-                  Chưa có địa điểm phù hợp.
-                </div>
-              ) : null}
-              <div className="mt-4 space-y-3 max-h-[340px] overflow-auto pr-1">
-                {locations.map((item) => {
-                  const imageUrl = resolveBackendUrl(
-                    item.first_image ??
-                      (Array.isArray(item.images) ? item.images[0] : null),
-                  );
-                  return (
+                {/* Filter bán kính */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-400">Bán kính:</span>
+                  {[1000, 5000].map((radius) => (
                     <button
-                      key={item.location_id}
+                      key={radius}
                       type="button"
-                      className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition ${
-                        selected?.location_id === item.location_id
-                          ? "border-teal-200 bg-teal-50"
-                          : "border-gray-100 hover:bg-gray-50"
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        nearbyRadius === radius
+                          ? "bg-teal-600 text-white"
+                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                       }`}
-                      onClick={() => handleSelectLocation(item)}
+                      onClick={() => setNearbyRadius(radius)}
                     >
-                      {imageUrl ? (
-                        <img
-                          src={imageUrl}
-                          alt={item.location_name}
-                          className="h-12 w-12 rounded-xl object-cover"
-                        />
-                      ) : (
-                        <div className="h-12 w-12 rounded-xl bg-slate-100" />
-                      )}
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {item.location_name}
-                        </p>
-                        <p className="text-xs text-gray-500">{item.address}</p>
-                      </div>
+                      {radius / 1000}km
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
-            <h3 className="text-base font-semibold text-gray-900 font-heading">
-              Đánh giá nhanh trên map
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">
-              Gửi rating, nhận xét và ảnh mà không cần rời bản đồ.
-            </p>
-
-            {!selected ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-gray-200 p-4 text-xs text-gray-500 text-center">
-                Chọn một địa điểm trên bản đồ để đánh giá.
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {[0, 1, 2, 3, 4, 5].map((star) => {
-                    const active = reviewFilter === star;
-                    return (
-                      <button
-                        key={`quick-map-review-filter-${star}`}
-                        type="button"
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                          active
-                            ? "bg-teal-600 text-white"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                        onClick={() => setReviewFilter(star)}
-                      >
-                        {star === 0 ? "Tất cả" : `${star} sao`}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Địa điểm</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {selected.location_name}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs text-gray-500">Rating</label>
-                  <div className="mt-2">
-                    <StarRatingPicker
-                      value={reviewRating}
-                      onChange={setReviewRating}
+                  ))}
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      placeholder="Tự chọn"
+                      className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 focus:outline-none"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const val = Number((e.target as HTMLInputElement).value);
+                          if (val > 0) setNearbyRadius(val * 1000);
+                        }
+                      }}
                     />
-                    {reviewRating <= 0 ? (
-                      <p className="mt-2 text-xs text-amber-700">
-                        Hãy chọn từ 1 đến 5 sao để gửi.
-                      </p>
-                    ) : null}
+                    <span className="text-[11px] text-gray-400">km</span>
                   </div>
                 </div>
-                <textarea
-                  value={reviewComment}
-                  onChange={(event) => setReviewComment(event.target.value)}
-                  placeholder="Nhận xét (tuỳ chọn)"
-                  className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                  rows={3}
-                />
 
-                <div>
-                  <label className="text-xs text-gray-500">Ảnh</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="mt-2 block w-full text-xs text-gray-600"
-                    onChange={(event) => handleReviewUpload(event.target.files)}
-                    disabled={reviewUploading}
-                  />
-                  {reviewImages.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {reviewImages.map((img) => (
-                        <div
-                          key={img}
-                          className="relative h-14 w-14 overflow-hidden rounded-xl border border-gray-100"
-                        >
-                          <img
-                            src={resolveBackendUrl(img) ?? undefined}
-                            alt="review"
-                            className="h-full w-full object-cover"
-                          />
+                {/* Filter loại địa điểm */}
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      { key: "all", label: "Tất cả" },
+                      { key: "food", label: "Ăn uống" },
+                      { key: "tourist", label: "Du lịch" },
+                      { key: "hotel", label: "Khách sạn" },
+                      { key: "mine", label: "Địa điểm của tôi" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`rounded-full px-3 py-1 text-xs ${
+                        nearbyCategory === item.key
+                          ? "bg-emerald-600 text-white"
+                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      }`}
+                      onClick={() => setNearbyCategory(item.key)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Danh sach dia diem (gom Gan ban + Tat ca) */}
+                {locationDenied ? (
+                  <p className="text-xs text-gray-400">
+                    Khong the lay vi tri. Vui long cap quyen dinh vi trong trinh duyet.
+                  </p>
+                ) : !myPosition ? (
+                  <p className="text-xs text-gray-400">Dang lay vi tri...</p>
+                ) : null}
+
+                <div className="border-t border-gray-100 pt-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">
+                    Dia diem {myPosition ? `(${filteredLocations.length})` : ""}
+                  </p>
+                  {loading ? (
+                    <p className="text-xs text-gray-400">Dang tai...</p>
+                  ) : error ? (
+                    <p className="text-xs text-red-500">{error}</p>
+                  ) : filteredLocations.length === 0 ? (
+                    <p className="text-xs text-gray-400">Khong co dia diem phu hop.</p>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2 max-h-[400px] overflow-auto pr-1">
+                      {filteredLocations.map((entry) => {
+                        const item = entry.item;
+                        const imageUrl = resolveBackendUrl(
+                          item.first_image ??
+                            (Array.isArray(item.images) ? item.images[0] : null),
+                        );
+                        const isSelected = selected?.location_id === item.location_id;
+                        return (
                           <button
+                            key={item.location_id}
                             type="button"
-                            className="absolute right-1 top-1 rounded-full bg-white/90 px-1 text-[10px] text-red-600"
-                            onClick={() =>
-                              setReviewImages((prev) =>
-                                prev.filter((item) => item !== img),
-                              )
-                            }
+                            className={`rounded-xl border overflow-hidden text-left transition ${
+                              isSelected
+                                ? "border-teal-300 bg-teal-50 ring-1 ring-teal-300"
+                                : "border-gray-100 hover:border-gray-200 hover:shadow-sm"
+                            }`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelected(null);
+                                setSidebarTab("locations");
+                              } else {
+                                handleSelectLocation(item, { lat: entry.lat, lng: entry.lng });
+                                setSidebarTab("checkin");
+                              }
+                            }}
                           >
-                            x
+                            <div className="aspect-[5/3] bg-gray-100 overflow-hidden">
+                              {imageUrl ? (
+                                <img
+                                  src={imageUrl}
+                                  alt={item.location_name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="h-full w-full bg-gradient-to-br from-gray-100 to-gray-200" />
+                              )}
+                            </div>
+                            <div className="p-2">
+                              <p className="text-[11px] font-semibold text-gray-900 line-clamp-1">
+                                {item.location_name}
+                              </p>
+                              <p className="text-[10px] text-gray-500 line-clamp-1">
+                                {entry.distance != null
+                                  ? formatDistance(entry.distance)
+                                  : item.address}
+                              </p>
+                            </div>
                           </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Tab: Check-in */}
+            {sidebarTab === "checkin" ? (
+              <div className="space-y-4">
+                {selected ? (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-semibold">
+                        {selected.location_name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {selected.location_name}
+                        </p>
+                        <p className="text-xs text-gray-500">{selected.address}</p>
+                      </div>
+                    </div>
+                    <textarea
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      placeholder="Ghi chú nhanh (tuỳ chọn)"
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
+                      rows={3}
+                    />
+                    <button
+                      type="button"
+                      className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
+                      onClick={handleCheckin}
+                      disabled={checkingIn || !isSelectedOpenNow}
+                    >
+                      {checkingIn ? "Đang gửi check-in..." : "Check-in ngay"}
+                    </button>
+                    {!isSelectedOpenNow ? (
+                      <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        Đang đóng cửa
+                        {selectedOpenClose
+                          ? ` (${selectedOpenClose.open} - ${selectedOpenClose.close})`
+                          : ""}
+                        .
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 hover:bg-emerald-100"
+                      onClick={handleNavigateToSelected}
+                      disabled={locating}
+                    >
+                      {locating ? "Đang định vị..." : "Đường đi"}
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
+                      onClick={() =>
+                        navigate(`/user/location/${selected.location_id}`)
+                      }
+                    >
+                      Xem chi tiết địa điểm
+                    </button>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
+                    Chọn một địa điểm trên bản đồ để check-in.
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {/* Tab: Đánh giá */}
+            {sidebarTab === "reviews" ? (
+              <div className="space-y-4">
+                {!selected ? (
+                  <div className="rounded-xl border border-dashed border-gray-200 p-6 text-xs text-gray-500 text-center">
+                    Chọn một địa điểm trên bản đồ để đánh giá.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-xs text-gray-500">Địa điểm</p>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {selected.location_name}
+                      </p>
+                    </div>
+
+                    {/* Bộ lọc sao */}
+                    <div className="flex flex-wrap gap-2">
+                      {[0, 1, 2, 3, 4, 5].map((star) => {
+                        const active = reviewFilter === star;
+                        return (
+                          <button
+                            key={`review-filter-${star}`}
+                            type="button"
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              active
+                                ? "bg-teal-600 text-white"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                            onClick={() => setReviewFilter(star)}
+                          >
+                            {star === 0 ? "Tất cả" : `${star} sao`}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Form đánh giá */}
+                    <div className="border-t border-gray-100 pt-3">
+                      <label className="text-xs text-gray-500">Rating</label>
+                      <div className="mt-2">
+                        <StarRatingPicker
+                          value={reviewRating}
+                          onChange={setReviewRating}
+                        />
+                        {reviewRating <= 0 ? (
+                          <p className="mt-2 text-xs text-amber-700">
+                            Hãy chọn từ 1 đến 5 sao để gửi.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <textarea
+                      value={reviewComment}
+                      onChange={(event) => setReviewComment(event.target.value)}
+                      placeholder="Nhận xét (tuỳ chọn)"
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
+                      rows={3}
+                    />
+                    <div>
+                      <label className="text-xs text-gray-500">Ảnh</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="mt-2 block w-full text-xs text-gray-600"
+                        onChange={(event) => handleReviewUpload(event.target.files)}
+                        disabled={reviewUploading}
+                      />
+                      {reviewImages.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {reviewImages.map((img) => (
+                            <div
+                              key={img}
+                              className="relative h-14 w-14 overflow-hidden rounded-xl border border-gray-100"
+                            >
+                              <img
+                                src={resolveBackendUrl(img) ?? undefined}
+                                alt="review"
+                                className="h-full w-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                className="absolute right-1 top-1 rounded-full bg-white/90 px-1 text-[10px] text-red-600"
+                                onClick={() =>
+                                  setReviewImages((prev) =>
+                                    prev.filter((item) => item !== img),
+                                  )
+                                }
+                              >
+                                x
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm text-white hover:bg-emerald-700"
+                      onClick={handleSubmitReview}
+                      disabled={reviewSubmitting || reviewRating <= 0}
+                    >
+                      {reviewSubmitting ? "Đang gửi..." : "Gửi đánh giá"}
+                    </button>
+
+                    {/* Danh sách đánh giá */}
+                    <div className="space-y-2 border-t border-gray-100 pt-3">
+                      {selectedReviewsLoading ? (
+                        <p className="text-xs text-gray-500">Đang tải đánh giá...</p>
+                      ) : null}
+                      {!selectedReviewsLoading &&
+                      filteredSelectedReviews.length === 0 ? (
+                        <p className="text-xs text-gray-500">
+                          Chưa có đánh giá phù hợp bộ lọc.
+                        </p>
+                      ) : null}
+                      {filteredSelectedReviews.slice(0, 6).map((review) => (
+                        <div
+                          key={`review-${review.review_id}`}
+                          className="rounded-xl border border-gray-100 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-semibold text-gray-900">
+                              {review.user_name || "Người dùng"}
+                            </div>
+                            <div className="text-[11px] font-semibold text-amber-700">
+                              {Number(review.rating || 0).toFixed(0)} sao
+                            </div>
+                          </div>
+                          <div className="mt-1 text-[11px] text-gray-400">
+                            {formatDateTimeVi(review.created_at)}
+                          </div>
+                          <p className="mt-2 text-xs text-gray-600">
+                            {review.comment?.trim() ||
+                              "Người dùng không để lại bình luận."}
+                          </p>
                         </div>
                       ))}
                     </div>
-                  ) : null}
-                </div>
-
-                <button
-                  type="button"
-                  className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm text-white hover:bg-emerald-700"
-                  onClick={handleSubmitReview}
-                  disabled={reviewSubmitting || reviewRating <= 0}
-                >
-                  {reviewSubmitting ? "Đang gửi..." : "Gửi đánh giá"}
-                </button>
-
-                <div className="space-y-2 border-t border-gray-100 pt-3">
-                  {selectedReviewsLoading ? (
-                    <p className="text-xs text-gray-500">
-                      Đang tải bài đánh giá...
-                    </p>
-                  ) : null}
-                  {!selectedReviewsLoading &&
-                  filteredSelectedReviews.length === 0 ? (
-                    <p className="text-xs text-gray-500">
-                      Chưa có đánh giá phù hợp bộ lọc.
-                    </p>
-                  ) : null}
-                  {filteredSelectedReviews.slice(0, 6).map((review) => (
-                    <div
-                      key={`quick-map-review-${review.review_id}`}
-                      className="rounded-xl border border-gray-100 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-semibold text-gray-900">
-                          {review.user_name || "Người dùng"}
-                        </div>
-                        <div className="text-[11px] font-semibold text-amber-700">
-                          {Number(review.rating || 0).toFixed(0)} sao
-                        </div>
-                      </div>
-                      <div className="mt-1 text-[11px] text-gray-400">
-                        {formatDateTimeVi(review.created_at)}
-                      </div>
-                      <p className="mt-2 text-xs text-gray-600">
-                        {review.comment?.trim() ||
-                          "Người dùng không để lại bình luận."}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                  </>
+                )}
               </div>
-            )}
+            ) : null}
           </div>
         </aside>
       </div>
@@ -2648,59 +2854,34 @@ const UserMap = () => {
             className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
-              <div>
-                <p className="text-xs text-gray-500">Bản đồ check-in</p>
-                <h3 className="text-base font-semibold text-gray-900 font-heading">
-                  Xem bản đồ toàn màn hình
-                </h3>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-teal-100 bg-teal-50 px-4 py-2 text-xs text-teal-600 hover:bg-teal-100"
-                  onClick={handleLocate}
-                  disabled={locating}
-                >
-                  {locating ? "Đang định vị..." : "Lấy vị trí của tôi"}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-600 hover:bg-emerald-100"
-                  onClick={handleCheckin}
-                  disabled={!selected || checkingIn || !isSelectedOpenNow}
-                >
-                  {checkingIn ? "Đang check-in..." : "Check-in nhanh"}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-                  onClick={() => recenterTo(selectedCoords)}
-                  disabled={!selectedCoords}
-                >
-                  Về điểm check-in
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-                  onClick={handleRecenterToMyPosition}
-                  disabled={locating}
-                >
-                  Về vị trí tôi
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full bg-teal-600 px-4 py-2 text-xs text-white hover:bg-teal-700"
-                  onClick={() => setFullMapOpen(false)}
-                >
-                  Đóng
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-b border-gray-100 px-5 py-3">
+              <button
+                type="button"
+                className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-600 hover:bg-emerald-100"
+                onClick={handleCheckin}
+                disabled={!selected || checkingIn || !isSelectedOpenNow}
+              >
+                {checkingIn ? "Đang check-in..." : "Check-in nhanh"}
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
+                onClick={handleRecenterToMyPosition}
+                disabled={locating}
+              >
+                Về vị trí tôi
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-teal-600 px-4 py-2 text-xs text-white hover:bg-teal-700"
+                onClick={() => setFullMapOpen(false)}
+              >
+                Đóng
+              </button>
             </div>
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="border-b border-gray-100 px-5 py-3">
-                <p className="text-xs text-gray-500">Tìm kiếm địa danh</p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     value={searchQuery}
                     onChange={(event) => {
@@ -3138,8 +3319,9 @@ const UserMap = () => {
                     <TileLayer
                       attribution={activeTile.attribution}
                       url={activeTile.url}
-                      maxZoom={activeTile.maxZoom}
+                      maxZoom={MAX_ZOOM}
                     />
+                    <MapMaxZoomSync />
                     <MapRefBinder mapRef={fullMapRef} />
                     <MapViewTracker onChange={handleMapViewChange} />
                     <MapRecenter
@@ -3157,6 +3339,13 @@ const UserMap = () => {
                         <Popup>Vị trí của bạn</Popup>
                       </Marker>
                     ) : null}
+
+                    <CompassMarker
+                      position={myPosition ?? { lat: 0, lng: 0 }}
+                      heading={deviceHeading}
+                    />
+
+                    <RouteArrowDecorator routeLines={routeLines} />
 
                     {searchMarker ? (
                       <Marker
@@ -3552,7 +3741,6 @@ const UserMap = () => {
                   </>
                 ) : null}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-500">Loại bản đồ:</span>
                   {tileOptions.map((tile) => (
                     <button
                       key={tile.key}

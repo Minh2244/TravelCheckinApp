@@ -138,7 +138,7 @@ const SessionGuard = () => {
   const tokenRef = useRef<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState(
-    "Tai khoan dang duoc dang nhap tai noi khac.",
+    "Tài khoản đang được đăng nhập tại nơi khác.",
   );
 
   const socketUrl = useMemo(() => resolveSocketUrl(), []);
@@ -147,7 +147,7 @@ const SessionGuard = () => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string }>).detail;
       setModalMessage(
-        detail?.message || "Tai khoan dang duoc dang nhap tai noi khac.",
+        detail?.message || "Tài khoản đang được đăng nhập tại nơi khác.",
       );
       setModalOpen(true);
     };
@@ -202,7 +202,7 @@ const SessionGuard = () => {
           detail: {
             message:
               payload?.message ||
-              "Tai khoan dang duoc dang nhap tai noi khac.",
+              "Tài khoản đang được đăng nhập tại nơi khác.",
           },
         }),
       );

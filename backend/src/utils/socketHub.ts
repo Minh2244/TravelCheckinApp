@@ -50,7 +50,7 @@ export const initSocketHub = (io: Server) => {
     const existingSockets = socketsByUserId.get(userId) ?? new Set<Socket>();
     if (existingSockets.size > 0) {
       for (const existing of existingSockets) {
-        revokeSocket(existing, "Tai khoan dang duoc dang nhap tai noi khac");
+        revokeSocket(existing, "Tài khoản đang được đăng nhập tại nơi khác.");
       }
       existingSockets.clear();
     }
@@ -82,6 +82,6 @@ export const emitSessionRevoked = (
     if (exceptSessionId && socket.data?.sessionId === exceptSessionId) {
       continue;
     }
-    revokeSocket(socket, "Tai khoan dang duoc dang nhap tai noi khac");
+    revokeSocket(socket, "Tài khoản đang được đăng nhập tại nơi khác.");
   }
 };
