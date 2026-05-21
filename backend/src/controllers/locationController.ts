@@ -149,6 +149,7 @@ export const getLocationReviewsPublic = async (req: Request, res: Response) => {
     const [rows] = await pool.query(
       `SELECT
          r.review_id,
+         r.user_id,
          r.location_id,
          r.rating,
          r.comment,
@@ -156,11 +157,17 @@ export const getLocationReviewsPublic = async (req: Request, res: Response) => {
          r.created_at,
          u.full_name AS user_name,
          u.avatar_url AS user_avatar,
-         rr.content AS reply_content,
-         rr.created_at AS reply_created_at
+         rro.content AS reply_content,
+         rro.created_at AS reply_created_at,
+         rro.images AS reply_images,
+         rru.content AS user_reply_content,
+         rru.created_at AS user_reply_created_at,
+         rru.created_by AS user_reply_user_id,
+         rru.images AS user_reply_images
        FROM reviews r
        JOIN users u ON u.user_id = r.user_id
-       LEFT JOIN review_replies rr ON rr.review_id = r.review_id
+       LEFT JOIN review_replies rro ON rro.review_id = r.review_id AND rro.role = 'owner'
+       LEFT JOIN review_replies rru ON rru.review_id = r.review_id AND rru.role = 'user'
        WHERE r.location_id = ?
          AND r.status = 'active'
        ORDER BY r.created_at DESC

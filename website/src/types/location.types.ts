@@ -68,6 +68,7 @@ export interface LocationDetailResponse {
 
 export interface LocationReview {
   review_id: number;
+  user_id?: number;
   location_id: number;
   rating: number;
   comment: string | null;
@@ -77,4 +78,9 @@ export interface LocationReview {
   user_avatar: string | null;
   reply_content?: string | null;
   reply_created_at?: string | null;
+  reply_images?: string[] | string | null;
+  user_reply_content?: string | null;
+  user_reply_created_at?: string | null;
+  user_reply_user_id?: number | null;
+  user_reply_images?: string[] | string | null;
 }

@@ -275,6 +275,19 @@ const userApi = {
     >("/user/reviews", payload);
     return response.data;
   },
+  deleteReview: async (reviewId: number) => {
+    const response = await axiosClient.delete<ApiResponse<null>>(
+      `/user/reviews/${reviewId}`,
+    );
+    return response.data;
+  },
+  replyToReview: async (reviewId: number, content: string, images?: string[]) => {
+    const response = await axiosClient.post<ApiResponse<null>>(
+      `/user/reviews/${reviewId}/reply`,
+      { content, images },
+    );
+    return response.data;
+  },
   reportLocationIssue: async (payload: {
     location_id: number;
     description: string;

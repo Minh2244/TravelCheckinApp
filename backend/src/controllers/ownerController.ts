@@ -5777,15 +5777,23 @@ export const replyToReview = async (
       return;
     }
 
-    await pool.query(
-      `INSERT INTO review_replies (review_id, content, created_by)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         content = VALUES(content),
-         created_by = VALUES(created_by),
-         updated_at = NOW()`,
-      [reviewId, content.trim(), auth.userId],
+    // Upsert: neu owner da reply thi update, chua co thi insert
+    const [existing] = await pool.query<RowDataPacket[]>(
+      `SELECT reply_id FROM review_replies WHERE review_id = ? AND role = 'owner' LIMIT 1`,
+      [reviewId],
     );
+
+    if (existing.length > 0) {
+      await pool.query(
+        `UPDATE review_replies SET content = ?, created_by = ?, updated_at = NOW() WHERE reply_id = ?`,
+        [content.trim(), auth.userId, existing[0].reply_id],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO review_replies (review_id, content, role, created_by) VALUES (?, ?, 'owner', ?)`,
+        [reviewId, content.trim(), auth.userId],
+      );
+    }
 
     await logAudit(auth.userId, "REPLY_REVIEW", {
       review_id: reviewId,

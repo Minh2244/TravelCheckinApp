@@ -36,6 +36,8 @@ import {
   deleteUserCreatedLocation,
   uploadUserReviewImage,
   createUserReview,
+  deleteUserReview,
+  userReplyToReview,
   getUserTouristTickets,
 } from "../controllers/userController";
 
@@ -89,6 +91,8 @@ router.post("/itineraries", createUserItinerary);
 
 router.post("/reviews/upload", upload.single("image"), uploadUserReviewImage);
 router.post("/reviews", createUserReview);
+router.delete("/reviews/:id", deleteUserReview);
+router.post("/reviews/:id/reply", userReplyToReview);
 
 router.post("/reports/location", reportLocationIssue);
 router.get("/leaderboard", getLeaderboard);

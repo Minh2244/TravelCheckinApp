@@ -1369,6 +1369,128 @@ export const createUserReview = async (
   }
 };
 
+export const deleteUserReview = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req as AuthenticatedRequest, res);
+    if (!userId) return;
+
+    const reviewId = Number(req.params.id);
+    if (!reviewId) {
+      res.status(400).json({ success: false, message: "Thiếu review ID" });
+      return;
+    }
+
+    // Kiểm tra review tồn tại và thuộc về user
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT review_id, user_id, location_id, rating FROM reviews
+       WHERE review_id = ? AND status = 'active' LIMIT 1`,
+      [reviewId],
+    );
+
+    if (rows.length === 0) {
+      res.status(404).json({ success: false, message: "Không tìm thấy đánh giá" });
+      return;
+    }
+
+    if (Number(rows[0].user_id) !== userId) {
+      res.status(403).json({ success: false, message: "Không có quyền xóa đánh giá này" });
+      return;
+    }
+
+    const locationId = rows[0].location_id;
+
+    // Soft-delete
+    await pool.query(
+      `UPDATE reviews SET status = 'deleted', deleted_at = NOW(), deleted_by = ? WHERE review_id = ?`,
+      [userId, reviewId],
+    );
+
+    // Tính lại rating
+    const [statsRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS cnt, COALESCE(AVG(rating), 0) AS avg_rating
+       FROM reviews WHERE location_id = ? AND status = 'active'`,
+      [locationId],
+    );
+
+    const newCount = Number(statsRows[0]?.cnt ?? 0);
+    const newAvg = Math.round(Number(statsRows[0]?.avg_rating ?? 0) * 10) / 10;
+
+    await pool.query(
+      `UPDATE locations SET rating = ?, total_reviews = ? WHERE location_id = ?`,
+      [newAvg, newCount, locationId],
+    );
+
+    res.json({ success: true, message: "Đã xóa đánh giá" });
+  } catch (error) {
+    console.error("Lỗi xóa review:", error);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+export const userReplyToReview = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req as AuthenticatedRequest, res);
+    if (!userId) return;
+
+    const reviewId = Number(req.params.id);
+    const { content, images } = req.body as {
+      content?: string;
+      images?: string[];
+    };
+
+    if (!reviewId || typeof content !== "string" || !content.trim()) {
+      res.status(400).json({ success: false, message: "Dữ liệu không hợp lệ" });
+      return;
+    }
+
+    // Kiem tra review ton tai
+    const [reviewRows] = await pool.query<RowDataPacket[]>(
+      `SELECT review_id, user_id FROM reviews WHERE review_id = ? AND status = 'active' LIMIT 1`,
+      [reviewId],
+    );
+
+    if (reviewRows.length === 0) {
+      res.status(404).json({ success: false, message: "Không tìm thấy đánh giá" });
+      return;
+    }
+
+    // Luu anh dang JSON array
+    const imagesJson =
+      Array.isArray(images) && images.length > 0
+        ? JSON.stringify(images.filter((img) => typeof img === "string" && img.trim()))
+        : null;
+
+    // Upsert: neu user da reply thi update
+    const [existing] = await pool.query<RowDataPacket[]>(
+      `SELECT reply_id FROM review_replies WHERE review_id = ? AND role = 'user' AND created_by = ? LIMIT 1`,
+      [reviewId, userId],
+    );
+
+    if (existing.length > 0) {
+      await pool.query(
+        `UPDATE review_replies SET content = ?, images = ?, updated_at = NOW() WHERE reply_id = ?`,
+        [content.trim(), imagesJson, existing[0].reply_id],
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO review_replies (review_id, content, images, role, created_by) VALUES (?, ?, ?, 'user', ?)`,
+        [reviewId, content.trim(), imagesJson, userId],
+      );
+    }
+
+    res.status(201).json({ success: true, message: "Đã phản hồi" });
+  } catch (error) {
+    console.error("Lỗi user reply:", error);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
 export const getUserFavorites = async (
   req: Request,
   res: Response,

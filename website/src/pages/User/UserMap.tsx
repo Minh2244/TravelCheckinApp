@@ -1,4 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Image as AntImage } from "antd";
 import {
   Circle,
   MapContainer,
@@ -35,6 +36,18 @@ import {
   REVIEW_UPDATED_EVENT,
   dispatchReviewUpdated,
 } from "../../utils/reviewSync";
+
+// Lay user_id tu JWT token trong sessionStorage
+const getCurrentUserId = (): number | null => {
+  try {
+    const token = sessionStorage.getItem("accessToken");
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.userId ?? payload.user_id ?? payload.sub ?? null;
+  } catch {
+    return null;
+  }
+};
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -369,18 +382,18 @@ const circleIconCache = new Map<string, L.DivIcon>();
 const getCircleImageIcon = (
   imageUrl: string | null | undefined,
   isSelected: boolean,
-  size = 48,
+  size = 56,
 ) => {
   const cacheKey = `${imageUrl ?? ""}|${isSelected}|${size}`;
   const cached = circleIconCache.get(cacheKey);
   if (cached) return cached;
 
   const borderStyle = isSelected
-    ? `3px solid #14b8a6`
+    ? `3px solid white`
     : `2px solid white`;
   const shadow = isSelected
-    ? `0 0 0 2px #14b8a6, 0 2px 8px rgba(0,0,0,0.3)`
-    : `0 2px 6px rgba(0,0,0,0.25)`;
+    ? `0 0 0 3px #14b8a6, 0 2px 10px rgba(0,0,0,0.35)`
+    : `0 2px 6px rgba(0,0,0,0.2)`;
 
   let icon: L.DivIcon;
   if (imageUrl) {
@@ -857,6 +870,7 @@ const UserMap = () => {
   const [pickedName, setPickedName] = useState("");
   const [pickedSuggested, setPickedSuggested] = useState<Location | null>(null);
   const [myPosition, setMyPosition] = useState<LatLng | null>(null);
+  const lastGpsPosRef = useRef<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
@@ -908,7 +922,7 @@ const UserMap = () => {
   >(null);
   const [nearbyRadius, setNearbyRadius] = useState<number>(() => {
     const saved = sessionStorage.getItem("userMapNearbyRadius");
-    return saved ? Number(saved) : 0;
+    return saved ? Number(saved) : 1000;
   });
   // Gia tri input ban dau: lay tu sessionStorage neu co
   const [customRadiusInput, setCustomRadiusInput] = useState<string>(() => {
@@ -936,8 +950,9 @@ const UserMap = () => {
   const [selectedReviews, setSelectedReviews] = useState<LocationReview[]>([]);
   const [selectedReviewsLoading, setSelectedReviewsLoading] = useState(false);
   const [reviewFilter, setReviewFilter] = useState(0);
+  const currentUserId = useMemo(() => getCurrentUserId(), []);
   const [favoriteLocationIds, setFavoriteLocationIds] = useState<number[]>([]);
-  const [sidebarTab, setSidebarTab] = useState<"locations" | "checkin" | "reviews">("locations");
+  const [sidebarTab, setSidebarTab] = useState<"locations" | "detail" | "reviews">("locations");
 
   const [focusCheckin, setFocusCheckin] = useState<FocusCheckinState | null>(
     null,
@@ -1054,6 +1069,7 @@ const UserMap = () => {
 
     const startWatch = (initialPos: LatLng) => {
       setMyPosition(initialPos);
+      lastGpsPosRef.current = initialPos;
       flyTo(initialPos);
       setLocationDenied(false);
     };
@@ -1062,7 +1078,12 @@ const UserMap = () => {
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
           const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setMyPosition(newPos);
+          // Chi cap nhat khi di chuyen > 5m de tranh re-render nhieu
+          const prev = lastGpsPosRef.current;
+          if (!prev || haversineMeters(prev, newPos) > 5) {
+            setMyPosition(newPos);
+            lastGpsPosRef.current = newPos;
+          }
           setGpsAccuracy(pos.coords.accuracy);
           setLocationDenied(false);
         },
@@ -1115,10 +1136,10 @@ const UserMap = () => {
       if (nearbyCategory === "tourist") return type === "tourist";
       if (nearbyCategory === "hotel")
         return type === "hotel" || type === "resort";
-      if (nearbyCategory === "mine") return isOwnerCreatedLocation(location);
+      if (nearbyCategory === "mine") return favoriteLocationIds.includes(Number(location.location_id));
       return true;
     },
-    [nearbyCategory],
+    [nearbyCategory, favoriteLocationIds],
   );
 
   // Danh sach da gop: loc theo ban kinh + loai, sap xep theo khoang cach
@@ -1133,8 +1154,8 @@ const UserMap = () => {
       })
       .filter((entry) => {
         if (!myPosition) return true;
-        // nearbyRadius === 0: khong loc ban kinh, hien tat ca
-        if (nearbyRadius === 0) return true;
+        // nearbyRadius === 0: ban kinh 0km, khong hien dia diem nao
+        if (nearbyRadius === 0) return false;
         return entry.distance != null && entry.distance <= nearbyRadius;
       })
       .sort((a, b) => {
@@ -1590,8 +1611,7 @@ const UserMap = () => {
       userInteractingRef.current = false; // Cho phep fitBounds khi user yeu cau route moi
       routeFitDoneRef.current = false; // reset de fitBounds chay lai
       setFeedback(null);
-      // UX: khi bấm "Đường đi" thì tự tắt panel chi tiết bên trái.
-      setPanelOpen(false);
+      // Giu panel mo de user van thay chi tiet dia diem
       setRouteLines(null);
       setRouteInfo(null);
       setRouteTarget((prev) =>
@@ -1620,21 +1640,26 @@ const UserMap = () => {
 
   const handleSelectLocation = useCallback(
     (location: Location, coords?: LatLng) => {
+      // Neu da chon → bo chon (toggle)
+      if (selected?.location_id === location.location_id) {
+        setSelected(null);
+        setPanelOpen(false);
+        return;
+      }
       setSelected(location);
       setPanelOpen(true);
-      // Chi flyTo khi panel chua mo (lan dau chon), khong keo map khi da mo panel
-      if (!panelOpenRef.current) {
-        if (coords) {
-          flyTo(coords);
-        } else {
-          const lat = normalizeNumber(location.latitude);
-          const lng = normalizeNumber(location.longitude);
-          if (lat == null || lng == null) return;
-          flyTo({ lat, lng });
-        }
+      setSidebarTab("detail");
+      // Luon flyTo
+      if (coords) {
+        flyTo(coords);
+      } else {
+        const lat = normalizeNumber(location.latitude);
+        const lng = normalizeNumber(location.longitude);
+        if (lat == null || lng == null) return;
+        flyTo({ lat, lng });
       }
     },
-    [flyTo],
+    [flyTo, selected?.location_id],
   );
 
   const selectedOpenClose = useMemo(() => {
@@ -2035,7 +2060,6 @@ const UserMap = () => {
       (x) => Number(x.location_id) === Number(pendingFocusRoute.location_id),
     );
     setSelected(found ?? null);
-    setPanelOpen(false);
     flyTo(target);
     void ensureRouteToTarget(target);
     setPendingFocusRoute(null);
@@ -2105,6 +2129,61 @@ const UserMap = () => {
       setFeedback({ type: "error", message: "Không thể gửi đánh giá." });
     } finally {
       setReviewSubmitting(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: number) => {
+    if (!confirm("Bạn có chắc muốn xóa đánh giá này?")) return;
+    try {
+      await userApi.deleteReview(reviewId);
+      setFeedback({ type: "success", message: "Đã xóa đánh giá." });
+      await loadSelectedReviews();
+      if (selected) {
+        refetch();
+        dispatchReviewUpdated({ locationId: selected.location_id });
+      }
+    } catch {
+      setFeedback({ type: "error", message: "Không thể xóa đánh giá." });
+    }
+  };
+
+  // Reply state
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyImages, setReplyImages] = useState<string[]>([]);
+  const [replyUploading, setReplyUploading] = useState(false);
+
+  const handleReplyImageUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setReplyUploading(true);
+    try {
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const res = await userApi.uploadReviewImage(file);
+        if (res.data?.image_url) uploaded.push(res.data.image_url);
+      }
+      setReplyImages((prev) => [...prev, ...uploaded]);
+    } catch {
+      setFeedback({ type: "error", message: "Tải ảnh phản hồi thất bại." });
+    } finally {
+      setReplyUploading(false);
+    }
+  };
+
+  const handleReplySubmit = async (reviewId: number) => {
+    if (!replyText.trim()) return;
+    setReplySubmitting(true);
+    try {
+      await userApi.replyToReview(reviewId, replyText.trim(), replyImages.length > 0 ? replyImages : undefined);
+      setReplyText("");
+      setReplyImages([]);
+      setReplyingTo(null);
+      await loadSelectedReviews();
+    } catch {
+      setFeedback({ type: "error", message: "Không thể gửi phản hồi." });
+    } finally {
+      setReplySubmitting(false);
     }
   };
 
@@ -2522,6 +2601,10 @@ const UserMap = () => {
                                 lat: entry.lat,
                                 lng: entry.lng,
                               }),
+                            dblclick: () => {
+                              setSelected(null);
+                              setPanelOpen(false);
+                            },
                           }}
                         >
                           <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
@@ -2536,11 +2619,10 @@ const UserMap = () => {
                                 <button
                                   type="button"
                                   className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
-                                  onClick={() =>
-                                    navigate(
-                                      `/user/location/${entry.item.location_id}`,
-                                    )
-                                  }
+                                  onClick={() => {
+                                    setSelected(entry.item);
+                                    setPanelOpen(true);
+                                  }}
                                 >
                                   Xem chi tiết
                                 </button>
@@ -2583,7 +2665,10 @@ const UserMap = () => {
             <button
               type="button"
               className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-              onClick={() => setFullMapOpen(true)}
+              onClick={() => {
+                setFullMapOpen(true);
+                if (selected) setPanelOpen(true);
+              }}
             >
               Mở lớn bản đồ
             </button>
@@ -2692,7 +2777,7 @@ const UserMap = () => {
             {(
               [
                 { key: "locations" as const, label: "Địa điểm" },
-                { key: "checkin" as const, label: "Khám phá" },
+                { key: "detail" as const, label: "Chi tiết" },
                 { key: "reviews" as const, label: "Đánh giá" },
               ] as const
             ).map((tab) => (
@@ -2839,8 +2924,10 @@ const UserMap = () => {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           const val = Number(customRadiusInput);
-                          if (customRadiusInput === "" || val === 0) {
+                          if (customRadiusInput === "" || val <= 0) {
+                            // Khong cho nhap 0 hoac am
                             setNearbyRadius(0);
+                            setCustomRadiusInput("");
                           } else if (val >= 0.1) {
                             setNearbyRadius(Math.round(val * 1000));
                           }
@@ -2859,7 +2946,7 @@ const UserMap = () => {
                       { key: "food", label: "Ăn uống" },
                       { key: "tourist", label: "Du lịch" },
                       { key: "hotel", label: "Khách sạn" },
-                      { key: "mine", label: "Địa điểm của tôi" },
+                      { key: "mine", label: "Đã lưu" },
                     ] as const
                   ).map((item) => (
                     <button
@@ -2897,11 +2984,11 @@ const UserMap = () => {
                   ) : filteredLocations.length === 0 ? (
                     <p className="text-xs text-gray-400">
                       {nearbyRadius === 0 && myPosition
-                        ? "Hãy chọn bán kính để xem địa điểm."
+                        ? "Không có địa điểm nào trong phạm vi tìm kiếm."
                         : "Không có địa điểm phù hợp."}
                     </p>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-auto pr-1">
+                    <div className="flex flex-col gap-2 max-h-[400px] overflow-auto pr-1">
                       {filteredLocations.map((entry) => {
                         const item = entry.item;
                         const imageUrl = resolveBackendUrl(
@@ -2915,21 +3002,17 @@ const UserMap = () => {
                           <button
                             key={item.location_id}
                             type="button"
-                            className={`user-sub-card card-lift flex flex-col overflow-hidden text-left transition ${
+                            className={`user-sub-card card-lift flex items-stretch overflow-hidden text-left transition rounded-xl ${
                               isSelected
-                                ? "border-teal-300 bg-teal-50 ring-1 ring-teal-300"
-                                : ""
+                                ? "border-teal-300 bg-teal-50/60 ring-1 ring-teal-300"
+                                : "border-gray-100 bg-white hover:border-gray-200"
                             }`}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelected(null);
-                                setSidebarTab("locations");
-                              } else {
-                                handleSelectLocation(item, { lat: entry.lat, lng: entry.lng });
-                              }
-                            }}
+                            onClick={() =>
+                              handleSelectLocation(item, { lat: entry.lat, lng: entry.lng })
+                            }
                           >
-                            <div className="relative w-full aspect-[5/3] overflow-hidden">
+                            {/* Anh ben trai */}
+                            <div className="relative w-28 shrink-0 overflow-hidden rounded-l-xl min-h-[72px]">
                               {imageUrl ? (
                                 <img
                                   src={imageUrl}
@@ -2938,27 +3021,43 @@ const UserMap = () => {
                                 />
                               ) : (
                                 <div className="h-full w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex items-center justify-center">
-                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
+                                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
                                     <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
                                     <circle cx="12" cy="10" r="2.5" />
                                   </svg>
                                 </div>
                               )}
-                              <span className="absolute top-1 left-1 rounded bg-black/50 backdrop-blur-sm px-1 py-0.5 text-[8px] font-bold text-white">
-                                {typeLabel}
-                              </span>
                             </div>
-                            <div className="flex flex-1 flex-col px-2 py-1.5">
-                              <h4 className="text-[11px] font-bold text-slate-800 line-clamp-1">
+                            {/* Noi dung ben phai */}
+                            <div className="flex flex-1 flex-col justify-center px-3 py-2 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className="inline-block rounded-md bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700 shrink-0">
+                                  {typeLabel}
+                                </span>
+                                {item.is_eco_friendly ? (
+                                  <span className="inline-block rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 shrink-0">
+                                    Eco
+                                  </span>
+                                ) : null}
+                              </div>
+                              <h4 className="text-sm font-bold text-slate-800 line-clamp-1">
                                 {item.location_name}
                               </h4>
-                              <div className="mt-0.5 flex items-center gap-1">
-                                <span className="text-[9px] text-amber-500">★</span>
-                                <span className="text-[9px] text-gray-600">{ratingVal.toFixed(1)}</span>
-                                <span className="text-[9px] text-gray-400 line-clamp-1 flex-1">
-                                  {entry.distance != null ? formatDistance(entry.distance) : ""}
-                                </span>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <span className="text-xs text-amber-500">★</span>
+                                <span className="text-xs font-semibold text-gray-700">{ratingVal.toFixed(1)}</span>
+                                <span className="text-xs text-gray-400">({item.total_reviews ?? 0})</span>
+                                {entry.distance != null ? (
+                                  <span className="text-xs text-gray-400 ml-auto shrink-0">
+                                    {formatDistance(entry.distance)}
+                                  </span>
+                                ) : null}
                               </div>
+                              {item.address ? (
+                                <p className="mt-0.5 text-[11px] text-gray-400 line-clamp-1">
+                                  {item.address}
+                                </p>
+                              ) : null}
                             </div>
                           </button>
                         );
@@ -2970,82 +3069,190 @@ const UserMap = () => {
             ) : null}
 
             {/* Tab: Check-in */}
-            {sidebarTab === "checkin" ? (
+            {sidebarTab === "detail" ? (
               <div className="space-y-4">
                 {selected ? (
                   <>
-                    <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 font-semibold">
-                        {selected.location_name.charAt(0)}
+                    {/* Anh lon */}
+                    {(() => {
+                      const img = resolveBackendUrl(
+                        selected.first_image ??
+                          (Array.isArray(selected.images) ? selected.images[0] : null),
+                      );
+                      return img ? (
+                        <div className="relative w-full aspect-[16/10] rounded-xl overflow-hidden">
+                          <img
+                            src={img}
+                            alt={selected.location_name}
+                            className="h-full w-full object-cover"
+                          />
+                          <span className="absolute top-2 left-2 rounded-md bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[10px] font-bold text-white">
+                            {locationTypeToVi(selected.location_type)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="w-full aspect-[16/10] rounded-xl bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex items-center justify-center">
+                          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
+                            <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
+                            <circle cx="12" cy="10" r="2.5" />
+                          </svg>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Ten + loai dia diem */}
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 leading-tight">
+                        {selected.location_name}
+                      </h3>
+                      <span className="mt-1 inline-block rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
+                        {locationTypeToVi(selected.location_type)}
+                      </span>
+                    </div>
+
+                    {/* Rating + gio mo cua */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-amber-500">★</span>
+                        <span className="text-sm font-semibold text-gray-800">
+                          {Number(selected.rating || 0).toFixed(1)}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          ({selected.total_reviews ?? 0} đánh giá)
+                        </span>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {selected.location_name}
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        isSelectedOpenNow
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-red-50 text-red-600"
+                      }`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${isSelectedOpenNow ? "bg-emerald-500" : "bg-red-500"}`} />
+                        {isSelectedOpenNow ? "Đang mở" : "Đang đóng"}
+                        {selectedOpenClose ? ` ${selectedOpenClose.open}-${selectedOpenClose.close}` : ""}
+                      </span>
+                    </div>
+
+                    {/* Thong ke: gio mo cua + reviews */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`rounded-xl border px-3 py-2.5 text-center ${
+                        isSelectedOpenNow
+                          ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-100"
+                          : "bg-gradient-to-br from-red-50 to-rose-50 border-red-100"
+                      }`}>
+                        <p className={`text-lg font-bold ${isSelectedOpenNow ? "text-emerald-700" : "text-red-700"}`}>
+                          {selectedOpenClose ? `${selectedOpenClose.open}` : "--:--"}
                         </p>
-                        <p className="text-xs text-gray-500">{selected.address}</p>
+                        <p className={`text-[10px] font-medium ${isSelectedOpenNow ? "text-emerald-600" : "text-red-600"}`}>
+                          {isSelectedOpenNow ? "Đang mở cửa" : "Đang đóng cửa"}
+                        </p>
+                        {selectedOpenClose ? (
+                          <p className={`text-[9px] mt-0.5 ${isSelectedOpenNow ? "text-emerald-500" : "text-red-500"}`}>
+                            Đóng lúc {selectedOpenClose.close}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 px-3 py-2.5 text-center">
+                        <p className="text-lg font-bold text-amber-700">{selected.total_reviews ?? 0}</p>
+                        <p className="text-[10px] text-amber-600 font-medium">Đánh giá</p>
                       </div>
                     </div>
-                    <textarea
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      placeholder="Ghi chú nhanh (tuỳ chọn)"
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                      rows={3}
-                    />
-                    <button
-                      type="button"
-                      className={`w-full rounded-xl px-4 py-3 text-sm ${
-                        !myPosition
-                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                          : "bg-teal-600 text-white hover:bg-teal-700"
-                      }`}
-                      onClick={handleCheckin}
-                      disabled={checkingIn || !isSelectedOpenNow || !myPosition}
-                    >
-                      {!myPosition
-                        ? "Cần bật định vị"
-                        : checkingIn
-                          ? "Đang gửi check-in..."
-                          : "Check-in ngay"}
-                    </button>
-                    {!isSelectedOpenNow ? (
-                      <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                        Đang đóng cửa
-                        {selectedOpenClose
-                          ? ` (${selectedOpenClose.open} - ${selectedOpenClose.close})`
-                          : ""}
-                        .
+
+                    {/* Dia chi */}
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Địa chỉ</p>
+                      <p className="text-xs text-gray-700 flex items-start gap-1.5">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400 shrink-0 mt-0.5">
+                          <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
+                          <circle cx="12" cy="10" r="2.5" />
+                        </svg>
+                        {selected.address}
+                      </p>
+                      {selected.province ? (
+                        <p className="mt-1.5 text-[10px] text-gray-500 flex items-center gap-1.5 ml-[22px]">
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                            <rect x="2" y="7" width="20" height="14" rx="2" />
+                            <path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+                          </svg>
+                          {selected.province}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {/* Mo ta */}
+                    {selected.description ? (
+                      <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Mô tả</p>
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                          {selected.description}
+                        </p>
                       </div>
                     ) : null}
-                    <button
-                      type="button"
-                      className={`w-full rounded-xl border px-4 py-3 text-sm ${
-                        !myPosition
-                          ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-                          : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      }`}
-                      onClick={handleNavigateToSelected}
-                      disabled={locating || !myPosition}
-                    >
-                      {!myPosition
-                        ? "Cần bật định vị"
-                        : locating
-                          ? "Đang định vị..."
-                          : "Đường đi"}
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
-                      onClick={() =>
-                        navigate(`/user/location/${selected.location_id}`)
-                      }
-                    >
-                      Xem chi tiết địa điểm
-                    </button>
+
+                    {/* Lien he: phone, email, website */}
+                    {(selected.phone || selected.email || selected.website) ? (
+                      <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2.5 space-y-2">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Liên hệ</p>
+                        {selected.phone ? (
+                          <a href={`tel:${selected.phone}`} className="flex items-center gap-2 text-xs text-gray-700 hover:text-teal-600">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+                            </svg>
+                            {selected.phone}
+                          </a>
+                        ) : null}
+                        {selected.email ? (
+                          <a href={`mailto:${selected.email}`} className="flex items-center gap-2 text-xs text-gray-700 hover:text-teal-600">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                              <rect x="2" y="4" width="20" height="16" rx="2" />
+                              <path d="M22 7l-10 6L2 7" />
+                            </svg>
+                            {selected.email}
+                          </a>
+                        ) : null}
+                        {selected.website ? (
+                          <a href={selected.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-gray-700 hover:text-teal-600">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                              <circle cx="12" cy="12" r="10" />
+                              <path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
+                            </svg>
+                            {selected.website.replace(/^https?:\/\//, "")}
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {/* Action buttons */}
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        className={`w-full rounded-xl px-4 py-2.5 text-xs font-medium transition ${
+                          !myPosition
+                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            : "bg-teal-600 text-white hover:bg-teal-700 shadow-sm"
+                        }`}
+                        onClick={handleNavigateToSelected}
+                        disabled={locating || !myPosition}
+                      >
+                        {!myPosition
+                          ? "Cần định vị để chỉ đường"
+                          : locating
+                            ? "Đang định vị..."
+                            : "Chỉ đường"}
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                        onClick={() =>
+                          navigate(`/user/location/${selected.location_id}`)
+                        }
+                      >
+                        Xem chi tiết đầy đủ
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <div className="rounded-xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
-                    Chọn một địa điểm trên bản đồ để check-in.
+                    Chọn một địa điểm trên bản đồ để xem thông tin.
                   </div>
                 )}
               </div>
@@ -3107,16 +3314,27 @@ const UserMap = () => {
                       value={reviewComment}
                       onChange={(event) => setReviewComment(event.target.value)}
                       placeholder="Nhận xét (tuỳ chọn)"
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none resize-none"
                       rows={3}
                     />
                     <div>
-                      <label className="text-xs text-gray-500">Ảnh</label>
+                      <label
+                        htmlFor="review-file-input"
+                        className="mt-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 hover:border-teal-300 hover:bg-teal-50/50 cursor-pointer transition"
+                      >
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <path d="M21 15l-5-5L5 21" />
+                        </svg>
+                        {reviewUploading ? "Đang tải ảnh..." : "Chọn ảnh (tối đa 5MB/ảnh)"}
+                      </label>
                       <input
+                        id="review-file-input"
                         type="file"
                         accept="image/*"
                         multiple
-                        className="mt-2 block w-full text-xs text-gray-600"
+                        className="hidden"
                         onChange={(event) => handleReviewUpload(event.target.files)}
                         disabled={reviewUploading}
                       />
@@ -3168,28 +3386,222 @@ const UserMap = () => {
                           Chưa có đánh giá phù hợp bộ lọc.
                         </p>
                       ) : null}
-                      {filteredSelectedReviews.slice(0, 6).map((review) => (
-                        <div
-                          key={`review-${review.review_id}`}
-                          className="rounded-xl border border-gray-100 p-3"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-xs font-semibold text-gray-900">
-                              {review.user_name || "Người dùng"}
+                      {filteredSelectedReviews.slice(0, 6).map((review) => {
+                        const reviewImgs = normalizeReviewImages(review.images);
+                        const isOwnReview = currentUserId != null && review.user_id === currentUserId;
+                        const stars = Math.round(Number(review.rating || 0));
+                        const avatarUrl = resolveBackendUrl(review.user_avatar);
+                        const initial = (review.user_name || "N").charAt(0).toUpperCase();
+                        return (
+                          <div
+                            key={`review-${review.review_id}`}
+                            className="rounded-xl border border-gray-100 p-3"
+                          >
+                            {/* Header: avatar + ten + sao + ngay */}
+                            <div className="flex items-start gap-2">
+                              {avatarUrl ? (
+                                <img src={avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                              ) : (
+                                <div className="h-7 w-7 rounded-full bg-teal-100 flex items-center justify-center text-[11px] font-bold text-teal-700 shrink-0">
+                                  {initial}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-semibold text-gray-900 truncate">
+                                    {review.user_name || "Người dùng"}
+                                  </span>
+                                  {isOwnReview ? (
+                                    <button
+                                      type="button"
+                                      className="text-[10px] text-red-500 hover:text-red-700 hover:underline shrink-0"
+                                      onClick={() => handleDeleteReview(review.review_id)}
+                                    >
+                                      Xóa
+                                    </button>
+                                  ) : null}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[11px] text-amber-500">
+                                    {"★".repeat(stars)}{"☆".repeat(5 - stars)}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {formatDateTimeVi(review.created_at)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-[11px] font-semibold text-amber-700">
-                              {Number(review.rating || 0).toFixed(0)} sao
-                            </div>
+
+                            {/* Noi dung */}
+                            <p className="mt-2 text-xs text-gray-600">
+                              {review.comment?.trim() || "Không có bình luận."}
+                            </p>
+
+                            {/* Anh review */}
+                            {reviewImgs.length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                <AntImage.PreviewGroup>
+                                  {reviewImgs.slice(0, 3).map((img) => (
+                                    <AntImage
+                                      key={img}
+                                      src={resolveBackendUrl(img) ?? undefined}
+                                      alt="review"
+                                      width={64}
+                                      height={64}
+                                      className="rounded-lg object-cover"
+                                      style={{ borderRadius: 8 }}
+                                    />
+                                  ))}
+                                </AntImage.PreviewGroup>
+                              </div>
+                            ) : null}
+
+                            {/* Reply cua owner */}
+                            {review.reply_content ? (
+                              <div className="mt-2 rounded-lg bg-teal-50 border border-teal-100 px-3 py-2">
+                                <p className="text-[10px] font-semibold text-teal-700">
+                                  Phản hồi của chủ quán
+                                </p>
+                                <p className="text-[11px] text-gray-600 mt-0.5">
+                                  {review.reply_content}
+                                </p>
+                                {(() => {
+                                  const replyImgs = normalizeReviewImages(review.reply_images);
+                                  return replyImgs.length > 0 ? (
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                      <AntImage.PreviewGroup>
+                                        {replyImgs.slice(0, 3).map((img) => (
+                                          <AntImage
+                                            key={img}
+                                            src={resolveBackendUrl(img) ?? undefined}
+                                            alt=""
+                                            width={48}
+                                            height={48}
+                                            className="rounded-md object-cover"
+                                            style={{ borderRadius: 6 }}
+                                          />
+                                        ))}
+                                      </AntImage.PreviewGroup>
+                                    </div>
+                                  ) : null;
+                                })()}
+                                {review.reply_created_at ? (
+                                  <p className="text-[9px] text-gray-400 mt-1">
+                                    {formatDateTimeVi(review.reply_created_at)}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {/* Reply cua user */}
+                            {review.user_reply_content ? (
+                              <div className="mt-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                                <p className="text-[10px] font-semibold text-gray-600">
+                                  Phản hồi của bạn
+                                </p>
+                                <p className="text-[11px] text-gray-600 mt-0.5">
+                                  {review.user_reply_content}
+                                </p>
+                                {(() => {
+                                  const userReplyImgs = normalizeReviewImages(review.user_reply_images);
+                                  return userReplyImgs.length > 0 ? (
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                      <AntImage.PreviewGroup>
+                                        {userReplyImgs.slice(0, 3).map((img) => (
+                                          <AntImage
+                                            key={img}
+                                            src={resolveBackendUrl(img) ?? undefined}
+                                            alt=""
+                                            width={48}
+                                            height={48}
+                                            className="rounded-md object-cover"
+                                            style={{ borderRadius: 6 }}
+                                          />
+                                        ))}
+                                      </AntImage.PreviewGroup>
+                                    </div>
+                                  ) : null;
+                                })()}
+                              </div>
+                            ) : null}
+
+                            {/* Nut tra loi (hien khi co reply cua owner va chua reply) */}
+                            {review.reply_content && !review.user_reply_content && currentUserId ? (
+                              replyingTo === review.review_id ? (
+                                <div className="mt-2 space-y-1.5">
+                                  <div className="flex gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={replyText}
+                                      onChange={(e) => setReplyText(e.target.value)}
+                                      placeholder="Nhập phản hồi..."
+                                      className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-teal-500 focus:outline-none"
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleReplySubmit(review.review_id);
+                                        if (e.key === "Escape") { setReplyingTo(null); setReplyText(""); setReplyImages([]); }
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={`reply-img-${review.review_id}`}
+                                      className="flex items-center justify-center rounded-lg border border-gray-200 px-2 py-1 text-[10px] text-gray-500 hover:bg-gray-50 cursor-pointer"
+                                    >
+                                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                                        <circle cx="8.5" cy="8.5" r="1.5" />
+                                        <path d="M21 15l-5-5L5 21" />
+                                      </svg>
+                                    </label>
+                                    <input
+                                      id={`reply-img-${review.review_id}`}
+                                      type="file"
+                                      accept="image/*"
+                                      multiple
+                                      className="hidden"
+                                      onChange={(e) => handleReplyImageUpload(e.target.files)}
+                                      disabled={replyUploading}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="rounded-lg bg-teal-600 px-2 py-1 text-[10px] text-white hover:bg-teal-700 disabled:opacity-50"
+                                      onClick={() => handleReplySubmit(review.review_id)}
+                                      disabled={replySubmitting || !replyText.trim()}
+                                    >
+                                      Gửi
+                                    </button>
+                                  </div>
+                                  {replyImages.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {replyImages.map((img) => (
+                                        <div key={img} className="relative h-12 w-12 overflow-hidden rounded-lg border border-gray-100">
+                                          <img src={resolveBackendUrl(img) ?? undefined} alt="" className="h-full w-full object-cover" />
+                                          <button
+                                            type="button"
+                                            className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1 text-[8px] text-red-600"
+                                            onClick={() => setReplyImages((prev) => prev.filter((i) => i !== img))}
+                                          >
+                                            x
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {replyUploading ? (
+                                    <p className="text-[10px] text-gray-400">Đang tải ảnh...</p>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="mt-1.5 text-[10px] text-teal-600 hover:text-teal-800 hover:underline"
+                                  onClick={() => setReplyingTo(review.review_id)}
+                                >
+                                  Phản hồi
+                                </button>
+                              )
+                            ) : null}
                           </div>
-                          <div className="mt-1 text-[11px] text-gray-400">
-                            {formatDateTimeVi(review.created_at)}
-                          </div>
-                          <p className="mt-2 text-xs text-gray-600">
-                            {review.comment?.trim() ||
-                              "Người dùng không để lại bình luận."}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -3575,25 +3987,34 @@ const UserMap = () => {
                                 setReviewComment(event.target.value)
                               }
                               placeholder="Nhận xét (tuỳ chọn)"
-                              className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
+                              className="w-full rounded-2xl border border-gray-200 px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none resize-none"
                               rows={3}
                             />
                             <div>
-                              <label className="block rounded-2xl border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-gray-600 hover:bg-gray-50">
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  multiple
-                                  className="hidden"
-                                  onChange={(event) =>
-                                    handleReviewUpload(event.target.files)
-                                  }
-                                  disabled={reviewUploading}
-                                />
+                              <label
+                                htmlFor="review-file-input-full"
+                                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 px-3 py-5 text-center text-xs text-gray-500 hover:border-teal-300 hover:bg-teal-50/50 cursor-pointer transition"
+                              >
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                                  <circle cx="8.5" cy="8.5" r="1.5" />
+                                  <path d="M21 15l-5-5L5 21" />
+                                </svg>
                                 {reviewUploading
                                   ? "Đang upload ảnh..."
                                   : "Thêm ảnh cho bài đánh giá"}
                               </label>
+                              <input
+                                id="review-file-input-full"
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={(event) =>
+                                  handleReviewUpload(event.target.files)
+                                }
+                                disabled={reviewUploading}
+                              />
 
                               {reviewImages.length > 0 ? (
                                 <div className="mt-3 grid grid-cols-3 gap-2">
@@ -3649,43 +4070,217 @@ const UserMap = () => {
                                 </p>
                               ) : null}
                               {filteredSelectedReviews.map((review) => {
-                                const images = normalizeReviewImages(
-                                  review.images,
-                                ).map(
-                                  (item) => resolveBackendUrl(item) || item,
-                                );
+                                const reviewImgs = normalizeReviewImages(review.images);
+                                const isOwnReviewFull = currentUserId != null && review.user_id === currentUserId;
+                                const stars = Math.round(Number(review.rating || 0));
+                                const avatarUrl = resolveBackendUrl(review.user_avatar);
+                                const initial = (review.user_name || "N").charAt(0).toUpperCase();
                                 return (
                                   <article
                                     key={`map-review-${review.review_id}`}
                                     className="rounded-xl border border-gray-100 p-3"
                                   >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="text-xs font-semibold text-gray-900">
-                                        {review.user_name || "Người dùng"}
-                                      </div>
-                                      <div className="text-[11px] font-semibold text-amber-700">
-                                        {Number(review.rating || 0).toFixed(0)}{" "}
-                                        sao
+                                    {/* Header: avatar + ten + sao */}
+                                    <div className="flex items-start gap-2">
+                                      {avatarUrl ? (
+                                        <img src={avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover shrink-0" />
+                                      ) : (
+                                        <div className="h-7 w-7 rounded-full bg-teal-100 flex items-center justify-center text-[11px] font-bold text-teal-700 shrink-0">
+                                          {initial}
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="text-xs font-semibold text-gray-900 truncate">
+                                            {review.user_name || "Người dùng"}
+                                          </span>
+                                          {isOwnReviewFull ? (
+                                            <button
+                                              type="button"
+                                              className="text-[10px] text-red-500 hover:text-red-700 hover:underline shrink-0"
+                                              onClick={() => handleDeleteReview(review.review_id)}
+                                            >
+                                              Xóa
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                          <span className="text-[11px] text-amber-500">
+                                            {"★".repeat(stars)}{"☆".repeat(5 - stars)}
+                                          </span>
+                                          <span className="text-[10px] text-gray-400">
+                                            {formatDateTimeVi(review.created_at)}
+                                          </span>
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="mt-1 text-[11px] text-gray-400">
-                                      {formatDateTimeVi(review.created_at)}
-                                    </div>
+
+                                    {/* Noi dung */}
                                     <p className="mt-2 text-xs text-gray-600">
-                                      {review.comment?.trim() ||
-                                        "Người dùng không để lại bình luận."}
+                                      {review.comment?.trim() || "Không có bình luận."}
                                     </p>
-                                    {images.length > 0 ? (
-                                      <div className="mt-2 grid grid-cols-3 gap-2">
-                                        {images.slice(0, 3).map((img, idx) => (
-                                          <img
-                                            key={`map-review-img-${review.review_id}-${idx}`}
-                                            src={img}
-                                            alt={`review-${idx + 1}`}
-                                            className="h-16 w-full rounded-lg object-cover"
-                                          />
-                                        ))}
+
+                                    {/* Anh review */}
+                                    {reviewImgs.length > 0 ? (
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        <AntImage.PreviewGroup>
+                                          {reviewImgs.slice(0, 3).map((img) => (
+                                            <AntImage
+                                              key={img}
+                                              src={resolveBackendUrl(img) ?? undefined}
+                                              alt="review"
+                                              width={64}
+                                              height={64}
+                                              className="rounded-lg object-cover"
+                                              style={{ borderRadius: 8 }}
+                                            />
+                                          ))}
+                                        </AntImage.PreviewGroup>
                                       </div>
+                                    ) : null}
+
+                                    {/* Reply cua owner */}
+                                    {review.reply_content ? (
+                                      <div className="mt-2 rounded-lg bg-teal-50 border border-teal-100 px-3 py-2">
+                                        <p className="text-[10px] font-semibold text-teal-700">
+                                          Phản hồi của chủ quán
+                                        </p>
+                                        <p className="text-[11px] text-gray-600 mt-0.5">
+                                          {review.reply_content}
+                                        </p>
+                                        {(() => {
+                                          const replyImgs = normalizeReviewImages(review.reply_images);
+                                          return replyImgs.length > 0 ? (
+                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                              <AntImage.PreviewGroup>
+                                                {replyImgs.slice(0, 3).map((img) => (
+                                                  <AntImage
+                                                    key={img}
+                                                    src={resolveBackendUrl(img) ?? undefined}
+                                                    alt=""
+                                                    width={48}
+                                                    height={48}
+                                                    className="rounded-md object-cover"
+                                                    style={{ borderRadius: 6 }}
+                                                  />
+                                                ))}
+                                              </AntImage.PreviewGroup>
+                                            </div>
+                                          ) : null;
+                                        })()}
+                                        {review.reply_created_at ? (
+                                          <p className="text-[9px] text-gray-400 mt-1">
+                                            {formatDateTimeVi(review.reply_created_at)}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+
+                                    {/* Reply cua user */}
+                                    {review.user_reply_content ? (
+                                      <div className="mt-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                                        <p className="text-[10px] font-semibold text-gray-600">
+                                          Phản hồi của bạn
+                                        </p>
+                                        <p className="text-[11px] text-gray-600 mt-0.5">
+                                          {review.user_reply_content}
+                                        </p>
+                                        {(() => {
+                                          const userReplyImgs = normalizeReviewImages(review.user_reply_images);
+                                          return userReplyImgs.length > 0 ? (
+                                            <div className="mt-1.5 flex flex-wrap gap-1">
+                                              <AntImage.PreviewGroup>
+                                                {userReplyImgs.slice(0, 3).map((img) => (
+                                                  <AntImage
+                                                    key={img}
+                                                    src={resolveBackendUrl(img) ?? undefined}
+                                                    alt=""
+                                                    width={48}
+                                                    height={48}
+                                                    className="rounded-md object-cover"
+                                                    style={{ borderRadius: 6 }}
+                                                  />
+                                                ))}
+                                              </AntImage.PreviewGroup>
+                                            </div>
+                                          ) : null;
+                                        })()}
+                                      </div>
+                                    ) : null}
+
+                                    {/* Nut tra loi */}
+                                    {review.reply_content && !review.user_reply_content && currentUserId ? (
+                                      replyingTo === review.review_id ? (
+                                        <div className="mt-2 space-y-1.5">
+                                          <div className="flex gap-1.5">
+                                            <input
+                                              type="text"
+                                              value={replyText}
+                                              onChange={(e) => setReplyText(e.target.value)}
+                                              placeholder="Nhập phản hồi..."
+                                              className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-teal-500 focus:outline-none"
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") handleReplySubmit(review.review_id);
+                                                if (e.key === "Escape") { setReplyingTo(null); setReplyText(""); setReplyImages([]); }
+                                              }}
+                                            />
+                                            <label
+                                              htmlFor={`reply-img-full-${review.review_id}`}
+                                              className="flex items-center justify-center rounded-lg border border-gray-200 px-2 py-1 text-[10px] text-gray-500 hover:bg-gray-50 cursor-pointer"
+                                            >
+                                              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" />
+                                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                                <path d="M21 15l-5-5L5 21" />
+                                              </svg>
+                                            </label>
+                                            <input
+                                              id={`reply-img-full-${review.review_id}`}
+                                              type="file"
+                                              accept="image/*"
+                                              multiple
+                                              className="hidden"
+                                              onChange={(e) => handleReplyImageUpload(e.target.files)}
+                                              disabled={replyUploading}
+                                            />
+                                            <button
+                                              type="button"
+                                              className="rounded-lg bg-teal-600 px-2 py-1 text-[10px] text-white hover:bg-teal-700 disabled:opacity-50"
+                                              onClick={() => handleReplySubmit(review.review_id)}
+                                              disabled={replySubmitting || !replyText.trim()}
+                                            >
+                                              Gửi
+                                            </button>
+                                          </div>
+                                          {replyImages.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {replyImages.map((img) => (
+                                                <div key={img} className="relative h-12 w-12 overflow-hidden rounded-lg border border-gray-100">
+                                                  <img src={resolveBackendUrl(img) ?? undefined} alt="" className="h-full w-full object-cover" />
+                                                  <button
+                                                    type="button"
+                                                    className="absolute right-0.5 top-0.5 rounded-full bg-white/90 px-1 text-[8px] text-red-600"
+                                                    onClick={() => setReplyImages((prev) => prev.filter((i) => i !== img))}
+                                                  >
+                                                    x
+                                                  </button>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : null}
+                                          {replyUploading ? (
+                                            <p className="text-[10px] text-gray-400">Đang tải ảnh...</p>
+                                          ) : null}
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className="mt-1.5 text-[10px] text-teal-600 hover:text-teal-800 hover:underline"
+                                          onClick={() => setReplyingTo(review.review_id)}
+                                        >
+                                          Phản hồi
+                                        </button>
+                                      )
                                     ) : null}
                                   </article>
                                 );
@@ -4061,6 +4656,10 @@ const UserMap = () => {
                                     lat: entry.lat,
                                     lng: entry.lng,
                                   }),
+                                dblclick: () => {
+                                  setSelected(null);
+                                  setPanelOpen(false);
+                                },
                               }}
                             >
                               <Popup autoPan={false}>
@@ -4075,11 +4674,10 @@ const UserMap = () => {
                                     <button
                                       type="button"
                                       className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
-                                      onClick={() =>
-                                        navigate(
-                                          `/user/location/${entry.item.location_id}`,
-                                        )
-                                      }
+                                      onClick={() => {
+                                        setSelected(entry.item);
+                                        setPanelOpen(true);
+                                      }}
                                     >
                                       Xem chi tiết
                                     </button>
