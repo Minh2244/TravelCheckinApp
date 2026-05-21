@@ -215,6 +215,9 @@ const SessionGuard = () => {
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
+    sessionStorage.removeItem("userMapNearbyRadius");
+    sessionStorage.removeItem("userMapCustomRadiusInput");
+    sessionStorage.removeItem("userMapRoute");
     window.location.href = "/login";
   };
 

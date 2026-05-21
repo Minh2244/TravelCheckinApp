@@ -129,6 +129,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
+    sessionStorage.removeItem("userMapNearbyRadius");
+    sessionStorage.removeItem("userMapCustomRadiusInput");
+    sessionStorage.removeItem("userMapRoute");
     message.success("Đã đăng xuất!");
     navigate("/login", { replace: true });
   };

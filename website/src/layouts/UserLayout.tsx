@@ -415,6 +415,9 @@ const UserLayout = ({
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
+    sessionStorage.removeItem("userMapNearbyRadius");
+    sessionStorage.removeItem("userMapCustomRadiusInput");
+    sessionStorage.removeItem("userMapRoute");
     navigate("/login", { replace: true });
   };
 

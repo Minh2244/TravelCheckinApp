@@ -25,6 +25,9 @@ const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");
+    sessionStorage.removeItem("userMapNearbyRadius");
+    sessionStorage.removeItem("userMapCustomRadiusInput");
+    sessionStorage.removeItem("userMapRoute");
     return <Navigate to="/login" replace />;
   }
 

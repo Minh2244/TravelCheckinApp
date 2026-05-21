@@ -1,5 +1,6 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Circle,
   MapContainer,
   Marker,
   Polyline,
@@ -14,10 +15,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import { useLocations } from "../../hooks/useLocations";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
-import {
-  getLocationPinIcon,
-  getPinIconByKind,
-} from "../../utils/leafletPinIcons";
+import { getPinIconByKind } from "../../utils/leafletPinIcons";
 import userApi from "../../api/userApi";
 import locationApi from "../../api/locationApi";
 import geoApi from "../../api/geoApi";
@@ -189,31 +187,38 @@ const MapViewTracker = ({
 }: {
   onChange: (view: MapView) => void;
 }) => {
-  const map = useMapEvents({
-    moveend: () => {
+  const map = useMap();
+  const rafRef = useRef(0);
+
+  const emitView = useCallback(() => {
+    if (rafRef.current) return;
+    // Vi sao: cap nhat ref khi keo map de khong bi snap-back khi render.
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = 0;
       const center = map.getCenter();
       onChange({
         center: { lat: center.lat, lng: center.lng },
         zoom: map.getZoom(),
       });
-    },
-    zoomend: () => {
-      const center = map.getCenter();
-      onChange({
-        center: { lat: center.lat, lng: center.lng },
-        zoom: map.getZoom(),
-      });
-    },
+    });
+  }, [map, onChange]);
+
+  useMapEvents({
+    move: emitView,
+    zoom: emitView,
+    moveend: emitView,
+    zoomend: emitView,
   });
 
   useEffect(() => {
-    const center = map.getCenter();
-    onChange({
-      center: { lat: center.lat, lng: center.lng },
-      zoom: map.getZoom(),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    emitView();
+    return () => {
+      if (rafRef.current) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+    };
+  }, [emitView]);
 
   return null;
 };
@@ -226,8 +231,11 @@ const MapRecenter = ({
   trigger: number;
 }) => {
   const map = useMap();
+  const lastTrigger = useRef(-1);
   useEffect(() => {
     if (!target) return;
+    if (trigger === lastTrigger.current) return;
+    lastTrigger.current = trigger;
     map.setView([target.lat, target.lng], map.getZoom(), { animate: true });
   }, [map, target, trigger]);
   return null;
@@ -244,6 +252,23 @@ const MapMaxZoomSync = () => {
       map.setZoom(MAX_ZOOM, { animate: false });
     }
   }, [map]);
+  return null;
+};
+
+// Theo doi user keo map de chan fitBounds tu dong
+const MapInteractionWatcher = ({
+  interactingRef,
+}: {
+  interactingRef: React.MutableRefObject<boolean>;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    const handler = () => { interactingRef.current = true; };
+    map.on("dragstart", handler);
+    return () => {
+      map.off("dragstart", handler);
+    };
+  }, [map, interactingRef]);
   return null;
 };
 
@@ -339,7 +364,72 @@ const CompassMarker = ({
   );
 };
 
-// Mũi tên hướng đi trên polyline route
+// Icon anh tron cho dia diem — co cache de tranh tao lai moi render
+const circleIconCache = new Map<string, L.DivIcon>();
+const getCircleImageIcon = (
+  imageUrl: string | null | undefined,
+  isSelected: boolean,
+  size = 48,
+) => {
+  const cacheKey = `${imageUrl ?? ""}|${isSelected}|${size}`;
+  const cached = circleIconCache.get(cacheKey);
+  if (cached) return cached;
+
+  const borderStyle = isSelected
+    ? `3px solid #14b8a6`
+    : `2px solid white`;
+  const shadow = isSelected
+    ? `0 0 0 2px #14b8a6, 0 2px 8px rgba(0,0,0,0.3)`
+    : `0 2px 6px rgba(0,0,0,0.25)`;
+
+  let icon: L.DivIcon;
+  if (imageUrl) {
+    icon = L.divIcon({
+      className: "",
+      html: `<div style="
+        width: ${size}px; height: ${size}px;
+        border-radius: 50%;
+        border: ${borderStyle};
+        box-shadow: ${shadow};
+        overflow: hidden;
+        background: #e2e8f0;
+      ">
+        <img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;pointer-events:none;" onerror="this.parentElement.style.background='linear-gradient(135deg,#99f6e4,#a7f3d0)';this.style.display='none';" />
+      </div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -(size / 2 + 4)],
+    });
+  } else {
+    // Fallback: gradient + SVG pin
+    icon = L.divIcon({
+      className: "",
+      html: `<div style="
+        width: ${size}px; height: ${size}px;
+        border-radius: 50%;
+        border: ${borderStyle};
+        box-shadow: ${shadow};
+        background: linear-gradient(135deg, #99f6e4, #a7f3d0);
+        display: flex; align-items: center; justify-content: center;
+      ">
+        <svg width="${size * 0.5}" height="${size * 0.5}" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" stroke-width="2">
+          <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
+          <circle cx="12" cy="10" r="2.5" />
+        </svg>
+      </div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -(size / 2 + 4)],
+    });
+  }
+
+  // Gioi han cache 200 icon de tranh memory leak
+  if (circleIconCache.size > 200) circleIconCache.clear();
+  circleIconCache.set(cacheKey, icon);
+  return icon;
+};
+
+// Mũi tên hướng đi trên polyline route — chỉ 1 mũi tên ở đầu (vị trí user)
 const RouteArrowDecorator = ({
   routeLines,
 }: {
@@ -351,22 +441,24 @@ const RouteArrowDecorator = ({
     if (!routeLines || routeLines.length === 0) return;
 
     const decorators: L.PolylineDecorator[] = [];
-    const colors = ["#2563eb", "#10b981", "#f97316"];
 
-    routeLines.forEach((line, index) => {
+    routeLines.forEach((line) => {
+      if (line.length < 2) return;
       const latLngs = line.map((p) => L.latLng(p.lat, p.lng));
       const decorator = L.polylineDecorator(latLngs, {
         patterns: [
           {
-            offset: "5%",
-            repeat: "15%",
+            offset: 16,
+            repeat: 0,
             symbol: L.Symbol.arrowHead({
-              pixelSize: 12,
-              polygon: false,
+              pixelSize: 18,
+              polygon: true,
               pathOptions: {
-                color: colors[index] || colors[0],
+                color: "#ffffff",
+                fillColor: "#2563eb",
+                fillOpacity: 1,
                 weight: 2,
-                opacity: 0.8,
+                opacity: 1,
               },
             }),
           },
@@ -382,6 +474,86 @@ const RouteArrowDecorator = ({
   }, [map, routeLines]);
 
   return null;
+};
+
+// Tinh goc bearing tu diem A den diem B (do, 0=Bac, 90=Dong)
+const calculateBearing = (from: LatLng, to: LatLng): number => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const lat1 = toRad(from.lat);
+  const lat2 = toRad(to.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+};
+
+// Mui ten bearing: vong tron 50m + mui ten huong den dich
+const BearingArrow = ({
+  position,
+  destination,
+  heading,
+}: {
+  position: LatLng;
+  destination: LatLng;
+  heading: number | null;
+}) => {
+  const bearing = useMemo(
+    () => calculateBearing(position, destination),
+    [position, destination],
+  );
+
+  // Tren mobile: bearing - heading (quay theo thiet bi)
+  // Tren laptop: bearing co dinh (khong co gyroscope)
+  const arrowRotation = heading != null ? bearing - heading : bearing;
+
+  const arrowIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: "",
+        html: `<div style="
+          width: 44px; height: 44px;
+          background: #2563eb;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 8px rgba(37,99,235,0.4);
+          display: flex; align-items: center; justify-content: center;
+          transform: rotate(${arrowRotation}deg);
+        ">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L4 20L12 16L20 20L12 2Z" />
+          </svg>
+        </div>`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+      }),
+    [arrowRotation],
+  );
+
+  return (
+    <>
+      {/* Vong tron ban kinh 50m */}
+      <Circle
+        center={[position.lat, position.lng]}
+        radius={50}
+        pathOptions={{
+          color: "#2563eb",
+          fillColor: "#2563eb",
+          fillOpacity: 0.08,
+          weight: 2,
+          dashArray: "6 4",
+        }}
+      />
+      {/* Mui ten bearing */}
+      <Marker
+        position={[position.lat, position.lng]}
+        icon={arrowIcon}
+        zIndexOffset={1100}
+      />
+    </>
+  );
 };
 
 const haversineMeters = (a: LatLng, b: LatLng): number => {
@@ -687,6 +859,7 @@ const UserMap = () => {
   const [myPosition, setMyPosition] = useState<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [checkingIn, setCheckingIn] = useState(false);
   const [freeAction, setFreeAction] = useState<"checkin" | "save" | null>(null);
@@ -705,6 +878,9 @@ const UserMap = () => {
   } | null>(null);
   const [fullMapOpen, setFullMapOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const panelOpenRef = useRef(false);
+  // Dong bo ref voi state de handleSelectLocation dung ref, khong re-create callback
+  useEffect(() => { panelOpenRef.current = panelOpen; }, [panelOpen]);
   const [routeOnlyMode, setRouteOnlyMode] = useState(false);
   const [routeOnlyDestination, setRouteOnlyDestination] =
     useState<FocusRouteState | null>(null);
@@ -730,7 +906,25 @@ const UserMap = () => {
   const [selectedServicesError, setSelectedServicesError] = useState<
     string | null
   >(null);
-  const [nearbyRadius, setNearbyRadius] = useState(1000);
+  const [nearbyRadius, setNearbyRadius] = useState<number>(() => {
+    const saved = sessionStorage.getItem("userMapNearbyRadius");
+    return saved ? Number(saved) : 0;
+  });
+  // Gia tri input ban dau: lay tu sessionStorage neu co
+  const [customRadiusInput, setCustomRadiusInput] = useState<string>(() => {
+    const saved = sessionStorage.getItem("userMapCustomRadiusInput");
+    return saved ?? "";
+  });
+
+  // Luu nearbyRadius + customRadiusInput vao sessionStorage de giu khi reload
+  useEffect(() => {
+    sessionStorage.setItem("userMapNearbyRadius", String(nearbyRadius));
+  }, [nearbyRadius]);
+
+  useEffect(() => {
+    sessionStorage.setItem("userMapCustomRadiusInput", customRadiusInput);
+  }, [customRadiusInput]);
+
   const [nearbyCategory, setNearbyCategory] = useState<
     "all" | "food" | "tourist" | "hotel" | "mine"
   >("all");
@@ -755,6 +949,7 @@ const UserMap = () => {
 
   const mainMapRef = useRef<L.Map | null>(null);
   const fullMapRef = useRef<L.Map | null>(null);
+  const userInteractingRef = useRef(false);
 
   const knownProvincesNorm = useMemo(() => {
     const set = new Set<string>();
@@ -861,14 +1056,20 @@ const UserMap = () => {
       setMyPosition(initialPos);
       flyTo(initialPos);
       setLocationDenied(false);
+    };
 
+    const startWatchPosition = () => {
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
           const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setMyPosition(newPos);
+          setGpsAccuracy(pos.coords.accuracy);
+          setLocationDenied(false);
         },
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+        () => {
+          // Loi tam thinh (mat tin hieu) → khong set locationDenied
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
       );
     };
 
@@ -884,14 +1085,18 @@ const UserMap = () => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const initialPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setGpsAccuracy(pos.coords.accuracy);
         startWatch(initialPos);
-        requestOrientation();
       },
       () => {
         setLocationDenied(true);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
     );
+
+    // Luon bat watchPosition de GPS co the phuc hoi sau khi duoc cap quyen
+    startWatchPosition();
+    requestOrientation();
 
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
@@ -928,6 +1133,8 @@ const UserMap = () => {
       })
       .filter((entry) => {
         if (!myPosition) return true;
+        // nearbyRadius === 0: khong loc ban kinh, hien tat ca
+        if (nearbyRadius === 0) return true;
         return entry.distance != null && entry.distance <= nearbyRadius;
       })
       .sort((a, b) => {
@@ -939,10 +1146,10 @@ const UserMap = () => {
     return filtered;
   }, [locationMarkers, matchesNearbyCategory, myPosition, nearbyRadius]);
 
-  const [mapView, setMapView] = useState<MapView>(() => ({
+  const mapViewRef = useRef<MapView>({
     center: DEFAULT_CENTER,
     zoom: 13,
-  }));
+  });
 
   const findNearbyLocation = useCallback(
     (coords: LatLng): Location | null => {
@@ -970,8 +1177,25 @@ const UserMap = () => {
     return "driving";
   }, [routeMode]);
 
+  // Chi fitBounds 1 lan khi route moi duoc tao (routeEnabled + routeTarget thay doi)
+  // Khong phu thuoc routeLines de tranh bi keo lai khi GPS cap nhat
+  const routeFitDoneRef = useRef(false);
+  useEffect(() => {
+    if (!routeEnabled || !routeTarget) {
+      routeFitDoneRef.current = false;
+      return;
+    }
+    routeFitDoneRef.current = false; // reset khi co route moi
+  }, [routeEnabled, routeTarget]);
+
   useEffect(() => {
     if (!routeEnabled || !routeLines || routeLines.length === 0) return;
+    if (routeFitDoneRef.current) return; // da fitBounds roi, khong lam nua
+    if (userInteractingRef.current) {
+      userInteractingRef.current = false;
+      routeFitDoneRef.current = true; // user keo tay -> skip lan nay va luon
+      return;
+    }
     const map = (fullMapOpen ? fullMapRef.current : mainMapRef.current) ?? null;
     if (!map) return;
     const primary = routeLines[0] ?? [];
@@ -984,7 +1208,8 @@ const UserMap = () => {
       padding: [40, 40],
       animate: true,
     });
-  }, [fullMapOpen, routeEnabled, routeLines]);
+    routeFitDoneRef.current = true;
+  }, [fullMapOpen, routeEnabled, routeLines, routeTarget]);
 
   const tileOptions = useMemo<BaseLayerConfig[]>(
     () => [
@@ -1036,14 +1261,14 @@ const UserMap = () => {
   }, [reviewFilter, selectedReviews]);
 
   const handleMapViewChange = useCallback((view: MapView) => {
-    setMapView((prev) => {
-      const EPS = 1e-7;
-      const same =
-        prev.zoom === view.zoom &&
-        Math.abs(prev.center.lat - view.center.lat) <= EPS &&
-        Math.abs(prev.center.lng - view.center.lng) <= EPS;
-      return same ? prev : view;
-    });
+    const prev = mapViewRef.current;
+    const EPS = 1e-7;
+    const same =
+      prev.zoom === view.zoom &&
+      Math.abs(prev.center.lat - view.center.lat) <= EPS &&
+      Math.abs(prev.center.lng - view.center.lng) <= EPS;
+    if (same) return;
+    mapViewRef.current = view;
   }, []);
 
   useEffect(() => {
@@ -1190,43 +1415,14 @@ const UserMap = () => {
     };
   }, [fullMapOpen]);
 
-  const handleLocate = () => {
-    if (!navigator.geolocation) {
-      setFeedback({
-        type: "error",
-        message: "Trình duyệt không hỗ trợ định vị.",
-      });
-      return;
-    }
-
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        setMyPosition({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
-      },
-      (err) => {
-        setLocating(false);
-        setFeedback({
-          type: "error",
-          message: err?.message || "Không lấy được vị trí của bạn.",
-        });
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 },
-    );
-  };
-
   const recenterTo = useCallback(
     (target: LatLng | null, zoomOverride?: number) => {
       if (!target) return;
-      setMapView((prev) => ({
-        ...prev,
+      const nextZoom = zoomOverride ?? mapViewRef.current.zoom;
+      mapViewRef.current = {
         center: target,
-        zoom: zoomOverride ?? prev.zoom,
-      }));
+        zoom: nextZoom,
+      };
       setRecenterTarget(target);
       setRecenterSignal((prev) => prev + 1);
     },
@@ -1240,16 +1436,23 @@ const UserMap = () => {
     [recenterTo],
   );
 
+  // Luu vi tri bat dau route bang ref de khong re-fetch khi GPS cap nhat
+  const routeFromRef = useRef<LatLng | null>(null);
   useEffect(() => {
     if (!routeEnabled || !myPosition || !routeTarget) {
       setRouteLines(null);
       setRouteInfo(null);
+      routeFromRef.current = null;
       return;
+    }
+    // Chi luu vi tri bat dau lan dau khi route moi
+    if (!routeFromRef.current) {
+      routeFromRef.current = myPosition;
     }
 
     const controller = new AbortController();
     const run = async () => {
-      const from = myPosition;
+      const from = routeFromRef.current!;
       const to = routeTarget;
       const fallbackDistance = haversineMeters(from, to);
 
@@ -1291,7 +1494,7 @@ const UserMap = () => {
 
     run();
     return () => controller.abort();
-  }, [myPosition, routeEnabled, routeProfile, routeTarget]);
+  }, [routeEnabled, routeProfile, routeTarget]);
 
   // Lưu route vào sessionStorage để persist khi reload
   useEffect(() => {
@@ -1328,6 +1531,9 @@ const UserMap = () => {
   }, []);
 
   const clearRoute = useCallback(() => {
+    // Danh dau user dang tuong tac de chan recenter khi layout thay doi
+    userInteractingRef.current = true;
+    setRecenterTarget(null);
     setRouteEnabled(false);
     setRouteTarget(null);
     setRouteLines(null);
@@ -1381,6 +1587,8 @@ const UserMap = () => {
   const ensureRouteToTarget = useCallback(
     async (target: LatLng | null) => {
       if (!target) return;
+      userInteractingRef.current = false; // Cho phep fitBounds khi user yeu cau route moi
+      routeFitDoneRef.current = false; // reset de fitBounds chay lai
       setFeedback(null);
       // UX: khi bấm "Đường đi" thì tự tắt panel chi tiết bên trái.
       setPanelOpen(false);
@@ -1414,14 +1622,16 @@ const UserMap = () => {
     (location: Location, coords?: LatLng) => {
       setSelected(location);
       setPanelOpen(true);
-      if (coords) {
-        flyTo(coords);
-      } else {
-        const lat = normalizeNumber(location.latitude);
-        const lng = normalizeNumber(location.longitude);
-        if (lat == null || lng == null) return;
-        const target = { lat, lng };
-        flyTo(target);
+      // Chi flyTo khi panel chua mo (lan dau chon), khong keo map khi da mo panel
+      if (!panelOpenRef.current) {
+        if (coords) {
+          flyTo(coords);
+        } else {
+          const lat = normalizeNumber(location.latitude);
+          const lng = normalizeNumber(location.longitude);
+          if (lat == null || lng == null) return;
+          flyTo({ lat, lng });
+        }
       }
     },
     [flyTo],
@@ -1834,6 +2044,7 @@ const UserMap = () => {
   useEffect(() => {
     if (!focusCheckin || focusCheckin.lat == null || focusCheckin.lng == null)
       return;
+    if (userInteractingRef.current) return;
     const target = { lat: focusCheckin.lat, lng: focusCheckin.lng } as LatLng;
     setRecenterTarget(target);
     setRecenterSignal((v) => v + 1);
@@ -1867,7 +2078,7 @@ const UserMap = () => {
       return;
     }
     if (reviewRating < 1 || reviewRating > 5) {
-      setFeedback({ type: "error", message: "Rating không hợp lệ." });
+      setFeedback({ type: "error", message: "Đánh giá không hợp lệ." });
       return;
     }
 
@@ -1938,6 +2149,9 @@ const UserMap = () => {
             {searchError ? (
               <p className="mt-2 text-xs text-red-500">{searchError}</p>
             ) : null}
+            {!searchLoading && !searchError && searchQuery.trim() && searchResults.length === 0 && !searchSelected ? (
+              <p className="mt-2 text-xs text-gray-400">Không tìm thấy kết quả.</p>
+            ) : null}
             {searchResults.length > 0 ? (
               <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
                 {searchResults.map((result) => (
@@ -1962,8 +2176,11 @@ const UserMap = () => {
           <div className="mt-4 h-[520px] overflow-hidden rounded-2xl border border-gray-100">
             {!fullMapOpen ? (
               <MapContainer
-                center={[mapView.center.lat, mapView.center.lng]}
-                zoom={mapView.zoom}
+                center={[
+                  mapViewRef.current.center.lat,
+                  mapViewRef.current.center.lng,
+                ]}
+                zoom={mapViewRef.current.zoom}
                 className="h-full w-full"
                 maxBounds={VIETNAM_BOUNDS}
                 maxBoundsViscosity={1}
@@ -1978,6 +2195,7 @@ const UserMap = () => {
                 <MapRefBinder mapRef={mainMapRef} />
                 <MapViewTracker onChange={handleMapViewChange} />
                 <MapRecenter target={recenterTarget} trigger={recenterSignal} />
+                <MapInteractionWatcher interactingRef={userInteractingRef} />
                 <MapResizeObserver />
                 <MapClickHandler onPick={handleMapPick} />
 
@@ -1986,14 +2204,16 @@ const UserMap = () => {
                     position={[myPosition.lat, myPosition.lng]}
                     icon={myPositionIcon}
                   >
-                    <Popup>Vị trí của bạn</Popup>
+                    <Popup autoPan={false}>Vị trí của bạn</Popup>
                   </Marker>
                 ) : null}
 
-                <CompassMarker
-                  position={myPosition ?? { lat: 0, lng: 0 }}
-                  heading={deviceHeading}
-                />
+                {myPosition ? (
+                  <CompassMarker
+                    position={myPosition}
+                    heading={deviceHeading}
+                  />
+                ) : null}
 
                 <RouteArrowDecorator routeLines={routeLines} />
 
@@ -2003,12 +2223,9 @@ const UserMap = () => {
                       routeOnlyDestination.lat,
                       routeOnlyDestination.lng,
                     ]}
-                    icon={getLocationPinIcon({
-                      isUserCreated: false,
-                      isSelected: true,
-                    })}
+                    icon={getCircleImageIcon(null, true)}
                   >
-                    <Popup>
+                    <Popup autoPan={false}>
                       <div className="space-y-2">
                         <p className="font-semibold text-gray-900">
                           {routeOnlyDestination.location_name ?? "Địa điểm"}
@@ -2052,7 +2269,7 @@ const UserMap = () => {
                     position={[searchMarker.lat, searchMarker.lng]}
                     icon={searchIcon}
                   >
-                    <Popup>
+                    <Popup autoPan={false}>
                       <div className="space-y-2">
                         <p className="font-semibold text-gray-900">
                           {searchSelected?.display_name ?? "Địa điểm tìm kiếm"}
@@ -2089,12 +2306,9 @@ const UserMap = () => {
                 focusCheckin.lng != null ? (
                   <Marker
                     position={[focusCheckin.lat, focusCheckin.lng]}
-                    icon={getLocationPinIcon({
-                      isUserCreated: Number(focusCheckin.is_user_created) === 1,
-                      isSelected: true,
-                    })}
+                    icon={getCircleImageIcon(null, true)}
                   >
-                    <Popup>
+                    <Popup autoPan={false}>
                       <div className="space-y-2">
                         <div>
                           <p className="text-xs text-gray-500">
@@ -2143,30 +2357,54 @@ const UserMap = () => {
 
                 {routeLines
                   ? routeLines.map((line, index) => (
-                      <Polyline
-                        key={`route-${index}`}
-                        positions={line.map((p) => [p.lat, p.lng])}
-                        pathOptions={{
-                          color:
-                            index === 0
-                              ? "#2563eb"
-                              : index === 1
-                                ? "#10b981"
-                                : "#f97316",
-                          weight: index === 0 ? 5 : 3,
-                          opacity: index === 0 ? 0.9 : 0.7,
-                          dashArray: index === 0 ? undefined : "6 8",
-                        }}
-                      />
+                      <React.Fragment key={`route-${index}`}>
+                        {/* Vien trang de route noi bat */}
+                        {index === 0 && (
+                          <Polyline
+                            positions={line.map((p) => [p.lat, p.lng])}
+                            pathOptions={{
+                              color: "#ffffff",
+                              weight: 9,
+                              opacity: 0.8,
+                            }}
+                          />
+                        )}
+                        {/* Duong route chinh */}
+                        <Polyline
+                          positions={line.map((p) => [p.lat, p.lng])}
+                          pathOptions={{
+                            color:
+                              index === 0
+                                ? "#2563eb"
+                                : index === 1
+                                  ? "#10b981"
+                                  : "#f97316",
+                            weight: index === 0 ? 5 : 3,
+                            opacity: index === 0 ? 0.95 : 0.7,
+                            dashArray: index === 0 ? undefined : "6 8",
+                            lineCap: "round",
+                            lineJoin: "round",
+                          }}
+                        />
+                      </React.Fragment>
                     ))
                   : null}
+
+                {/* Mui ten bearing khi co route */}
+                {routeEnabled && routeTarget && myPosition ? (
+                  <BearingArrow
+                    position={myPosition}
+                    destination={routeTarget}
+                    heading={deviceHeading}
+                  />
+                ) : null}
 
                 {pickedPoint ? (
                   <Marker
                     position={[pickedPoint.lat, pickedPoint.lng]}
                     icon={pickedIcon}
                   >
-                    <Popup>
+                    <Popup autoPan={false}>
                       <div className="space-y-2">
                         <div>
                           <p className="text-xs text-gray-500">Tọa độ</p>
@@ -2223,12 +2461,21 @@ const UserMap = () => {
                             type="button"
                             className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white hover:bg-teal-700"
                             onClick={() => handleFreeAction("checkin")}
-                            disabled={freeAction === "checkin"}
+                            disabled={freeAction === "checkin" || !isPickedOpenNow}
                           >
                             {freeAction === "checkin"
                               ? "Đang check-in..."
                               : "Check-in tại đây"}
                           </button>
+                          {!isPickedOpenNow ? (
+                            <div className="text-[11px] text-amber-700">
+                              Đang đóng cửa
+                              {pickedOpenClose
+                                ? ` (${pickedOpenClose.open} - ${pickedOpenClose.close})`
+                                : ""}
+                              .
+                            </div>
+                          ) : null}
                           <button
                             type="button"
                             className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
@@ -2246,14 +2493,16 @@ const UserMap = () => {
                 ) : null}
 
                 {!routeOnlyMode
-                  ? locationMarkers.map((entry) => {
+                  ? filteredLocations.map((entry) => {
                       const isSelected =
                         selected?.location_id === entry.item.location_id;
-                      const isUserCreated = isOwnerCreatedLocation(entry.item);
-                      const icon = getLocationPinIcon({
-                        isUserCreated,
-                        isSelected,
-                      });
+                      const icon = getCircleImageIcon(
+                            resolveBackendUrl(
+                              entry.item.first_image ??
+                                (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
+                            ),
+                            isSelected,
+                          );
                       const isRoutingToThis =
                         routeEnabled &&
                         routeTarget &&
@@ -2275,7 +2524,7 @@ const UserMap = () => {
                               }),
                           }}
                         >
-                          <Popup>
+                          <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
                             <div className="space-y-2">
                               <p className="font-semibold text-gray-900">
                                 {entry.item.location_name}
@@ -2373,6 +2622,7 @@ const UserMap = () => {
               >
                 Ô tô
               </button>
+              <span className="text-[10px] text-gray-400" title="OSRM chỉ hỗ trợ profile driving">(ước tính)</span>
               <button
                 type="button"
                 className={`rounded-full px-3 py-1 text-xs ${
@@ -2442,7 +2692,7 @@ const UserMap = () => {
             {(
               [
                 { key: "locations" as const, label: "Địa điểm" },
-                { key: "checkin" as const, label: "Check-in" },
+                { key: "checkin" as const, label: "Khám phá" },
                 { key: "reviews" as const, label: "Đánh giá" },
               ] as const
             ).map((tab) => (
@@ -2463,6 +2713,71 @@ const UserMap = () => {
 
           {/* Tab content */}
           <div className="flex-1 overflow-auto p-5">
+            {/* Banner GPS */}
+            {locationDenied ? (
+              <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 flex items-center gap-2">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500 shrink-0">
+                  <path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-amber-700">Cần bật định vị</p>
+                  <p className="text-[10px] text-amber-600">Bán kính, chỉ đường và check-in cần GPS.</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-amber-600 transition"
+                  onClick={() => {
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        setMyPosition(newPos);
+                        flyTo(newPos);
+                        setLocationDenied(false);
+                      },
+                      () => {},
+                      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+                    );
+                  }}
+                >
+                  Thử lại
+                </button>
+              </div>
+            ) : null}
+
+            {/* Canh bao GPS khong chinh xac */}
+            {!locationDenied && myPosition && gpsAccuracy != null && gpsAccuracy > 500 ? (
+              <div className="mb-3 rounded-xl bg-blue-50 border border-blue-200 px-3 py-2.5 flex items-center gap-2">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 shrink-0">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-blue-700">GPS không chính xác</p>
+                  <p className="text-[10px] text-blue-600">Sai số ~{Math.round(gpsAccuracy)}m. Dùng tìm kiếm để chọn vị trí chính xác.</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg bg-blue-500 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-blue-600 transition"
+                  onClick={() => {
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        setMyPosition(newPos);
+                        setGpsAccuracy(pos.coords.accuracy);
+                        flyTo(newPos);
+                        setLocationDenied(false);
+                      },
+                      () => {},
+                      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+                    );
+                  }}
+                >
+                  Thử lại
+                </button>
+              </div>
+            ) : null}
+
             {/* Tab: Địa điểm */}
             {sidebarTab === "locations" && !routeOnlyMode ? (
               <div className="space-y-4">
@@ -2498,12 +2813,15 @@ const UserMap = () => {
                     <button
                       key={radius}
                       type="button"
+                      disabled={!myPosition}
                       className={`rounded-full px-3 py-1 text-xs ${
-                        nearbyRadius === radius
+                        !myPosition
+                          ? "border border-gray-100 text-gray-300 cursor-not-allowed"
+                          : nearbyRadius === radius
                           ? "bg-teal-600 text-white"
                           : "border border-gray-200 text-gray-600 hover:bg-gray-50"
                       }`}
-                      onClick={() => setNearbyRadius(radius)}
+                      onClick={() => { setNearbyRadius(radius); setCustomRadiusInput(""); }}
                     >
                       {radius / 1000}km
                     </button>
@@ -2511,14 +2829,21 @@ const UserMap = () => {
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
-                      min={1}
+                      min={0.1}
                       max={100}
+                      step={0.1}
                       placeholder="Tự chọn"
+                      value={customRadiusInput}
+                      onChange={(e) => setCustomRadiusInput(e.target.value)}
                       className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 focus:outline-none"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
-                          const val = Number((e.target as HTMLInputElement).value);
-                          if (val > 0) setNearbyRadius(val * 1000);
+                          const val = Number(customRadiusInput);
+                          if (customRadiusInput === "" || val === 0) {
+                            setNearbyRadius(0);
+                          } else if (val >= 0.1) {
+                            setNearbyRadius(Math.round(val * 1000));
+                          }
                         }
                       }}
                     />
@@ -2552,27 +2877,31 @@ const UserMap = () => {
                   ))}
                 </div>
 
-                {/* Danh sach dia diem (gom Gan ban + Tat ca) */}
+                {/* Danh sách địa điểm (gộp Gần bạn + Tất cả) */}
                 {locationDenied ? (
                   <p className="text-xs text-gray-400">
-                    Khong the lay vi tri. Vui long cap quyen dinh vi trong trinh duyet.
+                    Không thể lấy vị trí. Vui lòng cấp quyền định vị trong trình duyệt.
                   </p>
                 ) : !myPosition ? (
-                  <p className="text-xs text-gray-400">Dang lay vi tri...</p>
+                  <p className="text-xs text-gray-400">Đang lấy vị trí...</p>
                 ) : null}
 
                 <div className="border-t border-gray-100 pt-3">
                   <p className="text-xs font-semibold text-gray-700 mb-2">
-                    Dia diem {myPosition ? `(${filteredLocations.length})` : ""}
+                    Địa điểm {myPosition ? `(${filteredLocations.length})` : ""}
                   </p>
                   {loading ? (
-                    <p className="text-xs text-gray-400">Dang tai...</p>
+                    <p className="text-xs text-gray-400">Đang tải...</p>
                   ) : error ? (
                     <p className="text-xs text-red-500">{error}</p>
                   ) : filteredLocations.length === 0 ? (
-                    <p className="text-xs text-gray-400">Khong co dia diem phu hop.</p>
+                    <p className="text-xs text-gray-400">
+                      {nearbyRadius === 0 && myPosition
+                        ? "Hãy chọn bán kính để xem địa điểm."
+                        : "Không có địa điểm phù hợp."}
+                    </p>
                   ) : (
-                    <div className="grid grid-cols-3 gap-2 max-h-[400px] overflow-auto pr-1">
+                    <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-auto pr-1">
                       {filteredLocations.map((entry) => {
                         const item = entry.item;
                         const imageUrl = resolveBackendUrl(
@@ -2580,14 +2909,16 @@ const UserMap = () => {
                             (Array.isArray(item.images) ? item.images[0] : null),
                         );
                         const isSelected = selected?.location_id === item.location_id;
+                        const typeLabel = locationTypeToVi(item.location_type);
+                        const ratingVal = Number(item.rating || 0);
                         return (
                           <button
                             key={item.location_id}
                             type="button"
-                            className={`rounded-xl border overflow-hidden text-left transition ${
+                            className={`user-sub-card card-lift flex flex-col overflow-hidden text-left transition ${
                               isSelected
                                 ? "border-teal-300 bg-teal-50 ring-1 ring-teal-300"
-                                : "border-gray-100 hover:border-gray-200 hover:shadow-sm"
+                                : ""
                             }`}
                             onClick={() => {
                               if (isSelected) {
@@ -2595,11 +2926,10 @@ const UserMap = () => {
                                 setSidebarTab("locations");
                               } else {
                                 handleSelectLocation(item, { lat: entry.lat, lng: entry.lng });
-                                setSidebarTab("checkin");
                               }
                             }}
                           >
-                            <div className="aspect-[5/3] bg-gray-100 overflow-hidden">
+                            <div className="relative w-full aspect-[5/3] overflow-hidden">
                               {imageUrl ? (
                                 <img
                                   src={imageUrl}
@@ -2607,18 +2937,28 @@ const UserMap = () => {
                                   className="h-full w-full object-cover"
                                 />
                               ) : (
-                                <div className="h-full w-full bg-gradient-to-br from-gray-100 to-gray-200" />
+                                <div className="h-full w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex items-center justify-center">
+                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
+                                    <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
+                                    <circle cx="12" cy="10" r="2.5" />
+                                  </svg>
+                                </div>
                               )}
+                              <span className="absolute top-1 left-1 rounded bg-black/50 backdrop-blur-sm px-1 py-0.5 text-[8px] font-bold text-white">
+                                {typeLabel}
+                              </span>
                             </div>
-                            <div className="p-2">
-                              <p className="text-[11px] font-semibold text-gray-900 line-clamp-1">
+                            <div className="flex flex-1 flex-col px-2 py-1.5">
+                              <h4 className="text-[11px] font-bold text-slate-800 line-clamp-1">
                                 {item.location_name}
-                              </p>
-                              <p className="text-[10px] text-gray-500 line-clamp-1">
-                                {entry.distance != null
-                                  ? formatDistance(entry.distance)
-                                  : item.address}
-                              </p>
+                              </h4>
+                              <div className="mt-0.5 flex items-center gap-1">
+                                <span className="text-[9px] text-amber-500">★</span>
+                                <span className="text-[9px] text-gray-600">{ratingVal.toFixed(1)}</span>
+                                <span className="text-[9px] text-gray-400 line-clamp-1 flex-1">
+                                  {entry.distance != null ? formatDistance(entry.distance) : ""}
+                                </span>
+                              </div>
                             </div>
                           </button>
                         );
@@ -2654,11 +2994,19 @@ const UserMap = () => {
                     />
                     <button
                       type="button"
-                      className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm text-white hover:bg-teal-700"
+                      className={`w-full rounded-xl px-4 py-3 text-sm ${
+                        !myPosition
+                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                          : "bg-teal-600 text-white hover:bg-teal-700"
+                      }`}
                       onClick={handleCheckin}
-                      disabled={checkingIn || !isSelectedOpenNow}
+                      disabled={checkingIn || !isSelectedOpenNow || !myPosition}
                     >
-                      {checkingIn ? "Đang gửi check-in..." : "Check-in ngay"}
+                      {!myPosition
+                        ? "Cần bật định vị"
+                        : checkingIn
+                          ? "Đang gửi check-in..."
+                          : "Check-in ngay"}
                     </button>
                     {!isSelectedOpenNow ? (
                       <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -2671,11 +3019,19 @@ const UserMap = () => {
                     ) : null}
                     <button
                       type="button"
-                      className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 hover:bg-emerald-100"
+                      className={`w-full rounded-xl border px-4 py-3 text-sm ${
+                        !myPosition
+                          ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      }`}
                       onClick={handleNavigateToSelected}
-                      disabled={locating}
+                      disabled={locating || !myPosition}
                     >
-                      {locating ? "Đang định vị..." : "Đường đi"}
+                      {!myPosition
+                        ? "Cần bật định vị"
+                        : locating
+                          ? "Đang định vị..."
+                          : "Đường đi"}
                     </button>
                     <button
                       type="button"
@@ -2734,7 +3090,7 @@ const UserMap = () => {
 
                     {/* Form đánh giá */}
                     <div className="border-t border-gray-100 pt-3">
-                      <label className="text-xs text-gray-500">Rating</label>
+                      <label className="text-xs text-gray-500">Đánh giá</label>
                       <div className="mt-2">
                         <StarRatingPicker
                           value={reviewRating}
@@ -2857,11 +3213,19 @@ const UserMap = () => {
             <div className="flex flex-wrap items-center justify-end gap-2 border-b border-gray-100 px-5 py-3">
               <button
                 type="button"
-                className="rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-600 hover:bg-emerald-100"
+                className={`rounded-full border px-4 py-2 text-xs ${
+                  !myPosition
+                    ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                    : "border-emerald-100 bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                }`}
                 onClick={handleCheckin}
-                disabled={!selected || checkingIn || !isSelectedOpenNow}
+                disabled={!selected || checkingIn || !isSelectedOpenNow || !myPosition}
               >
-                {checkingIn ? "Đang check-in..." : "Check-in nhanh"}
+                {!myPosition
+                  ? "Cần bật định vị"
+                  : checkingIn
+                    ? "Đang check-in..."
+                    : "Check-in nhanh"}
               </button>
               <button
                 type="button"
@@ -2879,6 +3243,35 @@ const UserMap = () => {
                 Đóng
               </button>
             </div>
+            {locationDenied ? (
+              <div className="mx-5 mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 flex items-center gap-2">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-500 shrink-0">
+                  <path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-amber-700">Cần bật định vị</p>
+                  <p className="text-[10px] text-amber-600">Bán kính, chỉ đường và check-in cần GPS.</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-amber-600 transition"
+                  onClick={() => {
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        setMyPosition(newPos);
+                        flyTo(newPos);
+                        setLocationDenied(false);
+                      },
+                      () => {},
+                      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+                    );
+                  }}
+                >
+                  Thử lại
+                </button>
+              </div>
+            ) : null}
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="border-b border-gray-100 px-5 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2909,6 +3302,9 @@ const UserMap = () => {
                 ) : null}
                 {searchError ? (
                   <p className="mt-2 text-xs text-red-500">{searchError}</p>
+                ) : null}
+                {!searchLoading && !searchError && searchQuery.trim() && searchResults.length === 0 && !searchSelected ? (
+                  <p className="mt-2 text-xs text-gray-400">Không tìm thấy kết quả.</p>
                 ) : null}
                 {searchResults.length > 0 ? (
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
@@ -2990,13 +3386,21 @@ const UserMap = () => {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                          className={`rounded-full border px-3 py-1 text-xs ${
+                            !myPosition
+                              ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          }`}
                           onClick={() =>
                             void ensureRouteToTarget(selectedCoords)
                           }
-                          disabled={locating || !selectedCoords}
+                          disabled={locating || !selectedCoords || !myPosition}
                         >
-                          {locating ? "Đang định vị..." : "Đường đi"}
+                          {!myPosition
+                            ? "Cần bật định vị"
+                            : locating
+                              ? "Đang định vị..."
+                              : "Đường đi"}
                         </button>
                         <button
                           type="button"
@@ -3309,8 +3713,11 @@ const UserMap = () => {
 
                 <div className="min-w-0 flex-1">
                   <MapContainer
-                    center={[mapView.center.lat, mapView.center.lng]}
-                    zoom={mapView.zoom}
+                    center={[
+                      mapViewRef.current.center.lat,
+                      mapViewRef.current.center.lng,
+                    ]}
+                    zoom={mapViewRef.current.zoom}
                     className="h-full w-full"
                     maxBounds={VIETNAM_BOUNDS}
                     maxBoundsViscosity={1}
@@ -3328,6 +3735,7 @@ const UserMap = () => {
                       target={recenterTarget}
                       trigger={recenterSignal}
                     />
+                    <MapInteractionWatcher interactingRef={userInteractingRef} />
                     <MapResizeObserver />
                     <MapClickHandler onPick={handleMapPick} />
 
@@ -3336,14 +3744,16 @@ const UserMap = () => {
                         position={[myPosition.lat, myPosition.lng]}
                         icon={myPositionIcon}
                       >
-                        <Popup>Vị trí của bạn</Popup>
+                        <Popup autoPan={false}>Vị trí của bạn</Popup>
                       </Marker>
                     ) : null}
 
-                    <CompassMarker
-                      position={myPosition ?? { lat: 0, lng: 0 }}
-                      heading={deviceHeading}
-                    />
+                    {myPosition ? (
+                      <CompassMarker
+                        position={myPosition}
+                        heading={deviceHeading}
+                      />
+                    ) : null}
 
                     <RouteArrowDecorator routeLines={routeLines} />
 
@@ -3352,7 +3762,7 @@ const UserMap = () => {
                         position={[searchMarker.lat, searchMarker.lng]}
                         icon={searchIcon}
                       >
-                        <Popup>
+                        <Popup autoPan={false}>
                           <div className="space-y-2">
                             <p className="font-semibold text-gray-900">
                               {searchSelected?.display_name ??
@@ -3390,13 +3800,9 @@ const UserMap = () => {
                     focusCheckin.lng != null ? (
                       <Marker
                         position={[focusCheckin.lat, focusCheckin.lng]}
-                        icon={getLocationPinIcon({
-                          isUserCreated:
-                            Number(focusCheckin.is_user_created) === 1,
-                          isSelected: true,
-                        })}
+                        icon={getCircleImageIcon(null, true)}
                       >
-                        <Popup>
+                        <Popup autoPan={false}>
                           <div className="space-y-2">
                             <div>
                               <p className="text-xs text-gray-500">
@@ -3443,30 +3849,52 @@ const UserMap = () => {
 
                     {routeLines
                       ? routeLines.map((line, index) => (
-                          <Polyline
-                            key={`route-full-${index}`}
-                            positions={line.map((p) => [p.lat, p.lng])}
-                            pathOptions={{
-                              color:
-                                index === 0
-                                  ? "#2563eb"
-                                  : index === 1
-                                    ? "#10b981"
-                                    : "#f97316",
-                              weight: index === 0 ? 5 : 3,
-                              opacity: index === 0 ? 0.9 : 0.7,
-                              dashArray: index === 0 ? undefined : "6 8",
-                            }}
-                          />
+                          <React.Fragment key={`route-full-${index}`}>
+                            {index === 0 && (
+                              <Polyline
+                                positions={line.map((p) => [p.lat, p.lng])}
+                                pathOptions={{
+                                  color: "#ffffff",
+                                  weight: 9,
+                                  opacity: 0.8,
+                                }}
+                              />
+                            )}
+                            <Polyline
+                              positions={line.map((p) => [p.lat, p.lng])}
+                              pathOptions={{
+                                color:
+                                  index === 0
+                                    ? "#2563eb"
+                                    : index === 1
+                                      ? "#10b981"
+                                      : "#f97316",
+                                weight: index === 0 ? 5 : 3,
+                                opacity: index === 0 ? 0.95 : 0.7,
+                                dashArray: index === 0 ? undefined : "6 8",
+                                lineCap: "round",
+                                lineJoin: "round",
+                              }}
+                            />
+                          </React.Fragment>
                         ))
                       : null}
+
+                    {/* Mui ten bearing khi co route */}
+                    {routeEnabled && routeTarget && myPosition ? (
+                      <BearingArrow
+                        position={myPosition}
+                        destination={routeTarget}
+                        heading={deviceHeading}
+                      />
+                    ) : null}
 
                     {pickedPoint ? (
                       <Marker
                         position={[pickedPoint.lat, pickedPoint.lng]}
                         icon={pickedIcon}
                       >
-                        <Popup>
+                        <Popup autoPan={false}>
                           <div className="space-y-2">
                             <div>
                               <p className="text-xs text-gray-500">Tọa độ</p>
@@ -3562,12 +3990,9 @@ const UserMap = () => {
                           routeOnlyDestination.lat,
                           routeOnlyDestination.lng,
                         ]}
-                        icon={getLocationPinIcon({
-                          isUserCreated: false,
-                          isSelected: true,
-                        })}
+                        icon={getCircleImageIcon(null, true)}
                       >
-                        <Popup>
+                        <Popup autoPan={false}>
                           <div className="space-y-2">
                             <p className="font-semibold text-gray-900">
                               {routeOnlyDestination.location_name ?? "Địa điểm"}
@@ -3607,16 +4032,16 @@ const UserMap = () => {
                     ) : null}
 
                     {!routeOnlyMode
-                      ? locationMarkers.map((entry) => {
+                      ? filteredLocations.map((entry) => {
                           const isSelected =
                             selected?.location_id === entry.item.location_id;
-                          const isUserCreated = isOwnerCreatedLocation(
-                            entry.item,
-                          );
-                          const icon = getLocationPinIcon({
-                            isUserCreated,
-                            isSelected,
-                          });
+                          const icon = getCircleImageIcon(
+                                resolveBackendUrl(
+                                  entry.item.first_image ??
+                                    (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
+                                ),
+                                isSelected,
+                              );
                           const isRoutingToThis =
                             routeEnabled &&
                             routeTarget &&
@@ -3638,7 +4063,7 @@ const UserMap = () => {
                                   }),
                               }}
                             >
-                              <Popup>
+                              <Popup autoPan={false}>
                                 <div className="space-y-2">
                                   <p className="font-semibold text-gray-900">
                                     {entry.item.location_name}
@@ -3720,6 +4145,7 @@ const UserMap = () => {
                     >
                       Ô tô
                     </button>
+                    <span className="text-[10px] text-gray-400" title="OSRM chỉ hỗ trợ profile driving">(ước tính)</span>
                     <button
                       type="button"
                       className={`rounded-full px-3 py-1 text-xs ${
