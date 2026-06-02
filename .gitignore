@@ -1,0 +1,31 @@
+# package.json
+# package-lock.json
+package.json
+package-lock.json
+
+# Chặn thư mục thư viện gốc (Cái cục nặng nhất nãy giờ)
+node_modules/
+
+# Chặn file log hoặc lịch sử chạy cục bộ của Claude (Tránh lộ token)
+.claude/
+.claude_session/
+
+# Chặn thư mục Playwright MCP
+.playwright-mcp/
+
+# Chặn folder lịch sử/feedback của Claude
+claude/
+
+# Chặn .superpowers
+.superpowers/
+
+# Chặn file secrets
+.env
+.env.local
+
+# Chặn thư mục Kilo & Claude memory
+.kilo/
+.remember/
+
+# Chặn file CLAUDE.md
+CLAUDE.md
