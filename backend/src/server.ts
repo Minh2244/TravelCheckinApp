@@ -22,6 +22,8 @@ import geoRoutes from "./routes/geoRoutes";
 import { addSseClient, publishToUser, removeSseClient } from "./utils/realtime";
 import { ensureBookingTableReservationsSchema } from "./utils/tableReservations";
 import { initSocketHub } from "./utils/socketHub";
+import { ensureLocationChatSchema } from "./utils/locationChat";
+import locationChatRoutes from "./routes/locationChatRoutes";
 
 dotenv.config();
 
@@ -55,6 +57,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/push", pushRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/chat", locationChatRoutes);
 app.use("/api/sos", sosRoutes);
 app.use("/api/owner", ownerRoutes);
 app.use("/api/geo", geoRoutes);
@@ -145,6 +148,7 @@ const startServer = async () => {
   try {
     await checkDatabaseConnection();
     await ensureBookingTableReservationsSchema();
+    await ensureLocationChatSchema();
 
     // Thiết lập mặc định 60 phút hủy trễ check-in cho khách sạn/resort
     try {
@@ -318,8 +322,8 @@ const startServer = async () => {
 
         const ids = Array.isArray(rows)
           ? (rows as any[])
-              .map((r) => Number((r as any).booking_id))
-              .filter((x) => Number.isFinite(x))
+            .map((r) => Number((r as any).booking_id))
+            .filter((x) => Number.isFinite(x))
           : [];
 
         if (ids.length > 0) {
@@ -484,8 +488,13 @@ const startServer = async () => {
 
             await pool.query(
               `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by)
-               VALUES (?, ?, 'specific_user', ?, NULL)`,
-              [title, body, userId],
+               SELECT ?, ?, 'specific_user', ?, NULL
+               FROM (SELECT 1) AS tmp
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM push_notifications
+                 WHERE target_user_id = ? AND body LIKE ?
+               )`,
+              [title, body, userId, userId, `%${tag}%`],
             );
 
             try {
@@ -564,6 +573,7 @@ const startServer = async () => {
         origin: "*",
       },
     });
+    app.set("socketio", io);
     initSocketHub(io);
 
     httpServer.listen(PORT, () => {

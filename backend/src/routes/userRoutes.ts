@@ -22,19 +22,14 @@ import {
   getVouchersByLocation,
   getUserDiaries,
   createUserDiary,
-  getUserItineraries,
-  createUserItinerary,
+  deleteUserDiary,
   reportLocationIssue,
   getLeaderboard,
   getBookingReminders,
   getUserNotifications,
   markUserNotificationsReadAll,
   deleteUserNotificationsAll,
-  createGroupCode,
   createUserLocationInvite,
-  joinGroupByCode,
-  leaveGroupSession,
-  getGroupStatus,
   deleteUserCreatedLocation,
   uploadUserReviewImage,
   createUserReview,
@@ -90,8 +85,7 @@ router.post("/vouchers/:id/claim", claimVoucher);
 router.get("/tickets", getUserTouristTickets);
 router.get("/diary", getUserDiaries);
 router.post("/diary", createUserDiary);
-router.get("/itineraries", getUserItineraries);
-router.post("/itineraries", createUserItinerary);
+router.delete("/diary/:id", deleteUserDiary);
 
 router.post("/reviews/upload", upload.single("image"), uploadUserReviewImage);
 router.post("/reviews", createUserReview);
@@ -106,9 +100,5 @@ router.post("/notifications/read-all", markUserNotificationsReadAll);
 router.post("/notifications/delete-all", deleteUserNotificationsAll);
 router.post("/notifications/location-invite", createUserLocationInvite);
 
-router.post("/groups/create", createGroupCode);
-router.post("/groups/join", joinGroupByCode);
-router.post("/groups/leave", leaveGroupSession);
-router.get("/groups", getGroupStatus);
 
 export default router;

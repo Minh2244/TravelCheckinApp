@@ -482,6 +482,7 @@ export default function FrontOfficeTouristTicketsHistory() {
       title="Lịch sử vé"
       locationName={locationName}
       locationImageUrl={locationImageUrl}
+      locationId={locationId}
       onBack={() => navigate(frontOfficePath, { replace: true })}
     >
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>

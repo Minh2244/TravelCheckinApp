@@ -2,11 +2,8 @@ import axiosClient from "./axiosClient";
 import type {
   CheckinItem,
   DiaryItem,
-  GroupCheckinItem,
-  GroupInfo,
   LeaderboardRow,
   BookingReminderItem,
-  ItineraryItem,
   PaginationMeta,
   UserLoginHistoryItem,
   UserNotificationItem,
@@ -35,18 +32,10 @@ interface ApiMetaResponse<T> extends ApiResponse<T> {
 
 export interface CreateDiaryPayload {
   location_id?: number | null;
+  location_name?: string | null;
   mood?: "happy" | "excited" | "neutral" | "sad" | "angry" | "tired";
   notes?: string | null;
   images?: string[] | null;
-}
-
-export interface CreateItineraryPayload {
-  name: string;
-  description?: string | null;
-  locations?: Array<Record<string, unknown>> | null;
-  total_distance_km?: number | null;
-  estimated_time_hours?: number | null;
-  is_ai_recommended?: boolean;
 }
 
 export interface CreateCheckinPayload {
@@ -58,12 +47,12 @@ export interface CreateCheckinPayload {
   location_name?: string | null;
   location_address?: string | null;
   location_type?:
-    | "hotel"
-    | "restaurant"
-    | "tourist"
-    | "cafe"
-    | "resort"
-    | "other";
+  | "hotel"
+  | "restaurant"
+  | "tourist"
+  | "cafe"
+  | "resort"
+  | "other";
 }
 
 export interface UpdateProfilePayload {
@@ -73,6 +62,8 @@ export interface UpdateProfilePayload {
   skip_avatar?: boolean;
   background_url?: string | null;
   skip_background?: boolean;
+  address?: string | null;
+  username?: string | null;
 }
 
 export interface UpdateMyCreatedLocationPayload {
@@ -258,15 +249,10 @@ const userApi = {
     );
     return response.data;
   },
-  getItineraries: async () => {
-    const response =
-      await axiosClient.get<ApiResponse<ItineraryItem[]>>("/user/itineraries");
-    return response.data;
-  },
-  createItinerary: async (payload: CreateItineraryPayload) => {
-    const response = await axiosClient.post<
-      ApiResponse<{ itinerary_id: number }>
-    >("/user/itineraries", payload);
+  deleteDiary: async (id: number) => {
+    const response = await axiosClient.delete<ApiResponse<null>>(
+      `/user/diary/${id}`,
+    );
     return response.data;
   },
   uploadReviewImage: async (file: File) => {
@@ -327,33 +313,7 @@ const userApi = {
     >("/user/tickets", { params });
     return response.data;
   },
-  createGroup: async () => {
-    const response = await axiosClient.post<ApiResponse<GroupInfo>>(
-      "/user/groups/create",
-    );
-    return response.data;
-  },
-  joinGroup: async (code: string) => {
-    const response = await axiosClient.post<ApiResponse<GroupInfo>>(
-      "/user/groups/join",
-      { code },
-    );
-    return response.data;
-  },
-  leaveGroup: async () => {
-    const response =
-      await axiosClient.post<ApiResponse<null>>("/user/groups/leave");
-    return response.data;
-  },
-  getGroupStatus: async () => {
-    const response = await axiosClient.get<
-      ApiResponse<{
-        group: GroupInfo;
-        recent_checkins: GroupCheckinItem[];
-      } | null>
-    >("/user/groups");
-    return response.data;
-  },
+
 };
 
 export default userApi;

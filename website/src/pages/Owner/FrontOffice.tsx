@@ -468,6 +468,7 @@ const FrontOffice = () => {
       subtitle={subtitle}
       locationName={locationName}
       locationImageUrl={locationImageUrl}
+      locationId={locationId}
       onBack={() => {
         if (role === "employee") {
           logoutToLogin();

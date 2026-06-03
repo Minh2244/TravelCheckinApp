@@ -46,6 +46,8 @@ const ownerApi = {
     phone?: string | null;
     avatar_url?: string | null;
     skip_avatar?: boolean;
+    address?: string | null;
+    username?: string | null;
   }) => {
     const res = await axiosClient.put("/owner/profile", payload);
     return res.data;

@@ -4,13 +4,6 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { saveUploadedImageToUploads } from "../utils/uploadImage";
 import { messaging } from "../config/firebase";
 import { isWithinOpeningHours } from "../utils/openingHours";
-import {
-  createGroup,
-  joinGroup,
-  leaveGroup,
-  getGroupByUser,
-  serializeGroup,
-} from "../services/groupService";
 
 interface AuthenticatedRequest extends Request {
   userId?: number;
@@ -18,19 +11,12 @@ interface AuthenticatedRequest extends Request {
 
 interface CreateDiaryBody {
   location_id?: number | null;
+  location_name?: string | null;
   mood?: "happy" | "excited" | "neutral" | "sad" | "angry" | "tired";
   notes?: string | null;
   images?: string[] | null;
 }
 
-interface CreateItineraryBody {
-  name: string;
-  description?: string | null;
-  locations?: Array<Record<string, unknown>> | null;
-  total_distance_km?: number | null;
-  estimated_time_hours?: number | null;
-  is_ai_recommended?: boolean;
-}
 
 interface CreateCheckinBody {
   location_id?: number;
@@ -41,12 +27,12 @@ interface CreateCheckinBody {
   location_name?: string | null;
   location_address?: string | null;
   location_type?:
-    | "hotel"
-    | "restaurant"
-    | "tourist"
-    | "cafe"
-    | "resort"
-    | "other";
+  | "hotel"
+  | "restaurant"
+  | "tourist"
+  | "cafe"
+  | "resort"
+  | "other";
 }
 
 interface CreateReportBody {
@@ -63,19 +49,16 @@ interface CreateReviewBody {
   images?: string[] | null;
 }
 
-interface JoinGroupBody {
-  code?: string | null;
-}
 
 interface UpdateUserCreatedLocationBody {
   location_name?: string;
   location_type?:
-    | "hotel"
-    | "restaurant"
-    | "tourist"
-    | "cafe"
-    | "resort"
-    | "other";
+  | "hotel"
+  | "restaurant"
+  | "tourist"
+  | "cafe"
+  | "resort"
+  | "other";
   description?: string | null;
   address?: string;
   province?: string | null;
@@ -100,6 +83,8 @@ interface UpdateProfileBody {
   skip_avatar?: boolean;
   background_url?: string | null;
   skip_background?: boolean;
+  address?: string | null;
+  username?: string | null;
 }
 
 // Vì sao: đảm bảo chỉ lấy dữ liệu của user đã đăng nhập
@@ -256,8 +241,7 @@ export const deleteUserCheckin = async (
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT c.checkin_id, c.location_id,
-              l.owner_id AS location_owner_id,
-              l.is_user_created
+              l.owner_id AS location_owner_id
        FROM checkins c
        JOIN locations l ON l.location_id = c.location_id
        WHERE c.checkin_id = ? AND c.user_id = ?
@@ -275,12 +259,11 @@ export const deleteUserCheckin = async (
     const row = rows[0] as {
       location_id: number | string;
       location_owner_id?: number | string | null;
-      is_user_created?: number | boolean | null;
     };
     const locationId = Number(row.location_id);
     const locationOwnerId =
       row.location_owner_id == null ? null : Number(row.location_owner_id);
-    const isUserCreated = Number(row.is_user_created) === 1;
+    const isUserCreated = locationOwnerId === userId;
 
     await pool.query<ResultSetHeader>(
       `DELETE FROM checkins WHERE checkin_id = ? AND user_id = ?`,
@@ -411,9 +394,9 @@ export const createUserCheckin = async (
 
       const row = locationRows[0] as
         | {
-            latitude: number | string | null;
-            longitude: number | string | null;
-          }
+          latitude: number | string | null;
+          longitude: number | string | null;
+        }
         | undefined;
       if (row) {
         const lat2 = row.latitude == null ? null : Number(row.latitude);
@@ -463,9 +446,9 @@ export const createUserCheckin = async (
         );
         const row = locationRows[0] as
           | {
-              latitude: number | string | null;
-              longitude: number | string | null;
-            }
+            latitude: number | string | null;
+            longitude: number | string | null;
+          }
           | undefined;
         if (row) {
           const lat2 = row.latitude == null ? null : Number(row.latitude);
@@ -706,8 +689,8 @@ export const createUserCheckin = async (
       const a =
         Math.sin(dLat / 2) ** 2 +
         Math.cos(toRad(lat)) *
-          Math.cos(toRad(locationCoords.latitude)) *
-          Math.sin(dLng / 2) ** 2;
+        Math.cos(toRad(locationCoords.latitude)) *
+        Math.sin(dLng / 2) ** 2;
       const distanceM = 2 * R * Math.asin(Math.sqrt(a));
 
       const MAX_DISTANCE_METERS = 500;
@@ -1288,8 +1271,8 @@ export const createUserReview = async (
     const newRating =
       newTotal > 0
         ? Math.round(
-            ((currentRating * totalReviews + halfStep) / newTotal) * 10,
-          ) / 10
+          ((currentRating * totalReviews + halfStep) / newTotal) * 10,
+        ) / 10
         : halfStep;
 
     await pool.query<ResultSetHeader>(
@@ -1921,7 +1904,7 @@ export const getUserProfile = async (
 
     const queries: Array<{ sql: string; params: Array<number> }> = [
       {
-        sql: `SELECT user_id, email, phone, full_name,
+        sql: `SELECT user_id, email, phone, full_name, address, username,
                      avatar_url, avatar_path, avatar_source,
                      background_url, background_path, background_source,
                      role, status, created_at, updated_at
@@ -1931,7 +1914,6 @@ export const getUserProfile = async (
         params: [userId],
       },
       {
-        // Backward-compatible fallback (DB chưa có cột background_*).
         sql: `SELECT user_id, email, phone, full_name,
                      avatar_url, avatar_path, avatar_source,
                      role, status, created_at, updated_at
@@ -1968,21 +1950,23 @@ export const getUserProfile = async (
 
     const row = rows[0] as
       | {
-          user_id: number;
-          email: string | null;
-          phone: string | null;
-          full_name: string;
-          avatar_url: string | null;
-          avatar_path: string | null;
-          avatar_source: "upload" | "url" | null;
-          background_url?: string | null;
-          background_path?: string | null;
-          background_source?: "upload" | "url" | null;
-          role: string;
-          status: string;
-          created_at: string;
-          updated_at: string;
-        }
+        user_id: number;
+        email: string | null;
+        phone: string | null;
+        full_name: string;
+        address?: string | null;
+        username?: string | null;
+        avatar_url: string | null;
+        avatar_path: string | null;
+        avatar_source: "upload" | "url" | null;
+        background_url?: string | null;
+        background_path?: string | null;
+        background_source?: "upload" | "url" | null;
+        role: string;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }
       | undefined;
 
     if (!row) {
@@ -2012,6 +1996,55 @@ export const getUserProfile = async (
       effectiveBackgroundUrl = bgUrl;
     }
 
+    // --- Bắt đầu tính toán Stats động cho User ---
+    const [[{ total_orders }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total_orders FROM bookings WHERE user_id = ? AND status != 'cancelled'`,
+      [userId]
+    );
+
+    const [[{ total_spending }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(SUM(p.amount), 0) AS total_spending
+       FROM payments p
+       INNER JOIN bookings b ON p.booking_id = b.booking_id
+       WHERE b.user_id = ? AND p.status = 'completed'`,
+      [userId]
+    );
+
+    const [[{ latest_order_date }]] = await pool.query<RowDataPacket[]>(
+      `SELECT MAX(created_at) AS latest_order_date FROM bookings WHERE user_id = ? AND status != 'cancelled'`,
+      [userId]
+    );
+
+    const [favRows] = await pool.query<RowDataPacket[]>(
+      `SELECT b.location_id, l.location_name, COUNT(b.booking_id) AS visit_count,
+              COALESCE(SUM(p.amount), 0) AS total_spent, MAX(b.created_at) AS latest_visit,
+              l.first_image
+       FROM bookings b
+       JOIN locations l ON b.location_id = l.location_id
+       LEFT JOIN payments p ON p.booking_id = b.booking_id AND p.status = 'completed'
+       WHERE b.user_id = ? AND b.status = 'completed'
+       GROUP BY b.location_id, l.location_name, l.first_image
+       ORDER BY visit_count DESC, total_spent DESC
+       LIMIT 1`,
+      [userId]
+    );
+    const favorite_location = favRows.length > 0 ? favRows[0] : null;
+
+    const [[{ checkin_count }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS checkin_count FROM checkins WHERE user_id = ?`,
+      [userId]
+    );
+
+    let member_tier = "Newbie 🌟";
+    if (checkin_count > 30) {
+      member_tier = "Diamond Pathfinder 💎";
+    } else if (checkin_count > 15) {
+      member_tier = "Gold Explorer 🥇";
+    } else if (checkin_count >= 5) {
+      member_tier = "Silver Traveler 🥈";
+    }
+    // --- Kết thúc tính toán Stats động ---
+
     res.json({
       success: true,
       data: {
@@ -2020,10 +2053,24 @@ export const getUserProfile = async (
         avatar_source: row.avatar_source || "url",
         ...(hasBackgroundColumns
           ? {
-              background_url: effectiveBackgroundUrl,
-              background_source: bgSource || "url",
-            }
+            background_url: effectiveBackgroundUrl,
+            background_source: bgSource || "url",
+          }
           : {}),
+        stats: {
+          total_orders: Number(total_orders || 0),
+          total_spending: Number(total_spending || 0),
+          latest_order_date: latest_order_date ? new Date(latest_order_date).toISOString() : null,
+          favorite_location: favorite_location ? {
+            location_name: favorite_location.location_name,
+            visit_count: Number(favorite_location.visit_count || 0),
+            total_spent: Number(favorite_location.total_spent || 0),
+            latest_visit: favorite_location.latest_visit ? new Date(favorite_location.latest_visit).toISOString() : null,
+            first_image: favorite_location.first_image,
+          } : null,
+          member_tier,
+          checkin_count: Number(checkin_count || 0),
+        }
       },
     });
   } catch (error) {
@@ -2063,11 +2110,12 @@ export const updateUserProfile = async (
       });
       return;
     }
+    const address = body.address?.trim() ? body.address.trim() : null;
     const skipAvatar = Boolean(body.skip_avatar);
     const avatarUrl = body.avatar_url?.trim() ? body.avatar_url.trim() : null;
 
-    const sets: string[] = ["full_name = ?", "phone = ?", "updated_at = NOW()"];
-    const params: Array<string | null | number> = [fullName, phone];
+    const sets: string[] = ["full_name = ?", "phone = ?", "address = ?", "updated_at = NOW()"];
+    const params: Array<string | null | number> = [fullName, phone, address];
 
     if (!skipAvatar) {
       sets.push(
@@ -2090,29 +2138,30 @@ export const updateUserProfile = async (
       if (skipAvatar) {
         await pool.query<ResultSetHeader>(
           `UPDATE users
-           SET full_name = ?, phone = ?, updated_at = NOW()
+           SET full_name = ?, phone = ?, address = ?, updated_at = NOW()
            WHERE user_id = ?`,
-          [fullName, phone, userId],
+          [fullName, phone, address, userId],
         );
       } else {
         await pool.query<ResultSetHeader>(
           `UPDATE users
            SET full_name = ?,
                phone = ?,
+               address = ?,
                avatar_url = ?,
                avatar_path = NULL,
                avatar_source = 'url',
                avatar_updated_at = NOW(),
                updated_at = NOW()
            WHERE user_id = ?`,
-          [fullName, phone, avatarUrl, userId],
+          [fullName, phone, address, avatarUrl, userId],
         );
       }
     }
 
     const selectQueries: Array<{ sql: string; params: Array<number> }> = [
       {
-        sql: `SELECT user_id, email, phone, full_name,
+        sql: `SELECT user_id, email, phone, full_name, address, username,
                      avatar_url, avatar_path, avatar_source,
                      background_url, background_path, background_source,
                      role, status, created_at, updated_at
@@ -2153,21 +2202,23 @@ export const updateUserProfile = async (
 
     const row = rows[0] as
       | {
-          user_id: number;
-          email: string | null;
-          phone: string | null;
-          full_name: string;
-          avatar_url: string | null;
-          avatar_path: string | null;
-          avatar_source: "upload" | "url" | null;
-          background_url?: string | null;
-          background_path?: string | null;
-          background_source?: "upload" | "url" | null;
-          role: string;
-          status: string;
-          created_at: string;
-          updated_at: string;
-        }
+        user_id: number;
+        email: string | null;
+        phone: string | null;
+        full_name: string;
+        address?: string | null;
+        username?: string | null;
+        avatar_url: string | null;
+        avatar_path: string | null;
+        avatar_source: "upload" | "url" | null;
+        background_url?: string | null;
+        background_path?: string | null;
+        background_source?: "upload" | "url" | null;
+        role: string;
+        status: string;
+        created_at: string;
+        updated_at: string;
+      }
       | undefined;
 
     if (!row) {
@@ -2205,9 +2256,9 @@ export const updateUserProfile = async (
         avatar_source: row.avatar_source || "url",
         ...(hasBackgroundColumns
           ? {
-              background_url: effectiveBackgroundUrl,
-              background_source: bgSource || "url",
-            }
+            background_url: effectiveBackgroundUrl,
+            background_source: bgSource || "url",
+          }
           : {}),
       },
     });
@@ -2724,6 +2775,35 @@ export const createUserDiary = async (
     const mood = body.mood ?? "happy";
     const images = body.images ? JSON.stringify(body.images) : null;
 
+    if (body.location_id) {
+      // Nếu có location_name truyền lên, kiểm tra xem địa điểm này có phải tự check-in (is_user_created = 1) để cho phép đổi tên
+      if (body.location_name && body.location_name.trim().length > 0) {
+        const [loc] = await pool.query<RowDataPacket[]>(
+          `SELECT owner_id FROM locations WHERE location_id = ?`,
+          [body.location_id]
+        );
+        if (loc.length > 0 && Number(loc[0].owner_id) === userId) {
+          await pool.query(
+            `UPDATE locations SET location_name = ? WHERE location_id = ?`,
+            [body.location_name.trim(), body.location_id]
+          );
+        }
+      }
+
+      const [existing] = await pool.query<RowDataPacket[]>(
+        `SELECT diary_id FROM user_diary WHERE user_id = ? AND location_id = ?`,
+        [userId, body.location_id]
+      );
+      if (existing.length > 0) {
+        await pool.query(
+          `UPDATE user_diary SET images = ?, mood = ?, notes = ?, created_at = NOW() WHERE diary_id = ?`,
+          [images, mood, body.notes ?? null, existing[0].diary_id]
+        );
+        res.json({ success: true, message: "Cập nhật nhật ký thành công" });
+        return;
+      }
+    }
+
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO user_diary (user_id, location_id, images, mood, notes)
        VALUES (?, ?, ?, ?, ?)`,
@@ -2739,7 +2819,7 @@ export const createUserDiary = async (
   }
 };
 
-export const getUserItineraries = async (
+export const deleteUserDiary = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
@@ -2747,57 +2827,30 @@ export const getUserItineraries = async (
     const userId = getUserId(req as AuthenticatedRequest, res);
     if (!userId) return;
 
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT * FROM itineraries WHERE user_id = ? ORDER BY created_at DESC`,
-      [userId],
-    );
-
-    res.json({ success: true, data: rows });
-  } catch (error) {
-    console.error("Lỗi lấy lịch trình:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  }
-};
-
-export const createUserItinerary = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = getUserId(req as AuthenticatedRequest, res);
-    if (!userId) return;
-
-    const body = req.body as CreateItineraryBody;
-    if (!body?.name) {
-      res.status(400).json({ success: false, message: "Thiếu tên lịch trình" });
+    const diaryId = Number(req.params.id);
+    if (!Number.isFinite(diaryId)) {
+      res.status(400).json({ success: false, message: "ID nhật ký không hợp lệ" });
       return;
     }
 
-    const locations = body.locations ? JSON.stringify(body.locations) : null;
-
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO itineraries
-       (user_id, name, description, locations, total_distance_km, estimated_time_hours, is_ai_recommended)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        userId,
-        body.name,
-        body.description ?? null,
-        locations,
-        body.total_distance_km ?? 0,
-        body.estimated_time_hours ?? 0,
-        body.is_ai_recommended ? 1 : 0,
-      ],
+      `DELETE FROM user_diary WHERE diary_id = ? AND user_id = ?`,
+      [diaryId, userId]
     );
 
-    res
-      .status(201)
-      .json({ success: true, data: { itinerary_id: result.insertId } });
+    if (result.affectedRows === 0) {
+      res.status(404).json({ success: false, message: "Không tìm thấy nhật ký" });
+      return;
+    }
+
+    res.json({ success: true, message: "Đã xóa nhật ký" });
   } catch (error) {
-    console.error("Lỗi tạo lịch trình:", error);
+    console.error("Lỗi xóa nhật ký:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
   }
 };
+
+
 
 export const reportLocationIssue = async (
   req: Request,
@@ -2816,12 +2869,12 @@ export const reportLocationIssue = async (
 
     const reportType =
       body.report_type &&
-      ["spam", "inappropriate", "fraud", "other"].includes(body.report_type)
+        ["spam", "inappropriate", "fraud", "other"].includes(body.report_type)
         ? body.report_type
         : "other";
     const severity =
       body.severity &&
-      ["low", "medium", "high", "critical"].includes(body.severity)
+        ["low", "medium", "high", "critical"].includes(body.severity)
         ? body.severity
         : "medium";
     const description = String(body.description ?? "").trim();
@@ -2922,15 +2975,17 @@ export const getBookingReminders = async (
          b.check_in_date,
          b.check_out_date,
          b.status,
+         b.notes,
          l.location_name,
          l.address,
-         l.province
+         l.province,
+         l.location_type
        FROM bookings b
        JOIN locations l ON b.location_id = l.location_id
        WHERE b.user_id = ?
-         AND b.status IN ('pending','confirmed')
-         AND b.check_in_date >= (NOW() - INTERVAL 1 DAY)
-         AND b.check_in_date <= (NOW() + INTERVAL 14 DAY)
+         AND b.status IN ('pending','confirmed','cancelled','completed')
+         AND b.check_in_date >= (NOW() - INTERVAL 30 DAY)
+         AND b.check_in_date <= (NOW() + INTERVAL 30 DAY)
        ORDER BY b.check_in_date ASC`,
       [userId],
     );
@@ -3160,115 +3215,3 @@ export const createUserLocationInvite = async (
   }
 };
 
-export const createGroupCode = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = getUserId(req as AuthenticatedRequest, res);
-    if (!userId) return;
-
-    const group = createGroup(userId);
-    res.json({ success: true, data: serializeGroup(group) });
-  } catch (error) {
-    console.error("Lỗi tạo nhóm:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  }
-};
-
-export const joinGroupByCode = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = getUserId(req as AuthenticatedRequest, res);
-    if (!userId) return;
-    const body = req.body as JoinGroupBody;
-    const code = String(body?.code ?? "")
-      .trim()
-      .toUpperCase();
-    if (!code) {
-      res.status(400).json({ success: false, message: "Thiếu mã nhóm" });
-      return;
-    }
-
-    const group = joinGroup(userId, code);
-    if (!group) {
-      res.status(404).json({ success: false, message: "Mã nhóm không hợp lệ" });
-      return;
-    }
-
-    res.json({ success: true, data: serializeGroup(group) });
-  } catch (error) {
-    console.error("Lỗi tham gia nhóm:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  }
-};
-
-export const leaveGroupSession = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = getUserId(req as AuthenticatedRequest, res);
-    if (!userId) return;
-    leaveGroup(userId);
-    res.json({ success: true, message: "Đã rời nhóm" });
-  } catch (error) {
-    console.error("Lỗi rời nhóm:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  }
-};
-
-export const getGroupStatus = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  try {
-    const userId = getUserId(req as AuthenticatedRequest, res);
-    if (!userId) return;
-
-    const group = getGroupByUser(userId);
-    if (!group) {
-      res.json({ success: true, data: null });
-      return;
-    }
-
-    const memberIds = Array.from(group.members.keys());
-    let checkins: RowDataPacket[] = [];
-    if (memberIds.length > 0) {
-      const placeholders = memberIds.map(() => "?").join(",");
-      const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT
-           c.checkin_id,
-           c.user_id,
-           c.checkin_time,
-           l.location_id,
-           l.location_name,
-           l.address,
-           l.province,
-           u.full_name as user_name
-         FROM checkins c
-         JOIN locations l ON c.location_id = l.location_id
-         JOIN users u ON c.user_id = u.user_id
-         WHERE c.user_id IN (${placeholders})
-           AND c.checkin_time >= (NOW() - INTERVAL 24 HOUR)
-         ORDER BY c.checkin_time DESC
-         LIMIT 200`,
-        memberIds,
-      );
-      checkins = rows;
-    }
-
-    res.json({
-      success: true,
-      data: {
-        group: serializeGroup(group),
-        recent_checkins: checkins,
-      },
-    });
-  } catch (error) {
-    console.error("Lỗi lấy nhóm:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  }
-};

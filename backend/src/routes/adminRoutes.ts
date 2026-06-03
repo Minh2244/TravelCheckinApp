@@ -6,6 +6,7 @@ import {
   getAdminProfile,
   updateAdminProfile,
   uploadAdminAvatar,
+  uploadAdminBackground,
   getAdminAvatarCurrent,
   getAdminAvatarHistory,
   getAdminAvatarHistoryFile,
@@ -145,6 +146,7 @@ router.get("/dashboard/stats", getDashboardStats);
 router.get("/profile", getAdminProfile);
 router.put("/profile", updateAdminProfile);
 router.post("/profile/avatar", upload.single("avatar"), uploadAdminAvatar);
+router.post("/profile/background", upload.single("background"), uploadAdminBackground);
 router.get("/profile/avatar/current", getAdminAvatarCurrent);
 router.get("/profile/avatar/history", getAdminAvatarHistory);
 router.get("/profile/avatar/history/:avatarId", getAdminAvatarHistoryFile);

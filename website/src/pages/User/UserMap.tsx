@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image as AntImage } from "antd";
 import {
   Circle,
@@ -72,6 +72,7 @@ type FocusCheckinState = {
   location_owner_id?: number | string | null;
   lat: number | null;
   lng: number | null;
+  first_image?: string | null;
 };
 
 type FocusRouteState = {
@@ -80,6 +81,7 @@ type FocusRouteState = {
   lng: number;
   location_name?: string;
   address?: string;
+  first_image?: string | null;
 };
 
 type Feedback = {
@@ -440,6 +442,32 @@ const getCircleImageIcon = (
   if (circleIconCache.size > 200) circleIconCache.clear();
   circleIconCache.set(cacheKey, icon);
   return icon;
+};
+
+const getDestinationImageUrl = (
+  dest: FocusRouteState | null,
+  sel: Location | null,
+): string | null => {
+  if (!dest) return null;
+  const rawUrl =
+    dest.first_image ||
+    (sel && Number(sel.location_id) === Number(dest.location_id)
+      ? (sel.first_image ?? (Array.isArray(sel.images) ? sel.images[0] : null))
+      : null);
+  return resolveBackendUrl(rawUrl);
+};
+
+const getCheckinImageUrl = (
+  checkin: FocusCheckinState | null,
+  sel: Location | null,
+): string | null => {
+  if (!checkin) return null;
+  const rawUrl =
+    checkin.first_image ||
+    (sel && Number(sel.location_id) === Number(checkin.location_id)
+      ? (sel.first_image ?? (Array.isArray(sel.images) ? sel.images[0] : null))
+      : null);
+  return resolveBackendUrl(rawUrl);
 };
 
 // Mũi tên hướng đi trên polyline route — chỉ 1 mũi tên ở đầu (vị trí user)
@@ -864,6 +892,8 @@ const FREE_CHECKIN_RADIUS_M = 80;
 const UserMap = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
+
+
   const { locations, loading, error, setKeyword, refetch } = useLocations();
   const [selected, setSelected] = useState<Location | null>(null);
   const [pickedPoint, setPickedPoint] = useState<LatLng | null>(null);
@@ -889,6 +919,8 @@ const UserMap = () => {
     durationS?: number;
     source: "osrm" | "haversine";
     alternatives?: number;
+    hasNoRoute?: boolean;
+    error?: string;
   } | null>(null);
   const [fullMapOpen, setFullMapOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -1459,16 +1491,32 @@ const UserMap = () => {
 
   // Luu vi tri bat dau route bang ref de khong re-fetch khi GPS cap nhat
   const routeFromRef = useRef<LatLng | null>(null);
+  const lastTargetRef = useRef<LatLng | null>(null);
+  const lastProfileRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!routeEnabled || !myPosition || !routeTarget) {
       setRouteLines(null);
       setRouteInfo(null);
       routeFromRef.current = null;
+      lastTargetRef.current = null;
+      lastProfileRef.current = null;
       return;
     }
+
+    const targetChanged = !isSamePoint(lastTargetRef.current, routeTarget);
+    const profileChanged = lastProfileRef.current !== routeProfile;
+    if (targetChanged || profileChanged) {
+      routeFromRef.current = null;
+      lastTargetRef.current = routeTarget;
+      lastProfileRef.current = routeProfile;
+    }
+
     // Chi luu vi tri bat dau lan dau khi route moi
     if (!routeFromRef.current) {
       routeFromRef.current = myPosition;
+    } else if (!targetChanged && !profileChanged) {
+      return;
     }
 
     const controller = new AbortController();
@@ -1477,45 +1525,98 @@ const UserMap = () => {
       const to = routeTarget;
       const fallbackDistance = haversineMeters(from, to);
 
-      try {
-        const res = await fetch(
-          `https://router.project-osrm.org/route/v1/${routeProfile}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=true`,
-          { signal: controller.signal },
-        );
-        if (!res.ok) throw new Error("Route error");
-        const data = (await res.json()) as {
-          routes?: Array<{
-            distance: number;
-            duration: number;
-            geometry: { coordinates: Array<[number, number]> };
-          }>;
-        };
+      let lastError: Error | null = null;
+      let success = false;
+      let data: any = null;
+
+      const urls = [
+        `https://router.project-osrm.org/route/v1/${routeProfile}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=true`,
+        `https://routing.openstreetmap.de/routed-${routeProfile === "driving" ? "car" : routeProfile}/route/v1/${routeProfile}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&alternatives=true`
+      ];
+
+      for (const url of urls) {
+        if (controller.signal.aborted) break;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          if (controller.signal.aborted) break;
+          try {
+            const res = await fetch(url, { signal: controller.signal });
+            if (res.status === 400 || res.status === 422) {
+              const errBody = await res.json().catch(() => ({}));
+              if (errBody.code === "NoRoute") {
+                throw new Error("NoRoute");
+              }
+              throw new Error(`HTTP error ${res.status}`);
+            }
+            if (res.status === 429) {
+              throw new Error("Rate limit exceeded");
+            }
+            if (!res.ok) {
+              throw new Error(`HTTP error ${res.status}`);
+            }
+            const json = await res.json();
+            if (json.code && json.code !== "Ok") {
+              if (json.code === "NoRoute") {
+                throw new Error("NoRoute");
+              }
+              throw new Error(`OSRM error: ${json.code}`);
+            }
+            data = json;
+            success = true;
+            break;
+          } catch (err: any) {
+            lastError = err;
+            if (err.name === "AbortError") {
+              break;
+            }
+            if (err.message === "NoRoute") {
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+          }
+        }
+        if (success || (lastError && lastError.message === "NoRoute")) {
+          break;
+        }
+      }
+
+      if (success && data) {
         const routes = data.routes ?? [];
         const route = routes[0];
         if (!route || !route.geometry?.coordinates?.length) {
-          throw new Error("Route empty");
+          setRouteLines([[from, to]]);
+          setRouteInfo({
+            distanceM: fallbackDistance,
+            source: "haversine",
+            hasNoRoute: true,
+          });
+        } else {
+          const lines = routes
+            .slice(0, 3)
+            .map((r: any) =>
+              r.geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),
+            );
+          setRouteLines(lines);
+          setRouteInfo({
+            distanceM: route.distance,
+            durationS: route.duration,
+            source: "osrm",
+            alternatives: routes.length,
+          });
         }
-        const lines = routes
-          .slice(0, 3)
-          .map((r) =>
-            r.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-          );
-        setRouteLines(lines);
-        setRouteInfo({
-          distanceM: route.distance,
-          durationS: route.duration,
-          source: "osrm",
-          alternatives: routes.length,
-        });
-      } catch {
+      } else {
         setRouteLines([[from, to]]);
-        setRouteInfo({ distanceM: fallbackDistance, source: "haversine" });
+        setRouteInfo({
+          distanceM: fallbackDistance,
+          source: "haversine",
+          hasNoRoute: lastError?.message === "NoRoute",
+          error: lastError?.message || "Connection failed",
+        });
       }
     };
 
     run();
     return () => controller.abort();
-  }, [routeEnabled, routeProfile, routeTarget]);
+  }, [routeEnabled, routeProfile, routeTarget, myPosition, isSamePoint]);
 
   // Lưu route vào sessionStorage để persist khi reload
   useEffect(() => {
@@ -1531,23 +1632,51 @@ const UserMap = () => {
     }
   }, [routeEnabled, routeTarget, routeMode]);
 
-  // Khôi phục route từ sessionStorage khi mount
+  const isFirstSelectionRenderRef = useRef(true);
+
+  // Lưu selected location vào sessionStorage để persist khi reload
+  useEffect(() => {
+    if (isFirstSelectionRenderRef.current) {
+      isFirstSelectionRenderRef.current = false;
+      return;
+    }
+    if (selected) {
+      sessionStorage.setItem("userMapSelected", JSON.stringify(selected));
+    } else {
+      sessionStorage.removeItem("userMapSelected");
+    }
+  }, [selected]);
+
+  // Khôi phục route và selected từ sessionStorage khi mount
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("userMapRoute");
-      if (!saved) return;
-      const data = JSON.parse(saved) as {
-        target: LatLng;
-        mode: RouteMode;
-        enabled: boolean;
-      };
-      if (data.enabled && data.target) {
-        setRouteTarget(data.target);
-        setRouteMode(data.mode);
-        setRouteEnabled(true);
+      if (saved) {
+        const data = JSON.parse(saved) as {
+          target: LatLng;
+          mode: RouteMode;
+          enabled: boolean;
+        };
+        if (data.enabled && data.target) {
+          setRouteTarget(data.target);
+          setRouteMode(data.mode);
+          setRouteEnabled(true);
+        }
       }
     } catch {
       sessionStorage.removeItem("userMapRoute");
+    }
+
+    try {
+      const savedSel = sessionStorage.getItem("userMapSelected");
+      if (savedSel) {
+        const loc = JSON.parse(savedSel) as Location;
+        setSelected(loc);
+        setPanelOpen(true);
+        setSidebarTab("detail");
+      }
+    } catch {
+      sessionStorage.removeItem("userMapSelected");
     }
   }, []);
 
@@ -1642,8 +1771,7 @@ const UserMap = () => {
     (location: Location, coords?: LatLng) => {
       // Neu da chon → bo chon (toggle)
       if (selected?.location_id === location.location_id) {
-        setSelected(null);
-        setPanelOpen(false);
+        setPanelOpen((prev) => !prev);
         return;
       }
       setSelected(location);
@@ -1936,7 +2064,7 @@ const UserMap = () => {
           const coords =
             lat == null || lng == null ? null : ({ lat, lng } as LatLng);
           handleSelectLocation(loc, coords ?? undefined);
-          setSearchMarker(coords);
+          setSearchMarker(null);
           setSearchSelected(result);
           setSearchResults([]);
           setSearchQuery(result.display_name);
@@ -2054,25 +2182,80 @@ const UserMap = () => {
 
   useEffect(() => {
     if (!pendingFocusRoute) return;
+    if (locations.length === 0 && loading) return; // Wait for locations to load
+
     const target = { lat: pendingFocusRoute.lat, lng: pendingFocusRoute.lng };
-    // Có thể tìm được location để dùng cho popup/"Xem chi tiết" nếu cần.
     const found = locations.find(
       (x) => Number(x.location_id) === Number(pendingFocusRoute.location_id),
     );
-    setSelected(found ?? null);
+
+    if (selected?.location_id !== Number(pendingFocusRoute.location_id)) {
+      if (found) {
+        setSelected(found);
+        setPanelOpen(true);
+        setSidebarTab("detail");
+        setPanelTab("info");
+      } else {
+        locationApi.getLocationById(Number(pendingFocusRoute.location_id))
+          .then((res) => {
+            if (res.success && res.data) {
+              setSelected(res.data);
+              setPanelOpen(true);
+              setSidebarTab("detail");
+              setPanelTab("info");
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
     flyTo(target);
     void ensureRouteToTarget(target);
     setPendingFocusRoute(null);
-  }, [ensureRouteToTarget, flyTo, locations, pendingFocusRoute]);
+  }, [ensureRouteToTarget, flyTo, locations, loading, pendingFocusRoute, selected]);
+
+  const focusCheckinDoneRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!focusCheckin || focusCheckin.lat == null || focusCheckin.lng == null)
       return;
     if (userInteractingRef.current) return;
+
+    if (focusCheckinDoneRef.current === focusCheckin.checkin_id) {
+      return;
+    }
+
     const target = { lat: focusCheckin.lat, lng: focusCheckin.lng } as LatLng;
     setRecenterTarget(target);
     setRecenterSignal((v) => v + 1);
-  }, [focusCheckin]);
+
+    if (focusCheckin.location_id) {
+      const found = locations.find(
+        (x) => Number(x.location_id) === Number(focusCheckin.location_id),
+      );
+      if (found) {
+        setSelected(found);
+        setPanelOpen(true);
+        setSidebarTab("detail");
+        setPanelTab("info");
+        focusCheckinDoneRef.current = focusCheckin.checkin_id;
+      } else {
+        locationApi.getLocationById(Number(focusCheckin.location_id))
+          .then((res) => {
+            if (res.success && res.data) {
+              setSelected(res.data);
+              setPanelOpen(true);
+              setSidebarTab("detail");
+              setPanelTab("info");
+              focusCheckinDoneRef.current = focusCheckin.checkin_id;
+            }
+          })
+          .catch(() => {});
+      }
+    } else {
+      focusCheckinDoneRef.current = focusCheckin.checkin_id;
+    }
+  }, [focusCheckin, locations]);
 
   const handleReviewUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -2302,7 +2485,10 @@ const UserMap = () => {
                       routeOnlyDestination.lat,
                       routeOnlyDestination.lng,
                     ]}
-                    icon={getCircleImageIcon(null, true)}
+                    icon={getCircleImageIcon(
+                      getDestinationImageUrl(routeOnlyDestination, selected),
+                      true,
+                    )}
                   >
                     <Popup autoPan={false}>
                       <div className="space-y-2">
@@ -2328,6 +2514,7 @@ const UserMap = () => {
                           >
                             {locating ? "Đang định vị..." : "Đường đi"}
                           </button>
+
                           {routeEnabled && routeTarget ? (
                             <button
                               type="button"
@@ -2364,6 +2551,7 @@ const UserMap = () => {
                           >
                             {locating ? "Đang định vị..." : "Đường đi"}
                           </button>
+
                           <button
                             type="button"
                             className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
@@ -2385,7 +2573,10 @@ const UserMap = () => {
                 focusCheckin.lng != null ? (
                   <Marker
                     position={[focusCheckin.lat, focusCheckin.lng]}
-                    icon={getCircleImageIcon(null, true)}
+                    icon={getCircleImageIcon(
+                      getCheckinImageUrl(focusCheckin, selected),
+                      true,
+                    )}
                   >
                     <Popup autoPan={false}>
                       <div className="space-y-2">
@@ -2416,19 +2607,22 @@ const UserMap = () => {
                               : "Của owner"}
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                          onClick={() =>
-                            void ensureRouteToTarget({
-                              lat: focusCheckin.lat as number,
-                              lng: focusCheckin.lng as number,
-                            })
-                          }
-                          disabled={locating}
-                        >
-                          {locating ? "Đang định vị..." : "Đường đi"}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                            onClick={() =>
+                              void ensureRouteToTarget({
+                                lat: focusCheckin.lat as number,
+                                lng: focusCheckin.lng as number,
+                              })
+                            }
+                            disabled={locating}
+                          >
+                            {locating ? "Đang định vị..." : "Đường đi"}
+                          </button>
+
+                        </div>
                       </div>
                     </Popup>
                   </Marker>
@@ -2484,86 +2678,98 @@ const UserMap = () => {
                     icon={pickedIcon}
                   >
                     <Popup autoPan={false}>
-                      <div className="space-y-2">
-                        <div>
-                          <p className="text-xs text-gray-500">Tọa độ</p>
-                          <p className="text-sm text-gray-900">
-                            {pickedPoint.lat.toFixed(6)},{" "}
-                            {pickedPoint.lng.toFixed(6)}
-                          </p>
+                      <div className="w-[210px] p-0.5 font-sans text-slate-800 text-left">
+                        {/* Header */}
+                        <div className="flex items-center gap-1.5 border-b border-slate-100 pb-1 mb-1.5">
+                          <span className="text-xs select-none">📍</span>
+                          <div>
+                            <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400">Tọa độ đã ghim</p>
+                            <p className="text-[11px] font-bold text-slate-700">
+                              {pickedPoint.lat.toFixed(6)}, {pickedPoint.lng.toFixed(6)}
+                            </p>
+                          </div>
                         </div>
+
+                        {/* Suggested Location nearby */}
                         {pickedSuggested ? (
-                          <p className="text-xs text-emerald-600">
-                            Gợi ý: {pickedSuggested.location_name}
-                          </p>
-                        ) : null}
-                        <input
-                          value={pickedName}
-                          onChange={(event) =>
-                            setPickedName(event.target.value)
-                          }
-                          placeholder="Tên địa điểm (tuỳ chọn)"
-                          className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                            onClick={() =>
-                              void ensureRouteToTarget(pickedPoint)
-                            }
-                            disabled={locating}
-                          >
-                            {locating ? "Đang định vị..." : "Đường đi"}
-                          </button>
-                          {pickedSuggested ? (
+                          <div className="mb-2 rounded-lg bg-teal-50/70 border border-teal-100 p-1.5">
+                            <p className="text-[8px] font-extrabold text-teal-700 uppercase tracking-wide">Địa điểm gần đây</p>
+                            <p className="text-[10px] font-bold text-teal-900 truncate mt-0.5">
+                              {pickedSuggested.location_name}
+                            </p>
                             <button
                               type="button"
-                              className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                              className="text-[9px] text-teal-600 hover:text-teal-800 font-bold underline mt-0.5 block transition"
                               onClick={() =>
                                 navigate(
                                   `/user/location/${pickedSuggested.location_id}`,
                                 )
                               }
                             >
-                              Xem thông tin
+                              Xem chi tiết →
                             </button>
-                          ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* Optional Name Input */}
+                        <div className="mb-2">
+                          <label className="text-[8px] font-extrabold text-slate-400 uppercase block mb-0.5">Tên địa danh (tự đặt)</label>
+                          <input
+                            value={pickedName}
+                            onChange={(event) => setPickedName(event.target.value)}
+                            placeholder="Ví dụ: Điểm cắm trại, Quán ăn..."
+                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 transition focus:border-teal-500 focus:bg-white focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Action buttons list */}
+                        <div className="space-y-1">
+
+
                           <button
                             type="button"
-                            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                            onClick={clearPickedPoint}
-                          >
-                            Xoá
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white hover:bg-teal-700"
+                            className="w-full flex items-center justify-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-900 px-2 py-1.5 text-[10px] font-bold text-white transition active:scale-[0.98] disabled:opacity-50"
                             onClick={() => handleFreeAction("checkin")}
                             disabled={freeAction === "checkin" || !isPickedOpenNow}
                           >
-                            {freeAction === "checkin"
-                              ? "Đang check-in..."
-                              : "Check-in tại đây"}
+                            <span>✅</span> {freeAction === "checkin" ? "Đang check-in..." : "Check-in tại đây"}
                           </button>
+
                           {!isPickedOpenNow ? (
-                            <div className="text-[11px] text-amber-700">
-                              Đang đóng cửa
+                            <div className="text-[9px] text-amber-700 bg-amber-50 rounded-md py-0.5 px-1.5 text-center font-bold">
+                              ⚠️ Đang đóng cửa
                               {pickedOpenClose
                                 ? ` (${pickedOpenClose.open} - ${pickedOpenClose.close})`
                                 : ""}
-                              .
                             </div>
                           ) : null}
+
+                          <div className="grid grid-cols-2 gap-1">
+                            <button
+                              type="button"
+                              className="flex items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-1 py-1.5 text-[10px] font-bold text-slate-700 transition"
+                              onClick={() => void ensureRouteToTarget(pickedPoint)}
+                              disabled={locating}
+                            >
+                              <span>🚗</span> Đường đi
+                            </button>
+
+                            <button
+                              type="button"
+                              className="flex items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-1 py-1.5 text-[10px] font-bold text-slate-700 transition disabled:opacity-50"
+                              onClick={() => handleFreeAction("save")}
+                              disabled={freeAction === "save"}
+                            >
+                              <span>⭐</span> {freeAction === "save" ? "Đang lưu..." : "Lưu lại"}
+                            </button>
+                          </div>
+
                           <button
                             type="button"
-                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                            onClick={() => handleFreeAction("save")}
-                            disabled={freeAction === "save"}
+                            className="w-full flex items-center justify-center gap-1 rounded-lg bg-rose-50 hover:bg-rose-100 py-1.5 text-[10px] font-bold text-rose-600 transition"
+                            onClick={clearPickedPoint}
                           >
-                            {freeAction === "save"
-                              ? "Đang lưu..."
-                              : "Lưu để đi sau"}
+                            Xoá ghim
                           </button>
                         </div>
                       </div>
@@ -2626,6 +2832,7 @@ const UserMap = () => {
                                 >
                                   Xem chi tiết
                                 </button>
+
                                 <button
                                   type="button"
                                   className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
@@ -2655,6 +2862,84 @@ const UserMap = () => {
                       );
                     })
                   : null}
+
+                {!routeOnlyMode && selected && !filteredLocations.some(entry => entry.item.location_id === selected.location_id) ? (
+                  (() => {
+                    const lat = normalizeNumber(selected.latitude);
+                    const lng = normalizeNumber(selected.longitude);
+                    if (lat == null || lng == null) return null;
+                    const isSelected = true;
+                    const icon = getCircleImageIcon(
+                      resolveBackendUrl(
+                        selected.first_image ??
+                          (Array.isArray(selected.images) ? selected.images[0] : null),
+                      ),
+                      isSelected,
+                    );
+                    const isRoutingToThis =
+                      routeEnabled &&
+                      routeTarget &&
+                      isSamePoint(routeTarget, { lat, lng });
+
+                    return (
+                      <Marker
+                        key={`loc-selected-extra`}
+                        position={[lat, lng]}
+                        icon={icon}
+                        eventHandlers={{
+                          click: () =>
+                            handleSelectLocation(selected, { lat, lng }),
+                          dblclick: () => {
+                            setSelected(null);
+                            setPanelOpen(false);
+                          },
+                        }}
+                      >
+                        <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
+                          <div className="space-y-2">
+                            <p className="font-semibold text-gray-900">
+                              {selected.location_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {selected.address}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
+                                onClick={() => {
+                                  setPanelOpen(true);
+                                }}
+                              >
+                                Xem chi tiết
+                              </button>
+
+                              <button
+                                type="button"
+                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                onClick={() =>
+                                  void ensureRouteToTarget({ lat, lng })
+                                }
+                                disabled={locating}
+                              >
+                                {locating ? "Đang định vị..." : "Đường đi"}
+                              </button>
+                              {isRoutingToThis ? (
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
+                                  onClick={clearRoute}
+                                >
+                                  Xoá
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })()
+                ) : null}
               </MapContainer>
             ) : (
               <div className="h-full w-full bg-gradient-to-br from-gray-50 to-gray-100" />
@@ -2747,15 +3032,31 @@ const UserMap = () => {
           </div>
 
           {routeInfo ? (
-            <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-              Tuyến đường: {formatDistance(routeInfo.distanceM)} · Thời gian ước
-              tính: {formatDuration(routeInfo.durationS)}
-              {routeInfo.alternatives ? (
-                <span className="ml-2 text-gray-500">
-                  ({routeInfo.alternatives} tuyến)
-                </span>
-              ) : null}
-            </div>
+            routeInfo.source === "haversine" ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                <div className="flex items-center gap-1.5 font-semibold text-amber-900 mb-1">
+                  <span className="text-sm">⚠️</span>
+                  <span>
+                    {routeInfo.hasNoRoute
+                      ? "Không tìm thấy đường bộ đến điểm này (ngoài khơi, sông hồ hoặc vùng biệt lập)"
+                      : "Lỗi kết nối máy chủ đường đi (Đang hiển thị đường chim bay)"}
+                  </span>
+                </div>
+                <div>
+                  Khoảng cách chim bay: {formatDistance(routeInfo.distanceM)} · Thời gian di chuyển: không khả dụng
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                Tuyến đường: {formatDistance(routeInfo.distanceM)} · Thời gian ước
+                tính: {formatDuration(routeInfo.durationS)}
+                {routeInfo.alternatives ? (
+                  <span className="ml-2 text-gray-500">
+                    ({routeInfo.alternatives} tuyến)
+                  </span>
+                ) : null}
+              </div>
+            )
           ) : null}
 
           {feedback ? (
@@ -4374,6 +4675,7 @@ const UserMap = () => {
                               >
                                 {locating ? "Đang định vị..." : "Đường đi"}
                               </button>
+
                               <button
                                 type="button"
                                 className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
@@ -4395,7 +4697,10 @@ const UserMap = () => {
                     focusCheckin.lng != null ? (
                       <Marker
                         position={[focusCheckin.lat, focusCheckin.lng]}
-                        icon={getCircleImageIcon(null, true)}
+                        icon={getCircleImageIcon(
+                          getCheckinImageUrl(focusCheckin, selected),
+                          true,
+                        )}
                       >
                         <Popup autoPan={false}>
                           <div className="space-y-2">
@@ -4424,19 +4729,22 @@ const UserMap = () => {
                                   : "Của owner"}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                              onClick={() =>
-                                void ensureRouteToTarget({
-                                  lat: focusCheckin.lat as number,
-                                  lng: focusCheckin.lng as number,
-                                })
-                              }
-                              disabled={locating}
-                            >
-                              {locating ? "Đang định vị..." : "Đường đi"}
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                onClick={() =>
+                                  void ensureRouteToTarget({
+                                    lat: focusCheckin.lat as number,
+                                    lng: focusCheckin.lng as number,
+                                  })
+                                }
+                                disabled={locating}
+                              >
+                                {locating ? "Đang định vị..." : "Đường đi"}
+                              </button>
+
+                            </div>
                           </div>
                         </Popup>
                       </Marker>
@@ -4490,88 +4798,100 @@ const UserMap = () => {
                         icon={pickedIcon}
                       >
                         <Popup autoPan={false}>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-xs text-gray-500">Tọa độ</p>
-                              <p className="text-sm text-gray-900">
-                                {pickedPoint.lat.toFixed(6)},{" "}
-                                {pickedPoint.lng.toFixed(6)}
-                              </p>
+                          <div className="w-[210px] p-0.5 font-sans text-slate-800 text-left">
+                            {/* Header */}
+                            <div className="flex items-center gap-1.5 border-b border-slate-100 pb-1 mb-1.5">
+                              <span className="text-xs select-none">📍</span>
+                              <div>
+                                <p className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400">Tọa độ đã ghim</p>
+                                <p className="text-[11px] font-bold text-slate-700">
+                                  {pickedPoint.lat.toFixed(6)}, {pickedPoint.lng.toFixed(6)}
+                                </p>
+                              </div>
                             </div>
+
+                            {/* Suggested Location nearby */}
                             {pickedSuggested ? (
-                              <p className="text-xs text-emerald-600">
-                                Gợi ý: {pickedSuggested.location_name}
-                              </p>
-                            ) : null}
-                            <input
-                              value={pickedName}
-                              onChange={(event) =>
-                                setPickedName(event.target.value)
-                              }
-                              placeholder="Tên địa điểm (tuỳ chọn)"
-                              className="w-full rounded-lg border border-gray-200 px-2 py-1 text-xs transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                            />
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                                onClick={() =>
-                                  void ensureRouteToTarget(pickedPoint)
-                                }
-                                disabled={locating}
-                              >
-                                {locating ? "Đang định vị..." : "Đường đi"}
-                              </button>
-                              {pickedSuggested ? (
+                              <div className="mb-2 rounded-lg bg-teal-50/70 border border-teal-100 p-1.5">
+                                <p className="text-[8px] font-extrabold text-teal-700 uppercase tracking-wide">Địa điểm gần đây</p>
+                                <p className="text-[10px] font-bold text-teal-900 truncate mt-0.5">
+                                  {pickedSuggested.location_name}
+                                </p>
                                 <button
                                   type="button"
-                                  className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                                  className="text-[9px] text-teal-600 hover:text-teal-800 font-bold underline mt-0.5 block transition"
                                   onClick={() =>
                                     navigate(
                                       `/user/location/${pickedSuggested.location_id}`,
                                     )
                                   }
                                 >
-                                  Xem thông tin
+                                  Xem chi tiết →
                                 </button>
-                              ) : null}
+                              </div>
+                            ) : null}
+
+                            {/* Optional Name Input */}
+                            <div className="mb-2">
+                              <label className="text-[8px] font-extrabold text-slate-400 uppercase block mb-0.5">Tên địa danh (tự đặt)</label>
+                              <input
+                                value={pickedName}
+                                onChange={(event) => setPickedName(event.target.value)}
+                                placeholder="Ví dụ: Điểm cắm trại, Quán ăn..."
+                                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 transition focus:border-teal-500 focus:bg-white focus:outline-none"
+                              />
+                            </div>
+
+                            {/* Action buttons list */}
+                            <div className="space-y-1">
+
+
                               <button
                                 type="button"
-                                className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                                onClick={clearPickedPoint}
-                              >
-                                Xoá
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white hover:bg-teal-700"
+                                className="w-full flex items-center justify-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-900 px-2 py-1.5 text-[10px] font-bold text-white transition active:scale-[0.98] disabled:opacity-50"
                                 onClick={() => handleFreeAction("checkin")}
                                 disabled={
                                   freeAction === "checkin" || !isPickedOpenNow
                                 }
                               >
-                                {freeAction === "checkin"
-                                  ? "Đang check-in..."
-                                  : "Check-in tại đây"}
+                                <span>✅</span> {freeAction === "checkin" ? "Đang check-in..." : "Check-in tại đây"}
                               </button>
+
                               {!isPickedOpenNow ? (
-                                <div className="text-[11px] text-amber-700">
-                                  Đang đóng cửa
+                                <div className="text-[9px] text-amber-700 bg-amber-50 rounded-md py-0.5 px-1.5 text-center font-bold">
+                                  ⚠️ Đang đóng cửa
                                   {pickedOpenClose
                                     ? ` (${pickedOpenClose.open} - ${pickedOpenClose.close})`
                                     : ""}
-                                  .
                                 </div>
                               ) : null}
+
+                              <div className="grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  className="flex items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-1 py-1.5 text-[10px] font-bold text-slate-700 transition"
+                                  onClick={() => void ensureRouteToTarget(pickedPoint)}
+                                  disabled={locating}
+                                >
+                                  <span>🚗</span> Đường đi
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="flex items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-1 py-1.5 text-[10px] font-bold text-slate-700 transition disabled:opacity-50"
+                                  onClick={() => handleFreeAction("save")}
+                                  disabled={freeAction === "save"}
+                                >
+                                  <span>⭐</span> {freeAction === "save" ? "Đang lưu..." : "Lưu lại"}
+                                </button>
+                              </div>
+
                               <button
                                 type="button"
-                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                                onClick={() => handleFreeAction("save")}
-                                disabled={freeAction === "save"}
+                                className="w-full flex items-center justify-center gap-1 rounded-lg bg-rose-50 hover:bg-rose-100 py-1.5 text-[10px] font-bold text-rose-600 transition"
+                                onClick={clearPickedPoint}
                               >
-                                {freeAction === "save"
-                                  ? "Đang lưu..."
-                                  : "Lưu để đi sau"}
+                                Xoá ghim
                               </button>
                             </div>
                           </div>
@@ -4585,7 +4905,10 @@ const UserMap = () => {
                           routeOnlyDestination.lat,
                           routeOnlyDestination.lng,
                         ]}
-                        icon={getCircleImageIcon(null, true)}
+                        icon={getCircleImageIcon(
+                          getDestinationImageUrl(routeOnlyDestination, selected),
+                          true,
+                        )}
                       >
                         <Popup autoPan={false}>
                           <div className="space-y-2">
@@ -4611,6 +4934,7 @@ const UserMap = () => {
                               >
                                 {locating ? "Đang định vị..." : "Đường đi"}
                               </button>
+
                               {routeEnabled && routeTarget ? (
                                 <button
                                   type="button"
@@ -4681,6 +5005,7 @@ const UserMap = () => {
                                     >
                                       Xem chi tiết
                                     </button>
+
                                     <button
                                       type="button"
                                       className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
@@ -4712,6 +5037,84 @@ const UserMap = () => {
                           );
                         })
                       : null}
+
+                    {!routeOnlyMode && selected && !filteredLocations.some(entry => entry.item.location_id === selected.location_id) ? (
+                      (() => {
+                        const lat = normalizeNumber(selected.latitude);
+                        const lng = normalizeNumber(selected.longitude);
+                        if (lat == null || lng == null) return null;
+                        const isSelected = true;
+                        const icon = getCircleImageIcon(
+                          resolveBackendUrl(
+                            selected.first_image ??
+                              (Array.isArray(selected.images) ? selected.images[0] : null),
+                          ),
+                          isSelected,
+                        );
+                        const isRoutingToThis =
+                          routeEnabled &&
+                          routeTarget &&
+                          isSamePoint(routeTarget, { lat, lng });
+
+                        return (
+                          <Marker
+                            key={`loc-selected-extra-full`}
+                            position={[lat, lng]}
+                            icon={icon}
+                            eventHandlers={{
+                              click: () =>
+                                handleSelectLocation(selected, { lat, lng }),
+                              dblclick: () => {
+                                setSelected(null);
+                                setPanelOpen(false);
+                              },
+                            }}
+                          >
+                            <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
+                              <div className="space-y-2">
+                                <p className="font-semibold text-gray-900">
+                                  {selected.location_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {selected.address}
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
+                                    onClick={() => {
+                                      setPanelOpen(true);
+                                    }}
+                                  >
+                                    Xem chi tiết
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                    onClick={() =>
+                                      void ensureRouteToTarget({ lat, lng })
+                                    }
+                                    disabled={locating}
+                                  >
+                                    {locating ? "Đang định vị..." : "Đường đi"}
+                                  </button>
+                                  {isRoutingToThis ? (
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
+                                      onClick={clearRoute}
+                                    >
+                                      Xoá
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </Popup>
+                          </Marker>
+                        );
+                      })()
+                    ) : null}
                   </MapContainer>
                 </div>
               </div>
@@ -4783,15 +5186,31 @@ const UserMap = () => {
               </div>
 
               {routeInfo ? (
-                <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                  Tuyến đường: {formatDistance(routeInfo.distanceM)} · Thời gian
-                  ước tính: {formatDuration(routeInfo.durationS)}
-                  {routeInfo.alternatives ? (
-                    <span className="ml-2 text-gray-500">
-                      ({routeInfo.alternatives} tuyến)
-                    </span>
-                  ) : null}
-                </div>
+                routeInfo.source === "haversine" ? (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-900 mb-1">
+                      <span className="text-sm">⚠️</span>
+                      <span>
+                        {routeInfo.hasNoRoute
+                          ? "Không tìm thấy đường bộ đến điểm này (ngoài khơi, sông hồ hoặc vùng biệt lập)"
+                          : "Lỗi kết nối máy chủ đường đi (Đang hiển thị đường chim bay)"}
+                      </span>
+                    </div>
+                    <div>
+                      Khoảng cách chim bay: {formatDistance(routeInfo.distanceM)} · Thời gian di chuyển: không khả dụng
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                    Tuyến đường: {formatDistance(routeInfo.distanceM)} · Thời gian
+                    ước tính: {formatDuration(routeInfo.durationS)}
+                    {routeInfo.alternatives ? (
+                      <span className="ml-2 text-gray-500">
+                        ({routeInfo.alternatives} tuyến)
+                      </span>
+                    ) : null}
+                  </div>
+                )
               ) : null}
             </div>
           </div>

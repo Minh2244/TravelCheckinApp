@@ -1,57 +1,56 @@
-// Root layout - khởi tạo auth và navigation
+import { useFonts } from 'expo-font';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import useAuthStore from '../src/stores/useAuthStore';
-import { COLORS } from '../src/utils/constants';
+import 'react-native-reanimated';
+
+import { useColorScheme } from '@/components/useColorScheme';
+
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
+
+export const unstable_settings = {
+  // Ensure that reloading on `/modal` keeps a back button present.
+  initialRouteName: '(tabs)',
+};
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const { isLoading, isAuthenticated, loadFromStorage } = useAuthStore();
+  const [loaded, error] = useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  });
 
-  // Khôi phục session khi app khởi động
+  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    loadFromStorage();
-  }, [loadFromStorage]);
+    if (error) throw error;
+  }, [error]);
 
-  // Hiển thị loading khi đang kiểm tra session
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+  useEffect(() => {
+    if (loaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded]);
+
+  if (!loaded) {
+    return null;
   }
 
-  return (
-    <>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
-        {!isAuthenticated ? (
-          // Chưa đăng nhập -> hiện auth screens
-          <Stack.Screen name="(auth)" />
-        ) : (
-          // Đã đăng nhập -> hiện main app
-          <Stack.Screen name="(tabs)" />
-        )}
-        <Stack.Screen
-          name="location/[id]"
-          options={{
-            headerShown: true,
-            title: 'Chi tiết địa điểm',
-            headerTintColor: COLORS.primary,
-          }}
-        />
-      </Stack>
-    </>
-  );
+  return <RootLayoutNav />;
 }
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-  },
-});
+function RootLayoutNav() {
+  const colorScheme = useColorScheme();
+
+  return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+      </Stack>
+    </ThemeProvider>
+  );
+}

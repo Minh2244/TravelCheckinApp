@@ -1987,6 +1987,56 @@ export const getOwnerMe = async (
       [ownerId],
     );
 
+    const user = userRows[0];
+    if (user && auth.role === "owner") {
+      const [[{ total_locations }]] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS total_locations FROM locations WHERE owner_id = ?`,
+        [auth.userId]
+      );
+
+      const [[{ total_bookings }]] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(b.booking_id) AS total_bookings
+         FROM bookings b
+         JOIN locations l ON b.location_id = l.location_id
+         WHERE l.owner_id = ? AND b.status = 'completed'`,
+        [auth.userId]
+      );
+
+      const [[{ total_revenue }]] = await pool.query<RowDataPacket[]>(
+        `SELECT COALESCE(SUM(p.owner_receivable), 0) AS total_revenue
+         FROM payments p
+         JOIN bookings b ON p.booking_id = b.booking_id
+         JOIN locations l ON b.location_id = l.location_id
+         WHERE l.owner_id = ? AND p.status = 'completed'`,
+        [auth.userId]
+      );
+
+      const [[{ total_checkins }]] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(c.checkin_id) AS total_checkins
+         FROM checkins c
+         JOIN locations l ON c.location_id = l.location_id
+         WHERE l.owner_id = ?`,
+        [auth.userId]
+      );
+
+      let partner_rank = "New Partner 🌟";
+      if (total_checkins > 200) {
+        partner_rank = "Diamond Partner 💎";
+      } else if (total_checkins > 50) {
+        partner_rank = "Gold Partner 🥇";
+      } else if (total_checkins >= 10) {
+        partner_rank = "Silver Partner 🥈";
+      }
+
+      user.stats = {
+        total_locations: Number(total_locations || 0),
+        total_bookings: Number(total_bookings || 0),
+        total_revenue: Number(total_revenue || 0),
+        partner_rank,
+        total_checkins: Number(total_checkins || 0),
+      };
+    }
+
     const employee_context =
       auth.role === "employee"
         ? ((
@@ -2006,7 +2056,7 @@ export const getOwnerMe = async (
     res.json({
       success: true,
       data: {
-        actor: userRows[0] || null,
+        actor: user || null,
         owner_id: ownerId,
         owner_profile: profileRows[0] || null,
         employee_context,
@@ -2031,7 +2081,10 @@ export const getOwnerProfile = async (
     }
 
     const [userRows] = await pool.query<RowDataPacket[]>(
-      `SELECT user_id, email, phone, full_name, avatar_url, role, status, created_at
+      `SELECT user_id, email, phone, full_name, address, username,
+              avatar_url, avatar_path, avatar_source,
+              background_url, background_path, background_source,
+              role, status, created_at
        FROM users WHERE user_id = ? LIMIT 1`,
       [auth.userId],
     );
@@ -2041,10 +2094,103 @@ export const getOwnerProfile = async (
       [auth.userId],
     );
 
+    const user = userRows[0];
+    let effectiveAvatarUrl: string | null = null;
+    if (user) {
+      if (user.avatar_source === "upload" && user.avatar_path) {
+        effectiveAvatarUrl = user.avatar_path;
+      } else if (user.avatar_url) {
+        effectiveAvatarUrl = user.avatar_url;
+      }
+    }
+
+    let effectiveBackgroundUrl: string | null = null;
+    if (user) {
+      if (user.background_source === "upload" && user.background_path) {
+        effectiveBackgroundUrl = user.background_path;
+      } else if (user.background_url) {
+        effectiveBackgroundUrl = user.background_url;
+      }
+    }
+
+    // --- Bắt đầu tính toán Stats động cho Owner ---
+    const [[{ total_locations }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total_locations FROM locations WHERE owner_id = ?`,
+      [auth.userId]
+    );
+
+    const [[{ total_bookings }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(b.booking_id) AS total_bookings
+       FROM bookings b
+       JOIN locations l ON b.location_id = l.location_id
+       WHERE l.owner_id = ? AND b.status = 'completed'`,
+      [auth.userId]
+    );
+
+    const [[{ total_revenue }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(SUM(p.owner_receivable), 0) AS total_revenue
+       FROM payments p
+       JOIN bookings b ON p.booking_id = b.booking_id
+       JOIN locations l ON b.location_id = l.location_id
+       WHERE l.owner_id = ? AND p.status = 'completed'`,
+      [auth.userId]
+    );
+
+    const [featRows] = await pool.query<RowDataPacket[]>(
+      `SELECT l.location_id, l.location_name, COUNT(b.booking_id) AS booking_count,
+              COALESCE(SUM(p.owner_receivable), 0) AS total_revenue, MAX(b.created_at) AS latest_booking,
+              l.first_image
+       FROM locations l
+       LEFT JOIN bookings b ON b.location_id = l.location_id AND b.status = 'completed'
+       LEFT JOIN payments p ON p.booking_id = b.booking_id AND p.status = 'completed'
+       WHERE l.owner_id = ?
+       GROUP BY l.location_id, l.location_name, l.first_image
+       ORDER BY booking_count DESC, total_revenue DESC
+       LIMIT 1`,
+      [auth.userId]
+    );
+    const featured_location = featRows.length > 0 ? featRows[0] : null;
+
+    const [[{ total_checkins }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(c.checkin_id) AS total_checkins
+       FROM checkins c
+       JOIN locations l ON c.location_id = l.location_id
+       WHERE l.owner_id = ?`,
+      [auth.userId]
+    );
+
+    let partner_rank = "New Partner 🌟";
+    if (total_checkins > 200) {
+      partner_rank = "Diamond Partner 💎";
+    } else if (total_checkins > 50) {
+      partner_rank = "Gold Partner 🥇";
+    } else if (total_checkins >= 10) {
+      partner_rank = "Silver Partner 🥈";
+    }
+    // --- Kết thúc tính toán Stats động ---
+
     res.json({
       success: true,
       data: {
-        user: userRows[0] || null,
+        user: user ? {
+          ...user,
+          avatar_url: effectiveAvatarUrl,
+          background_url: effectiveBackgroundUrl,
+          stats: {
+            total_locations: Number(total_locations || 0),
+            total_bookings: Number(total_bookings || 0),
+            total_revenue: Number(total_revenue || 0),
+            featured_location: featured_location ? {
+              location_name: featured_location.location_name,
+              booking_count: Number(featured_location.booking_count || 0),
+              total_revenue: Number(featured_location.total_revenue || 0),
+              latest_booking: featured_location.latest_booking ? new Date(featured_location.latest_booking).toISOString() : null,
+              first_image: featured_location.first_image,
+            } : null,
+            partner_rank,
+            total_checkins: Number(total_checkins || 0),
+          }
+        } : null,
         owner_profile: profileRows[0] || null,
       },
     });
@@ -2066,9 +2212,10 @@ export const updateOwnerProfile = async (
       return;
     }
 
-    const { full_name, phone, avatar_url, skip_avatar } = req.body as {
+    const { full_name, phone, address, avatar_url, skip_avatar } = req.body as {
       full_name?: string;
       phone?: string | null;
+      address?: string | null;
       avatar_url?: string | null;
       skip_avatar?: boolean;
     };
@@ -2096,6 +2243,8 @@ export const updateOwnerProfile = async (
       });
       return;
     }
+
+    const normalizedAddress = typeof address === "string" ? address.trim() : null;
 
     const normalizedAvatarUrl =
       typeof avatar_url === "string" ? avatar_url.trim() : null;
@@ -2132,19 +2281,20 @@ export const updateOwnerProfile = async (
     if (skip_avatar) {
       await pool.query(
         `UPDATE users
-         SET full_name = ?, phone = ?
+         SET full_name = ?, phone = ?, address = ?
          WHERE user_id = ?`,
-        [normalizedFullName, normalizedPhone, auth.userId],
+        [normalizedFullName, normalizedPhone, normalizedAddress, auth.userId],
       );
     } else if (normalizedAvatarUrl) {
       if (normalizedAvatarUrl.startsWith("/uploads/")) {
         await pool.query(
           `UPDATE users
-           SET full_name = ?, phone = ?, avatar_url = ?, avatar_path = ?, avatar_source = 'upload', avatar_updated_at = NOW()
+           SET full_name = ?, phone = ?, address = ?, avatar_url = ?, avatar_path = ?, avatar_source = 'upload', avatar_updated_at = NOW()
            WHERE user_id = ?`,
           [
             normalizedFullName,
             normalizedPhone,
+            normalizedAddress,
             normalizedAvatarUrl,
             normalizedAvatarUrl,
             auth.userId,
@@ -2153,11 +2303,12 @@ export const updateOwnerProfile = async (
       } else {
         await pool.query(
           `UPDATE users
-           SET full_name = ?, phone = ?, avatar_url = ?, avatar_path = NULL, avatar_source = 'url', avatar_updated_at = NOW()
+           SET full_name = ?, phone = ?, address = ?, avatar_url = ?, avatar_path = NULL, avatar_source = 'url', avatar_updated_at = NOW()
            WHERE user_id = ?`,
           [
             normalizedFullName,
             normalizedPhone,
+            normalizedAddress,
             normalizedAvatarUrl,
             auth.userId,
           ],
@@ -2166,15 +2317,16 @@ export const updateOwnerProfile = async (
     } else {
       await pool.query(
         `UPDATE users
-         SET full_name = ?, phone = ?, avatar_url = NULL, avatar_path = NULL, avatar_source = 'url', avatar_updated_at = NOW()
+         SET full_name = ?, phone = ?, address = ?, avatar_url = NULL, avatar_path = NULL, avatar_source = 'url', avatar_updated_at = NOW()
          WHERE user_id = ?`,
-        [normalizedFullName, normalizedPhone, auth.userId],
+        [normalizedFullName, normalizedPhone, normalizedAddress, auth.userId],
       );
     }
 
     await logAudit(auth.userId, "UPDATE_OWNER_PROFILE", {
       full_name: normalizedFullName,
       phone: normalizedPhone,
+      address: normalizedAddress,
       avatar_url: skip_avatar ? "[giữ nguyên]" : normalizedAvatarUrl,
       skip_avatar: Boolean(skip_avatar),
       timestamp: new Date(),
@@ -2259,6 +2411,17 @@ export const uploadOwnerBackground = async (
       folder: "backgrounds",
       fileNamePrefix: `background-${auth.userId}`,
     });
+
+    await pool.query(
+      `UPDATE users
+       SET background_path = ?,
+           background_source = 'upload',
+           background_url = NULL,
+           background_updated_at = NOW(),
+           updated_at = NOW()
+       WHERE user_id = ?`,
+      [saved.urlPath, auth.userId],
+    );
 
     await logAudit(auth.userId, "UPLOAD_OWNER_BACKGROUND", {
       mimetype: file.mimetype,

@@ -30,59 +30,12 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# Environment variables - KHÔNG đẩy lên GitHub
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# local env files
 .env*.local
 
-# TypeScript
+# typescript
 *.tsbuildinfo
 
-# Generated native folders
+# generated native folders
 /ios
 /android
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS files
-Thumbs.db
-Desktop.ini
-
-# Logs
-*.log
-logs/
-
-# Build artifacts
-build/
-*.tgz
-*.tar.gz
-
-# Cache
-.cache/
-.eslintcache
-
-# Temporary files
-tmp/
-temp/
-
-# Expo publish
-expo-export/
-
-# Sentry
-sentry.properties
-
-# Google Services (API keys)
-google-services.json
-GoogleService-Info.plist
-
-# Keystore (signing keys)
-*.keystore
-*.jks

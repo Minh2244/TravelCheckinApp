@@ -40,17 +40,6 @@ export interface DiaryItem {
   location_name?: string | null;
 }
 
-export interface ItineraryItem {
-  itinerary_id: number;
-  user_id: number | null;
-  name: string;
-  description: string | null;
-  locations: Array<Record<string, unknown>> | null;
-  total_distance_km: number | string;
-  estimated_time_hours: number | string;
-  is_ai_recommended: 0 | 1;
-  created_at: string;
-}
 
 export interface AiChatHistoryItem {
   history_id: number;
@@ -79,6 +68,8 @@ export interface BookingReminderItem {
   address: string;
   province: string | null;
   reminder_sent?: boolean;
+  location_type?: string | null;
+  notes?: string | null;
 }
 
 export interface UserTouristTicketItem {
@@ -98,36 +89,14 @@ export interface UserTouristTicketItem {
   payment_status?: string | null;
 }
 
-export interface GroupMember {
-  user_id: number;
-  joined_at: string;
-  last_seen_at: string;
-}
-
-export interface GroupInfo {
-  code: string;
-  created_by: number;
-  created_at: string;
-  expires_at: string;
-  members: GroupMember[];
-}
-
-export interface GroupCheckinItem {
-  checkin_id: number;
-  user_id: number;
-  user_name: string | null;
-  checkin_time: string;
-  location_id: number;
-  location_name: string;
-  address: string;
-  province: string | null;
-}
 
 export interface UserProfile {
   user_id: number;
   email: string | null;
   phone: string | null;
   full_name: string;
+  address?: string | null;
+  username?: string | null;
   avatar_url: string | null;
   avatar_source?: "upload" | "url";
   background_url?: string | null;
@@ -136,6 +105,44 @@ export interface UserProfile {
   status: "active" | "pending" | "locked";
   created_at: string;
   updated_at: string;
+  stats?: {
+    total_orders?: number;
+    total_spending?: number;
+    latest_order_date?: string | null;
+    favorite_location?: {
+      location_name: string;
+      visit_count: number;
+      total_spent: number;
+      latest_visit: string | null;
+      first_image: string | null;
+    } | null;
+    member_tier?: string;
+    checkin_count?: number;
+
+    // Owner specific stats
+    total_locations?: number;
+    total_bookings?: number;
+    total_revenue?: number;
+    featured_location?: {
+      location_name: string;
+      booking_count: number;
+      total_revenue: number;
+      latest_booking: string | null;
+      first_image: string | null;
+    } | null;
+    partner_rank?: string;
+
+    // Admin specific stats
+    total_users?: number;
+    top_location?: {
+      location_name: string;
+      booking_count: number;
+      total_revenue: number;
+      latest_booking: string | null;
+      first_image: string | null;
+    } | null;
+    admin_rank?: string;
+  } | null;
 }
 
 export interface UserLoginHistoryItem {

@@ -93,9 +93,7 @@ const UserDashboard = () => {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [weather, setWeather] = useState<WeatherState>({ status: "idle" });
-  const [smartItineraries, setSmartItineraries] = useState<
-    Array<{ itinerary_id: number; name: string; description: string | null }>
-  >([]);
+
   const [stats, setStats] = useState({
     checkins: 0,
     favorites: 0,
@@ -132,26 +130,6 @@ const UserDashboard = () => {
     return () => clearTimeout(timer);
   }, [searchValue, setKeyword]);
 
-  // Lấy lịch trình AI
-  useEffect(() => {
-    const run = async () => {
-      try {
-        const resp = await userApi.getItineraries();
-        if (resp.success) {
-          setSmartItineraries(
-            (resp.data || []).slice(0, 3).map((it) => ({
-              itinerary_id: it.itinerary_id,
-              name: it.name,
-              description: it.description ?? null,
-            })),
-          );
-        }
-      } catch (e: unknown) {
-        console.warn(getErrorMessage(e, "Không lấy được lịch trình"));
-      }
-    };
-    void run();
-  }, []);
 
   // Lấy thống kê (check-in, yêu thích, voucher)
   useEffect(() => {
@@ -365,19 +343,7 @@ const UserDashboard = () => {
         </svg>
       ),
     },
-    {
-      label: "Lịch trình",
-      path: "/user/itinerary",
-      color: "bg-violet-50 text-violet-600 border-violet-200/60",
-      icon: (
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="3" />
-          <path d="M8 2v4" />
-          <path d="M16 2v4" />
-          <path d="M3 10h18" />
-        </svg>
-      ),
-    },
+
     {
       label: "Đã lưu",
       path: "/user/saved-locations",
@@ -726,65 +692,6 @@ const UserDashboard = () => {
             </div>
           </div>
 
-          {/* ===== Lịch trình thông minh ===== */}
-          <div className="relative overflow-hidden user-section p-5">
-            <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-teal-100/40 blur-2xl" />
-            <div className="absolute -left-8 bottom-0 h-24 w-24 rounded-full bg-emerald-100/30 blur-2xl" />
-            <div className="relative">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-bold text-slate-800 font-heading">
-                  Lịch trình thông minh
-                </h3>
-                <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                  <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                  </svg>
-                  AI
-                </span>
-              </div>
-
-              <div className="space-y-2.5">
-                {smartItineraries.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-teal-200 bg-white/60 px-4 py-5 text-center">
-                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto text-teal-300">
-                      <rect x="3" y="4" width="18" height="18" rx="3" />
-                      <path d="M8 2v4M16 2v4M3 10h18" />
-                    </svg>
-                    <p className="mt-2 text-sm text-slate-500 font-medium">
-                      Chưa có lịch trình
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      Tạo chuyến đi hoặc dùng AI gợi ý
-                    </p>
-                  </div>
-                ) : (
-                  smartItineraries.map((it) => (
-                    <button
-                      key={it.itinerary_id}
-                      type="button"
-                      className="w-full rounded-xl border border-slate-100 bg-white/80 px-4 py-3 text-left shadow-sm transition-all duration-200 hover:border-teal-200 hover:shadow-md hover:bg-white"
-                      onClick={() => navigate("/user/itinerary")}
-                    >
-                      <p className="text-sm font-semibold text-slate-800 line-clamp-1">
-                        {it.name}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500 line-clamp-1">
-                        {it.description || "Lịch trình của bạn"}
-                      </p>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              <button
-                type="button"
-                className="mt-4 w-full rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-teal-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-teal-500/30 active:scale-[0.98]"
-                onClick={() => navigate("/user/itinerary")}
-              >
-                Gợi ý ngay
-              </button>
-            </div>
-          </div>
 
           {/* ===== Mẹo du lịch (SVG icon, không emoji) ===== */}
           <div className="user-section p-5">
