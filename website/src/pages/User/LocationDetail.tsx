@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
+import LocationChatBubble from "../../components/LocationChatBubble";
 import { useLocationDetail } from "../../hooks/useLocationDetail";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { parseLatLngMaybeSwap } from "../../utils/latLng";
@@ -399,6 +400,7 @@ const LocationDetail = () => {
           lng: mapCoords.lng,
           location_name: location?.location_name,
           address: location?.address,
+          first_image: location?.first_image,
         },
       },
     });
@@ -1148,6 +1150,9 @@ const LocationDetail = () => {
               </div>
             </div>
           </div>
+          
+          {/* Kênh chat thời gian thực với địa điểm */}
+          <LocationChatBubble locationId={locationId} userRole="user" />
         </div>
       </section>
     </UserLayout>

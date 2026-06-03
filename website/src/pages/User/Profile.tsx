@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import UserLayout from "../../layouts/UserLayout";
 import userApi from "../../api/userApi";
-import type { UserLoginHistoryItem, UserProfile } from "../../types/user.types";
+import type { UserProfile } from "../../types/user.types";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getErrorMessage } from "../../utils/safe";
+import { CameraOutlined, LockOutlined, TrophyOutlined, WalletOutlined } from "@ant-design/icons";
+import AvatarCropper from "../../components/AvatarCropper";
 
-// Vì sao: đảm bảo dữ liệu lấy từ sessionStorage luôn đúng kiểu để tránh lỗi hiển thị
 interface StoredUser {
   full_name?: string;
   email?: string;
@@ -45,110 +46,63 @@ const isValidPersonName = (value: string) =>
 const isValidPhoneNumber = (value: string) =>
   PHONE_PATTERN.test(String(value || "").trim());
 
-const getRoleLabel = (role: string | null | undefined): string => {
-  switch (
-    String(role || "")
-      .trim()
-      .toLowerCase()
-  ) {
-    case "user":
-      return "Người dùng";
-    case "admin":
-      return "Quản trị viên";
-    case "owner":
-      return "Chủ địa điểm";
-    case "employee":
-      return "Nhân viên";
-    default:
-      return role || "-";
-  }
-};
-
-const getStatusLabel = (status: string | null | undefined): string => {
-  switch (
-    String(status || "")
-      .trim()
-      .toLowerCase()
-  ) {
-    case "active":
-      return "Hoạt động";
-    case "inactive":
-      return "Ngừng hoạt động";
-    case "pending":
-      return "Chờ duyệt";
-    default:
-      return status || "-";
-  }
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+  }).format(amount);
 };
 
 const Profile = () => {
   const storedUser = useMemo(() => parseStoredUser(), []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formState, setFormState] = useState({
-    full_name: "",
-    phone: "",
-    avatar_url: "",
-  });
+
+  // Form states
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+
+  // Avatar upload & preview
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<
-    string | null
-  >(null);
+  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null);
   const [pendingAvatarRemove, setPendingAvatarRemove] = useState(false);
-  const [history, setHistory] = useState<UserLoginHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Crop modal
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
+
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const resp = await userApi.getProfile();
-        if (resp?.success) {
-          setProfile(resp.data);
-          setFormState({
-            full_name: resp.data.full_name,
-            phone: resp.data.phone ?? "",
-            avatar_url: "",
-          });
-        }
-      } catch {
-        setError("Không thể tải hồ sơ người dùng");
-      } finally {
-        setLoading(false);
+  const fetchProfile = async () => {
+    setError(null);
+    try {
+      const resp = await userApi.getProfile();
+      if (resp?.success) {
+        setProfile(resp.data);
+        setFullName(resp.data.full_name);
+        setPhone(resp.data.phone ?? "");
+        setAddress(resp.data.address ?? "");
+        setAvatarUrl("");
       }
-    };
+    } catch {
+      setError("Không thể tải thông tin cá nhân của bạn.");
+    }
+  };
 
+  useEffect(() => {
     fetchProfile();
   }, []);
 
   useEffect(() => {
     return () => {
       if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
+      if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
     };
-  }, [pendingAvatarPreview]);
+  }, [pendingAvatarPreview, avatarCropSrc]);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      setHistoryLoading(true);
-      try {
-        const resp = await userApi.getLoginHistory({ limit: 50 });
-        if (resp?.success) {
-          setHistory(resp.data ?? []);
-        }
-      } catch {
-        setError("Không thể tải lịch sử đăng nhập");
-      } finally {
-        setHistoryLoading(false);
-      }
-    };
-
-    fetchHistory();
-  }, []);
-
+  // Avatar pick trigger -> Opens circular cropper modal
   const onAvatarFileChange = (file: File | null) => {
     setError(null);
     if (!file) return;
@@ -163,70 +117,89 @@ const Profile = () => {
       return;
     }
 
-    const previewUrl = URL.createObjectURL(file);
-    setPendingAvatarFile(file);
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarCropSrc(objectUrl);
+  };
+
+  // Handle crop confirm from AvatarCropper
+  const handleCropConfirm = (blob: Blob) => {
+    const fileToUpload = new File([blob], "avatar.jpg", { type: "image/jpeg" });
+    const previewUrl = URL.createObjectURL(fileToUpload);
+    setPendingAvatarFile(fileToUpload);
     setPendingAvatarRemove(false);
     setPendingAvatarPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return previewUrl;
     });
-    setFormState((prev) => ({ ...prev, avatar_url: "" }));
-    setMessage("Đã chọn ảnh. Bấm Lưu thay đổi để áp dụng.");
+    setAvatarUrl("");
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(null);
+    setMessage("Đã cắt ảnh đại diện. Hãy nhấn Lưu thay đổi để áp dụng.");
   };
 
-  const handleSave = async () => {
+  const handleCropCancel = () => {
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(null);
+  };
+
+  const handleSaveProfile = async () => {
     setSaving(true);
     setMessage(null);
     setError(null);
     try {
-      const fullName = normalizePersonName(formState.full_name);
-      const phone = formState.phone.trim() ? formState.phone.trim() : null;
-      const avatarUrl = formState.avatar_url.trim()
-        ? formState.avatar_url.trim()
-        : null;
+      const nFullName = normalizePersonName(fullName);
+      const nPhone = phone.trim() ? phone.trim() : null;
+      const nAddress = address.trim() ? address.trim() : null;
+      const mAvatarUrl = avatarUrl.trim() ? avatarUrl.trim() : null;
 
-      if (!fullName) {
-        setError("Vui lòng nhập họ tên");
+      if (!nFullName) {
+        setError("Vui lòng nhập họ và tên.");
+        setSaving(false);
         return;
       }
-      if (!isValidPersonName(fullName)) {
-        setError("Họ tên không được chứa ký tự đặc biệt");
+      if (!isValidPersonName(nFullName)) {
+        setError("Họ và tên không được chứa ký tự đặc biệt.");
+        setSaving(false);
         return;
       }
-      if (phone && !isValidPhoneNumber(phone)) {
+      if (nPhone && !isValidPhoneNumber(nPhone)) {
         setError(
-          "Số điện thoại phải gồm 10 số, bắt đầu bằng 0 và không chứa ký tự đặc biệt",
+          "Số điện thoại phải gồm 10 số, bắt đầu bằng 0.",
         );
+        setSaving(false);
         return;
       }
 
-      const wantsAvatarUrl = Boolean(avatarUrl);
+      const wantsAvatarUrl = Boolean(mAvatarUrl);
       const wantsAvatarUpload = Boolean(pendingAvatarFile);
       const wantsAvatarRemove = Boolean(pendingAvatarRemove);
 
       if (wantsAvatarUpload && pendingAvatarFile) {
         const up = await userApi.uploadAvatar(pendingAvatarFile);
         if (!up?.success) {
-          setError(up?.message || "Upload ảnh thất bại");
+          setError(up?.message || "Tải ảnh đại diện lên máy chủ thất bại.");
+          setSaving(false);
           return;
         }
       }
 
       const resp = await userApi.updateProfile({
-        full_name: fullName,
-        phone,
+        full_name: nFullName,
+        phone: nPhone,
+        address: nAddress,
         ...(wantsAvatarRemove ? { avatar_url: null } : {}),
         ...(wantsAvatarUrl && !wantsAvatarUpload && !wantsAvatarRemove
-          ? { avatar_url: avatarUrl }
+          ? { avatar_url: mAvatarUrl }
           : {}),
         ...(!wantsAvatarUrl && !wantsAvatarUpload && !wantsAvatarRemove
           ? { skip_avatar: true }
           : {}),
         ...(wantsAvatarUpload ? { skip_avatar: true } : {}),
       });
+
       if (resp?.success) {
         setProfile(resp.data);
-        setMessage("Đã cập nhật hồ sơ");
+        setMessage("Đã cập nhật thông tin cá nhân thành công!");
         setPendingAvatarFile(null);
         setPendingAvatarRemove(false);
         setPendingAvatarPreview((prev) => {
@@ -236,15 +209,16 @@ const Profile = () => {
         const userStr = sessionStorage.getItem("user");
         if (userStr) {
           try {
-            const user = JSON.parse(userStr) as Record<string, unknown>;
+            const parsed = JSON.parse(userStr) as Record<string, unknown>;
             sessionStorage.setItem(
               "user",
               JSON.stringify({
-                ...user,
+                ...parsed,
                 full_name: resp.data.full_name,
                 phone: resp.data.phone,
                 avatar_url: resp.data.avatar_url,
                 background_url: resp.data.background_url,
+                address: resp.data.address,
               }),
             );
           } catch {
@@ -254,324 +228,336 @@ const Profile = () => {
 
         window.dispatchEvent(new Event("tc-avatar-updated"));
         window.dispatchEvent(new Event("tc-profile-updated"));
-
-        setFormState((prev) => ({
-          ...prev,
-          avatar_url: "",
-        }));
+        setAvatarUrl("");
       }
-    } catch (error) {
-      setError(getErrorMessage(error, "Không thể cập nhật hồ sơ"));
+    } catch (err) {
+      setError(getErrorMessage(err, "Không thể cập nhật thông tin."));
     } finally {
       setSaving(false);
     }
   };
 
-  const initials = (profile?.full_name || storedUser?.full_name || "U")
+  const initials = (fullName || storedUser?.full_name || "U")
     .trim()
     .charAt(0)
     .toUpperCase();
 
   const avatarDisplayUrl =
     pendingAvatarPreview ||
-    resolveBackendUrl(formState.avatar_url) ||
+    resolveBackendUrl(avatarUrl) ||
     resolveBackendUrl(profile?.avatar_url) ||
     null;
 
+  const stats = profile?.stats;
+
   return (
-    <UserLayout title="Thông tin cá nhân" activeKey="/user/profile">
-      <section className="user-section p-4 sm:p-6 lg:p-8">
+    <UserLayout title="Hành trình lữ hành" activeKey="/user/profile">
+      <section className="bg-transparent max-w-6xl mx-auto space-y-6">
+
+        {/* Welcome Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900 font-heading">
-              Hồ sơ của bạn
+            <h2 className="text-2xl font-black text-slate-800 font-heading tracking-tight">
+              Chào ngày mới, {fullName || "Lữ khách"}! 🌍
             </h2>
-            <p className="text-sm text-gray-500 mt-2">
-              Cập nhật thông tin cá nhân và theo dõi lịch sử đăng nhập.
+            <p className="text-sm text-slate-500 mt-1">
+              Chúc bạn có một chuyến đi vui vẻ và tràn đầy trải nghiệm! ✈️
             </p>
           </div>
           <button
             type="button"
-            className="rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/25 hover:bg-teal-700 transition-all duration-200 active:scale-[0.98]"
-            onClick={handleSave}
+            className="rounded-full bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/25 hover:bg-teal-700 transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+            onClick={handleSaveProfile}
             disabled={saving}
           >
             {saving ? "Đang lưu..." : "Lưu thay đổi"}
           </button>
         </div>
 
-        {loading ? (
-          <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
-            Đang tải hồ sơ...
-          </div>
-        ) : null}
         {error ? (
-          <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
             {error}
           </div>
         ) : null}
         {message ? (
-          <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-600">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-600">
             {message}
           </div>
         ) : null}
 
-        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <div className="user-sub-card overflow-hidden p-4 text-center sm:p-5">
-            <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-teal-50/50 to-slate-50 px-6 py-8">
-              <div className="flex justify-center">
-                {avatarDisplayUrl ? (
-                  <img
-                    src={avatarDisplayUrl}
-                    alt="avatar"
-                    className="h-24 w-24 rounded-full object-cover border-4 border-white bg-white shadow-sm"
-                  />
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-teal-100 text-3xl font-semibold text-teal-600 border-4 border-white shadow-sm">
-                    {initials}
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 text-xs text-slate-500">
-                Ảnh đại diện hiển thị tại đây.
-              </div>
-            </div>
-            <h3 className="mt-6 text-lg font-semibold text-gray-900 font-heading">
-              {profile?.full_name ?? storedUser?.full_name ?? "Người dùng"}
-            </h3>
-            <p className="text-xs text-gray-500">
-              {profile?.email ?? storedUser?.email ?? "Chưa có email"}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <span className="rounded-full bg-teal-50 px-3 py-1 text-xs text-teal-600">
-                {getRoleLabel(profile?.role ?? storedUser?.role ?? "user")}
-              </span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-600">
-                {getStatusLabel(profile?.status ?? "active")}
-              </span>
-            </div>
-            <p className="mt-4 text-xs text-gray-400">
-              Tạo lúc:{" "}
-              {profile?.created_at
-                ? new Date(profile.created_at).toLocaleString()
-                : "-"}
-            </p>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
 
-            <div className="mt-5 space-y-2">
-              <label className="block w-full">
+          {/* Cột trái: Card trang trí + Stats */}
+          <div className="space-y-6">
+
+            {/* Card Avatar & Banner tĩnh */}
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)]">
+              {/* Ảnh bìa gradient nghệ thuật tĩnh cao cấp */}
+              <div className="relative h-36 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 overflow-hidden">
+                <div className="absolute -top-10 -left-10 w-32 h-32 rounded-full bg-white/10 blur-2xl opacity-70" />
+                <div className="absolute -bottom-16 -right-16 w-44 h-44 rounded-full bg-pink-400/20 blur-2xl opacity-70" />
+                <div className="absolute inset-0 bg-black/5" />
+              </div>
+
+              {/* Avatar & Thông tin cơ bản */}
+              <div className="relative px-6 pb-6 text-center">
+                <div className="relative -mt-16 mb-3 inline-block">
+                  {avatarDisplayUrl ? (
+                    <img
+                      src={avatarDisplayUrl}
+                      alt="avatar"
+                      className="h-28 w-28 rounded-full object-cover border-4 border-white bg-white shadow-md mx-auto"
+                    />
+                  ) : (
+                    <div className="flex h-28 w-28 items-center justify-center rounded-full bg-indigo-50 text-4xl font-bold text-indigo-600 border-4 border-white shadow-md mx-auto">
+                      {initials}
+                    </div>
+                  )}
+                  <label className="absolute bottom-1 right-1 cursor-pointer p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-md transition-colors duration-150 border-2 border-white">
+                    <CameraOutlined className="text-xs" />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        onAvatarFileChange(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <h3 className="text-xl font-bold text-slate-800 font-heading">
+                  {fullName || "Người dùng"}
+                </h3>
+                <p className="text-sm text-slate-400 mt-0.5 font-medium">
+                  {profile?.email || storedUser?.email || "Chưa cập nhật email"}
+                </p>
+
+                {/* Huy hiệu lữ hành */}
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <span className="rounded-full bg-indigo-50 px-3.5 py-1 text-xs font-semibold text-indigo-600 border border-indigo-100/50">
+                    Huy hiệu: {stats?.member_tier || "Newbie 🌟"}
+                  </span>
+                  <span className="rounded-full bg-slate-100/70 px-3.5 py-1 text-xs font-semibold text-slate-600 border border-slate-200/50">
+                    {stats?.checkin_count || 0} Dấu chân check-in
+                  </span>
+                </div>
+
+                {/* Thanh tiến trình thăng hạng check-in */}
+                <div className="space-y-2 mt-5 text-left bg-slate-50 p-4 rounded-2xl border border-slate-200/50">
+                  <div className="flex justify-between text-xs font-bold text-indigo-900">
+                    <span>Tiến trình thăng hạng</span>
+                    <span>{stats?.checkin_count || 0}/50 check-ins</span>
+                  </div>
+                  <div className="w-full bg-slate-200/60 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-indigo-500 to-teal-500 h-full rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, ((stats?.checkin_count || 0) / 50) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-medium">Tích lũy thêm check-in để nâng cấp huy hiệu cao hơn nhé!</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Thẻ Thống kê lịch trình đặt */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-4">
+              <h4 className="text-base font-bold text-slate-800 font-heading flex items-center gap-2">
+                <WalletOutlined className="text-teal-600" />
+                Lịch trình đã đặt
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/45 shadow-sm">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng Đơn Đặt</div>
+                  <div className="text-2xl font-bold text-slate-800 mt-1">{stats?.total_orders || 0}</div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/45 shadow-sm">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng Chi Tiêu</div>
+                  <div className="text-lg font-extrabold text-teal-600 mt-1.5 break-words">
+                    {formatCurrency(stats?.total_spending || 0)}
+                  </div>
+                </div>
+              </div>
+              {stats?.latest_order_date ? (
+                <div className="text-[11px] text-slate-500 mt-2 flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/45 shadow-sm">
+                  <span>Giao dịch gần nhất:</span>
+                  <span className="font-semibold text-slate-700">
+                    {new Date(stats.latest_order_date).toLocaleDateString("vi-VN")}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Hộp quà Voucher lữ hành */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-4">
+              <h4 className="text-base font-bold text-slate-800 font-heading flex items-center gap-2">
+                🎁 Hộp quà voucher của bạn
+              </h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-rose-50/60 to-amber-50/60 border border-rose-100/50">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">✈️</span>
+                    <div>
+                      <div className="text-xs font-bold text-rose-800">GIẢM 10% VÉ BAY</div>
+                      <div className="text-[9px] text-rose-600/80">Hạn dùng: 30/06/2026</div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-bold bg-rose-500 text-white px-2 py-0.5 rounded-full">Sử dụng</span>
+                </div>
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-teal-50/60 to-indigo-50/60 border border-teal-100/50">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">🏨</span>
+                    <div>
+                      <div className="text-xs font-bold text-teal-800">GIẢM 150K ĐẶT PHÒNG</div>
+                      <div className="text-[9px] text-teal-600/80">Hạn dùng: 15/07/2026</div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-bold bg-teal-600 text-white px-2 py-0.5 rounded-full">Sử dụng</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Thẻ Địa điểm Yêu thích nhất */}
+            {stats?.favorite_location ? (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-4">
+                <h4 className="text-base font-bold text-slate-800 font-heading flex items-center gap-2">
+                  <TrophyOutlined className="text-amber-500" />
+                  Địa điểm yêu thích
+                </h4>
+                <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-2xl border border-slate-200/40 shadow-sm">
+                  {stats.favorite_location.first_image ? (
+                    <img
+                      src={resolveBackendUrl(stats.favorite_location.first_image) || ""}
+                      alt={stats.favorite_location.location_name}
+                      className="h-16 w-16 rounded-xl object-cover border border-slate-200/50 shadow-sm animate-fade-in"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 bg-teal-50 rounded-xl flex items-center justify-center text-teal-600 font-bold border border-teal-100">
+                      Fav
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-slate-800 truncate">{stats.favorite_location.location_name}</div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                      <span>{stats.favorite_location.visit_count} lần ghé thăm</span>
+                      <span className="text-slate-300">|</span>
+                      <span className="font-semibold text-teal-600">{formatCurrency(stats.favorite_location.total_spent)}</span>
+                    </div>
+                  </div>
+                </div>
+                {stats.favorite_location.latest_visit ? (
+                  <div className="text-xs text-slate-400 border-t border-slate-100 pt-3 flex items-center justify-between">
+                    <span>Ghé thăm gần nhất:</span>
+                    <span className="font-semibold text-slate-600">
+                      {new Date(stats.favorite_location.latest_visit).toLocaleDateString("vi-VN")}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+          </div>
+
+          {/* Cột phải: Form thông tin liên hệ */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-6">
+            <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-150 pb-4">
+              Thông tin liên hệ
+            </h3>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Họ và tên
                 <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    onAvatarFileChange(f);
-                    e.currentTarget.value = "";
-                  }}
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  maxLength={100}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-800 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 focus:outline-none transition-all duration-200 bg-slate-50/50 hover:bg-slate-50 focus:bg-white shadow-sm"
+                  placeholder="Nhập họ và tên"
                 />
-                <span className="block w-full cursor-pointer rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700 transition-colors duration-200">
-                  Tải ảnh lên
-                </span>
               </label>
 
-              <button
-                type="button"
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 transition-colors duration-200"
-                onClick={() => {
-                  setPendingAvatarFile(null);
-                  setPendingAvatarRemove(true);
-                  setPendingAvatarPreview((prev) => {
-                    if (prev) URL.revokeObjectURL(prev);
-                    return null;
-                  });
-                  setFormState((prev) => ({ ...prev, avatar_url: "" }));
-                  setMessage(
-                    "Đã chọn xóa avatar. Bấm Lưu thay đổi để áp dụng.",
-                  );
-                }}
-              >
-                Xóa avatar
-              </button>
-
-              <div className="text-xs text-gray-400">
-                Hỗ trợ JPG/PNG/WebP, tối đa 50MB.
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="user-sub-card p-4 sm:p-5">
-              <h4 className="text-base font-semibold text-gray-900 font-heading">
-                Thông tin cá nhân
-              </h4>
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <label className="text-sm text-gray-600">
-                  Họ tên
+              <label className="block text-sm font-semibold text-slate-700">
+                Tên đăng nhập (Username)
+                <div className="relative mt-2">
                   <input
-                    value={formState.full_name}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        full_name: event.target.value,
-                      }))
-                    }
-                    maxLength={100}
-                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                    placeholder="Nhập họ tên"
-                  />
-                </label>
-                <label className="text-sm text-gray-600">
-                  Email
-                  <input
-                    value={profile?.email ?? storedUser?.email ?? ""}
+                    type="text"
+                    value={profile?.username || ""}
                     disabled
-                    className="mt-2 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 py-2.5 text-sm text-gray-500"
+                    className="w-full rounded-xl border border-slate-100 bg-slate-100/60 px-4 py-2.5 pr-10 text-sm font-semibold text-slate-400 cursor-not-allowed"
+                    placeholder="Chưa thiết lập"
                   />
-                </label>
-                <label className="text-sm text-gray-600">
-                  Số điện thoại
+                  <LockOutlined className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400" />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400 font-normal">Tên đăng nhập không thể thay đổi.</p>
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Email
+                <div className="relative mt-2">
                   <input
-                    value={formState.phone}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        phone: event.target.value
-                          .replace(/[^0-9]/g, "")
-                          .slice(0, 10),
-                      }))
-                    }
-                    inputMode="numeric"
-                    maxLength={10}
-                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                    placeholder="Nhập số điện thoại"
+                    type="email"
+                    value={profile?.email || ""}
+                    disabled
+                    className="w-full rounded-xl border border-slate-100 bg-slate-100/60 px-4 py-2.5 pr-10 text-sm font-semibold text-slate-400 cursor-not-allowed"
                   />
-                </label>
-                <label className="text-sm text-gray-600">
-                  Ảnh đại diện (URL)
-                  <input
-                    value={formState.avatar_url}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        avatar_url: event.target.value,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                    placeholder="https://..."
-                  />
-                  <p className="mt-2 text-xs text-gray-400">
-                    Dán URL http/https (không hỗ trợ data URL). Hoặc upload ảnh
-                    từ thiết bị.
-                  </p>
-                </label>
-              </div>
+                  <LockOutlined className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400" />
+                </div>
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Số điện thoại
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) =>
+                    setPhone(e.target.value.replace(/[^0-9]/g, "").slice(0, 10))
+                  }
+                  inputMode="numeric"
+                  maxLength={10}
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-800 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 focus:outline-none transition-all duration-200 bg-slate-50/50 hover:bg-slate-50 focus:bg-white shadow-sm"
+                  placeholder="Nhập số điện thoại"
+                />
+              </label>
             </div>
 
-            <div className="user-sub-card p-4 sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-base font-semibold text-gray-900 font-heading">
-                  Lịch sử đăng nhập
-                </h4>
-                <span className="text-xs text-gray-500">
-                  Hiển thị 50 lần đăng nhập gần nhất
-                </span>
-              </div>
+            <label className="block text-sm font-semibold text-slate-700">
+              Địa chỉ thường trú
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                maxLength={255}
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-800 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 focus:outline-none transition-all duration-200 bg-slate-50/50 hover:bg-slate-50 focus:bg-white shadow-sm"
+                placeholder="Nhập địa chỉ của bạn"
+              />
+            </label>
 
-              {historyLoading ? (
-                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
-                  Đang tải lịch sử đăng nhập...
-                </div>
-              ) : null}
-              {!historyLoading && history.length === 0 ? (
-                <div className="mt-4 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-4 text-sm text-gray-500 text-center">
-                  Chưa có lịch sử đăng nhập.
-                </div>
-              ) : null}
-
-              {history.length > 0 ? (
-                <div className="mt-4 overflow-hidden rounded-2xl border border-gray-100">
-                  <div className="hidden md:grid grid-cols-[220px_120px_180px_minmax(260px,1fr)] gap-3 border-b bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 font-heading">
-                    <div>Thời gian</div>
-                    <div>Thành công</div>
-                    <div>Địa chỉ IP</div>
-                    <div>Thiết bị / trình duyệt</div>
-                  </div>
-                  <div className="max-h-[420px] overflow-y-auto divide-y divide-gray-100 bg-white">
-                    {history.map((item) => (
-                      <div
-                        key={item.login_id}
-                        className="px-4 py-3 text-sm text-gray-700"
-                      >
-                        <div className="hidden md:grid md:grid-cols-[220px_120px_180px_minmax(260px,1fr)] md:gap-3">
-                          <div>
-                            {new Date(item.created_at).toLocaleString()}
-                          </div>
-                          <div>
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                                item.success
-                                  ? "bg-emerald-50 text-emerald-600"
-                                  : "bg-red-50 text-red-600"
-                              }`}
-                            >
-                              {item.success ? "Thành công" : "Thất bại"}
-                            </span>
-                          </div>
-                          <div>{item.ip_address ?? "-"}</div>
-                          <div className="break-words">
-                            {item.device_info ?? item.user_agent ?? "-"}
-                          </div>
-                        </div>
-                        <div className="space-y-2 md:hidden">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-xs uppercase tracking-wide text-gray-400">
-                                Thời gian
-                              </div>
-                              <div className="mt-1 font-medium text-gray-900">
-                                {new Date(item.created_at).toLocaleString()}
-                              </div>
-                            </div>
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                                item.success
-                                  ? "bg-emerald-50 text-emerald-600"
-                                  : "bg-red-50 text-red-600"
-                              }`}
-                            >
-                              {item.success ? "Thành công" : "Thất bại"}
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                            <div>
-                              <div className="text-xs uppercase tracking-wide text-gray-400">
-                                Địa chỉ IP
-                              </div>
-                              <div className="mt-1">
-                                {item.ip_address ?? "-"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs uppercase tracking-wide text-gray-400">
-                                Thiết bị / trình duyệt
-                              </div>
-                              <div className="mt-1 break-words">
-                                {item.device_info ?? item.user_agent ?? "-"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+            <div className="border-t border-slate-200 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-400">
+              <div>Đồng hành từ ngày: <span className="font-semibold text-slate-500">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString("vi-VN") : "-"}</span></div>
+              <div>Cập nhật gần nhất: <span className="font-semibold text-slate-500">{profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString("vi-VN") : "-"}</span></div>
             </div>
+
           </div>
+
         </div>
       </section>
+
+      {/* Avatar Cropper */}
+      {avatarCropSrc ? (
+        <AvatarCropper
+          src={avatarCropSrc}
+          title="Cắt ảnh đại diện"
+          accentColor="#4f46e5"
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      ) : null}
     </UserLayout>
   );
 };
 
 export default Profile;
+

@@ -4,6 +4,8 @@ import userApi from "../api/userApi";
 import { resolveBackendUrl } from "../utils/resolveBackendUrl";
 import { formatDateTimeVi } from "../utils/formatDateVi";
 import type { UserNotificationItem } from "../types/user.types";
+import aiApi from "../api/aiApi";
+import type { AiChatHistoryItem } from "../types/user.types";
 
 // Dùng để định nghĩa input cho layout user, giúp tái sử dụng UI thống nhất
 interface UserLayoutProps {
@@ -79,6 +81,13 @@ const UserLayout = ({
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [deletingNotifications, setDeletingNotifications] = useState(false);
 
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [aiHistory, setAiHistory] = useState<AiChatHistoryItem[]>([]);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiScrollRef = useRef<HTMLDivElement | null>(null);
+
   const [user, setUser] = useState<StoredUser | null>(() => {
     const stored = sessionStorage.getItem("user");
     return parseStoredUser(stored);
@@ -100,6 +109,50 @@ const UserLayout = ({
       window.removeEventListener("tc-profile-updated", refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!aiChatOpen) return;
+    const fetchHistory = async () => {
+      setAiLoading(true);
+      setAiError(null);
+      try {
+        const res = await aiApi.getHistory();
+        if (res.success) {
+          setAiHistory(res.data || []);
+        }
+      } catch {
+        setAiError("Không thể tải lịch sử chat AI.");
+      } finally {
+        setAiLoading(false);
+      }
+    };
+    void fetchHistory();
+  }, [aiChatOpen]);
+
+  useEffect(() => {
+    if (aiScrollRef.current) {
+      aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+    }
+  }, [aiHistory, aiChatOpen]);
+
+  const handleSendAiMessage = async () => {
+    if (!aiPrompt.trim()) return;
+    const promptText = aiPrompt.trim();
+    setAiPrompt("");
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      await aiApi.chat({ prompt: promptText });
+      const res = await aiApi.getHistory();
+      if (res.success) {
+        setAiHistory(res.data || []);
+      }
+    } catch {
+      setAiError("Không thể gửi tin nhắn tới AI.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const menuSections: MenuSection[] = useMemo(
     () => [
@@ -127,19 +180,6 @@ const UserLayout = ({
               </svg>
             ),
           },
-          {
-            label: "QR check-in",
-            path: "/user/qr-checkin",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="7" height="7" />
-                <rect x="14" y="3" width="7" height="7" />
-                <rect x="3" y="14" width="7" height="7" />
-                <path d="M14 14h3v3h-3z" />
-                <path d="M17 17h4" />
-              </svg>
-            ),
-          },
         ],
       },
       {
@@ -163,104 +203,18 @@ const UserLayout = ({
               </svg>
             ),
           },
-          {
-            label: "Nhật ký",
-            path: "/user/diary",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 0-4 4z" />
-                <path d="M8 8h8" />
-                <path d="M8 12h8" />
-              </svg>
-            ),
-          },
-          {
-            label: "Lịch trình",
-            path: "/user/itinerary",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="3" />
-                <path d="M8 2v4" />
-                <path d="M16 2v4" />
-                <path d="M3 10h18" />
-              </svg>
-            ),
-          },
-          {
-            label: "Địa điểm của tôi",
-            path: "/user/my-created-locations",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
-                <circle cx="12" cy="10" r="2.5" />
-              </svg>
-            ),
-          },
-        ],
-      },
-      {
-        label: "Xã hội",
-        items: [
-          {
-            label: "Nhóm bạn",
-            path: "/user/group-checkin",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="9" cy="8" r="3" />
-                <path d="M2 20a7 7 0 0 1 14 0" />
-                <circle cx="17" cy="9" r="2" />
-                <path d="M16 20a5 5 0 0 1 6 0" />
-              </svg>
-            ),
-          },
-          {
-            label: "Xếp hạng",
-            path: "/user/leaderboard",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 21V10" />
-                <path d="M12 21V3" />
-                <path d="M16 21v-7" />
-              </svg>
-            ),
-          },
         ],
       },
       {
         label: "Tiện ích",
         items: [
           {
-            label: "Vỏ vé du lịch",
+            label: "Vé của tôi",
             path: "/user/tickets",
             icon: (
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
                 <path d="M13 5v14" />
-              </svg>
-            ),
-          },
-          {
-            label: "Vỏ vé ăn uống",
-            path: "/user/table-pass",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
-                <path d="M7 2v4" />
-                <path d="M21 2v20" />
-                <path d="M21 2c-3.07 0-6 2.5-6 7v3h6V2z" />
-                <path d="M12 11v11" />
-                <path d="M7 11v11" />
-              </svg>
-            ),
-          },
-          {
-            label: "Vỏ vé khách sạn",
-            path: "/user/room-pass",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                <line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
             ),
           },
@@ -293,16 +247,6 @@ const UserLayout = ({
                 <path d="M12 3v6" />
                 <path d="M5.5 20a7 7 0 1 1 13 0" />
                 <circle cx="12" cy="9" r="3" />
-              </svg>
-            ),
-          },
-          {
-            label: "Hồ sơ",
-            path: "/user/profile",
-            icon: (
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
               </svg>
             ),
           },
@@ -492,11 +436,10 @@ const UserLayout = ({
                       <button
                         key={item.path}
                         type="button"
-                        className={`w-full text-left rounded-xl px-3 py-2.5 font-semibold transition-all duration-200 ${
-                          isActive
+                        className={`w-full text-left rounded-xl px-3 py-2.5 font-semibold transition-all duration-200 ${isActive
                             ? "bg-teal-600/20 text-teal-300"
                             : "text-slate-400 hover:text-white hover:bg-white/5"
-                        }`}
+                          }`}
                         onClick={() => navigate(item.path)}
                       >
                         <span className="flex items-center gap-3">
@@ -596,25 +539,25 @@ const UserLayout = ({
                         <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                       </svg>
                       {hasAlerts ? (
-                        <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+                        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
                       ) : null}
                     </button>
 
                     {notificationOpen ? (
-                      <div className="absolute right-0 top-12 z-50 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl animate-fade-in">
-                        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-                          <div className="text-sm font-semibold text-gray-900 font-heading">
-                            Thông báo gần đây
+                      <div className="absolute right-0 top-12 z-50 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md shadow-2xl animate-fade-in">
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 bg-[#fafbfc]/60">
+                          <div className="text-xs font-extrabold text-slate-800 font-heading tracking-wide uppercase flex items-center gap-1.5">
+                            <span className="text-teal-600">🔔</span> Thông báo gần đây
                           </div>
                           <div className="flex items-center gap-2">
                             {unreadNotificationCount > 0 ? (
-                              <span className="rounded-full bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-600">
-                                {unreadNotificationCount} chưa đọc
+                              <span className="rounded-md bg-teal-50 px-1.5 py-0.5 text-[9px] font-black text-teal-700 uppercase tracking-wide">
+                                {unreadNotificationCount} mới
                               </span>
                             ) : null}
                             <button
                               type="button"
-                              className="rounded-full border border-gray-200 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 transition-colors duration-200 disabled:opacity-60"
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 transition-all duration-200 disabled:opacity-60 disabled:pointer-events-none"
                               onClick={() => {
                                 void deleteAllNotifications();
                               }}
@@ -631,51 +574,86 @@ const UserLayout = ({
                         </div>
                         <div className="max-h-[360px] overflow-y-auto">
                           {notificationsLoading ? (
-                            <div className="px-4 py-6 text-center text-sm text-gray-500">
-                              Đang tải thông báo...
+                            <div className="px-4 py-8 text-center text-xs text-slate-400 font-medium">
+                              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent mb-1" />
+                              <p>Đang tải thông báo...</p>
                             </div>
                           ) : notifications.length === 0 ? (
-                            <div className="px-4 py-6 text-center text-sm text-gray-500">
-                              Chưa có thông báo mới.
+                            <div className="px-4 py-12 text-center text-xs text-slate-400 font-medium space-y-2">
+                              <span className="text-2xl inline-block mb-1">📭</span>
+                              <p className="font-bold text-slate-500">Hộp thư trống</p>
+                              <p className="text-[10px] text-slate-400">Bạn không có thông báo mới nào.</p>
                             </div>
                           ) : (
                             notifications.map((item) => {
                               const rawBody = item.body || "";
                               const cleanBody = rawBody.replace(/\[[^\]]+\]/g, "").trim();
 
+                              const isBooking =
+                                rawBody.includes("[booking:") ||
+                                item.title?.toLowerCase().includes("lịch") ||
+                                item.title?.toLowerCase().includes("đặt trước") ||
+                                item.title?.toLowerCase().includes("đơn hàng") ||
+                                item.title?.toLowerCase().includes("hủy") ||
+                                item.title?.toLowerCase().includes("quá hạn") ||
+                                item.title?.toLowerCase().includes("xác nhận") ||
+                                item.title?.toLowerCase().includes("đã dùng") ||
+                                item.title?.toLowerCase().includes("vé");
+
+                              const isVoucher =
+                                rawBody.includes("[voucher:") ||
+                                item.title?.toLowerCase().includes("voucher") ||
+                                item.title?.toLowerCase().includes("khuyến mãi");
+
+                              let icon = "🔔";
+                              let iconBg = "bg-slate-50 text-slate-500 border-slate-100";
+                              if (isBooking) {
+                                icon = "📅";
+                                iconBg = "bg-teal-50 text-teal-700 border-teal-100";
+                              } else if (isVoucher) {
+                                icon = "🎁";
+                                iconBg = "bg-rose-50 text-rose-700 border-rose-100";
+                              }
+
+                              const isUnread = !(item.is_read === true || Number(item.is_read) === 1);
+
                               return (
                                 <div
                                   key={item.notification_id}
-                                  className={`border-b border-gray-100 px-4 py-3 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors duration-150 ${
-                                    item.is_read === true ||
-                                    Number(item.is_read) === 1
-                                      ? "bg-white"
-                                      : "bg-teal-50/50"
-                                  }`}
+                                  className={`flex items-start gap-3 border-b border-slate-50 px-4 py-3 last:border-b-0 cursor-pointer transition-all duration-200 text-left ${isUnread
+                                      ? "bg-[#f0fbf9]/60 hover:bg-[#e6f7f4]/80"
+                                      : "bg-white hover:bg-slate-50/80"
+                                    }`}
                                   onClick={() => {
                                     setNotificationOpen(false);
-                                    if (
-                                      rawBody.includes("[booking:") ||
-                                      item.title?.includes("lịch trình")
-                                    ) {
+                                    if (isBooking) {
                                       navigate("/user/booking-reminders");
+                                    } else if (isVoucher) {
+                                      navigate("/user/vouchers");
                                     }
                                   }}
                                 >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="text-sm font-medium text-gray-900">
-                                      {item.title || "Thông báo"}
+                                  {/* Icon bên trái */}
+                                  <div className={`h-8 w-8 rounded-xl border flex items-center justify-center shrink-0 text-sm shadow-sm ${iconBg}`}>
+                                    {icon}
+                                  </div>
+
+                                  {/* Nội dung bên phải */}
+                                  <div className="flex-1 min-w-0 space-y-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <h4 className="text-xs font-bold text-slate-800 truncate">
+                                        {item.title || "Thông báo"}
+                                      </h4>
+                                      {isUnread && (
+                                        <span className="h-2 w-2 shrink-0 rounded-full bg-teal-500 shadow-[0_0_8px_#14b8a6]" />
+                                      )}
                                     </div>
-                                    {item.is_read === true ||
-                                    Number(item.is_read) === 1 ? null : (
-                                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-teal-500" />
-                                    )}
-                                  </div>
-                                  <div className="mt-1 text-xs leading-5 text-gray-600">
-                                    {cleanBody || "-"}
-                                  </div>
-                                  <div className="mt-2 text-[11px] text-gray-400">
-                                    {formatDateTimeVi(item.created_at)}
+                                    <p className="text-[10px] text-slate-500 leading-relaxed break-words font-medium">
+                                      {cleanBody || "-"}
+                                    </p>
+                                    <div className="text-[9px] text-slate-400 font-semibold tracking-wide">
+                                      {formatDateTimeVi(item.created_at)}
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -777,9 +755,8 @@ const UserLayout = ({
                       <button
                         key={item.path}
                         type="button"
-                        className={`shrink-0 whitespace-nowrap user-chip transition-all duration-200 ${
-                          isActive ? "user-chip-active" : "user-chip-idle"
-                        }`}
+                        className={`shrink-0 whitespace-nowrap user-chip transition-all duration-200 ${isActive ? "user-chip-active" : "user-chip-idle"
+                          }`}
                         onClick={() => navigate(item.path)}
                       >
                         {item.label}
@@ -792,9 +769,8 @@ const UserLayout = ({
           </header>
 
           <div
-            className={`w-full px-4 sm:px-6 lg:px-8 ${
-              flushTop ? "pt-0 pb-8" : "py-8"
-            }`}
+            className={`w-full px-4 sm:px-6 lg:px-8 ${flushTop ? "pt-0 pb-8" : "py-8"
+              }`}
             style={{
               background: "linear-gradient(180deg, #f8fafb 0%, #f1f5f9 50%, #f8fafb 100%)",
             }}
@@ -802,6 +778,135 @@ const UserLayout = ({
             <main className="w-full min-w-0 space-y-8 animate-fade-in">
               {children}
             </main>
+          </div>
+
+          {/* Bong bóng Chat AI nổi toàn cục */}
+          <div className="fixed bottom-6 right-6 z-40 font-sans">
+            <button
+              type="button"
+              className="flex h-12 w-12 items-center justify-center rounded-full text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-lg shadow-teal-500/30 transition-transform duration-300 hover:scale-110 active:scale-95"
+              onClick={() => setAiChatOpen((prev) => !prev)}
+              aria-label="Trợ lý ảo AI"
+            >
+              {aiChatOpen ? (
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 21l5.096-.813a8.959 8.959 0 003.58-.889A9 9 0 103.07 9.814a8.96 8.96 0 00.89 3.58L3 18.5l5.096-.813a8.96 8.96 0 003.58.889z" />
+                </svg>
+              )}
+            </button>
+
+            {aiChatOpen && (
+              <div className="absolute bottom-16 right-0 w-[330px] sm:w-[360px] h-[450px] rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden animate-fade-in">
+                {/* Header */}
+                <div className="p-4 text-white bg-gradient-to-r from-teal-500 to-emerald-500 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🤖</span>
+                    <div>
+                      <h4 className="text-xs font-bold font-heading uppercase tracking-wider">Trợ lý ảo AI</h4>
+                      <p className="text-[9px] opacity-80 font-semibold">Tự động trả lời nhanh</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-white/80 hover:text-white transition"
+                    onClick={() => setAiChatOpen(false)}
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Message List */}
+                <div
+                  ref={aiScrollRef}
+                  className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fafbfc]/50"
+                >
+                  {aiLoading && aiHistory.length === 0 && (
+                    <div className="text-center text-xs text-slate-400 py-8 font-medium">
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent mb-1" />
+                      <p>Trợ lý AI đang tải cuộc trò chuyện...</p>
+                    </div>
+                  )}
+
+                  {aiError && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5 text-center text-[10px] text-rose-600">
+                      {aiError}
+                    </div>
+                  )}
+
+                  {!aiLoading && aiHistory.length === 0 && (
+                    <div className="text-center text-xs text-slate-400 py-12 space-y-2">
+                      <span className="text-xl">🤖</span>
+                      <p className="font-bold text-slate-500">Xin chào</p>
+                      <p className="text-[10px] text-slate-400 max-w-[200px] mx-auto leading-relaxed">
+                        Tôi là trợ lý AI của bạn. Hãy gửi tin nhắn để hỏi bất kỳ thông tin nào về chuyến hành trình nhé.
+                      </p>
+                    </div>
+                  )}
+
+                  {aiHistory.map((item) => (
+                    <div key={item.history_id} className="space-y-3">
+                      {/* User Prompt */}
+                      <div className="flex flex-col max-w-[75%] ml-auto items-end">
+                        <div className="rounded-2xl px-3 py-2 text-xs leading-relaxed break-words font-medium shadow-sm bg-teal-600 text-white rounded-br-none">
+                          {item.prompt}
+                        </div>
+                      </div>
+                      {/* AI Response */}
+                      <div className="flex flex-col max-w-[75%] mr-auto items-start">
+                        <span className="text-[9px] font-bold text-slate-500 mb-0.5 ml-1 flex items-center gap-1">
+                          <span>🤖</span> Trợ lý AI
+                        </span>
+                        <div className="rounded-2xl px-3 py-2 text-xs leading-relaxed break-words font-medium shadow-sm bg-white text-slate-800 border border-slate-100 rounded-bl-none">
+                          {item.response}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {aiLoading && aiHistory.length > 0 && (
+                    <div className="flex flex-col max-w-[75%] mr-auto items-start">
+                      <span className="text-[9px] font-bold text-slate-500 mb-0.5 ml-1">🤖 Trợ lý AI</span>
+                      <div className="rounded-2xl px-3 py-2 text-xs bg-white text-slate-400 border border-slate-100 rounded-bl-none flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.2s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.4s]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Input */}
+                <div className="p-3 border-t border-slate-100 bg-white flex items-center gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs transition duration-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 focus:outline-none"
+                    placeholder="Hỏi trợ lý AI..."
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSendAiMessage();
+                    }}
+                    disabled={aiLoading}
+                  />
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded-full flex items-center justify-center text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition hover:scale-105 active:scale-95 shrink-0 disabled:opacity-60"
+                    onClick={() => void handleSendAiMessage()}
+                    disabled={aiLoading}
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

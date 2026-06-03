@@ -209,7 +209,7 @@ const getGroupStatus = (groupTickets: UserTouristTicketItem[]) => {
   }
 };
 
-const TicketCart = () => {
+const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<UserTouristTicketItem[]>([]);
@@ -313,8 +313,7 @@ const TicketCart = () => {
     });
   }, [tickets]);
 
-  return (
-    <UserLayout title="Giỏ vé" subtitle="Giỏ vé" activeKey="/user/tickets">
+  const content = (
       <section className="relative overflow-hidden user-section p-6 sm:p-8">
         <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-emerald-100/50 blur-2xl" />
         <div className="absolute -left-16 bottom-0 h-40 w-40 rounded-full bg-slate-100/60 blur-2xl" />
@@ -720,6 +719,12 @@ const TicketCart = () => {
         )}
 
       </section>
+    );
+
+  if (isEmbedded) return content;
+  return (
+    <UserLayout title="Giỏ vé" subtitle="Giỏ vé" activeKey="/user/tickets">
+      {content}
     </UserLayout>
   );
 };

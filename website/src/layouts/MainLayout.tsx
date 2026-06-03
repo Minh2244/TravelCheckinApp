@@ -224,12 +224,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     },
     ...(user?.role === "owner"
       ? [
-          {
-            key: "/owner/bank",
-            icon: <DollarOutlined />,
-            label: "Ngân hàng",
-          },
-        ]
+        {
+          key: "/owner/bank",
+          icon: <DollarOutlined />,
+          label: "Ngân hàng",
+        },
+      ]
       : []),
     {
       key: "/owner/locations",
@@ -258,12 +258,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     },
     ...(user?.role === "owner"
       ? [
-          {
-            key: "/owner/commissions",
-            icon: <DollarOutlined />,
-            label: "Hoa hồng",
-          },
-        ]
+        {
+          key: "/owner/commissions",
+          icon: <DollarOutlined />,
+          label: "Hoa hồng",
+        },
+      ]
       : []),
     {
       key: "/owner/vouchers",
@@ -272,12 +272,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     },
     ...(user?.role === "owner"
       ? [
-          {
-            key: "/owner/employees",
-            icon: <TeamOutlined />,
-            label: "Nhân viên",
-          },
-        ]
+        {
+          key: "/owner/employees",
+          icon: <TeamOutlined />,
+          label: "Nhân viên",
+        },
+      ]
       : []),
     {
       key: "/owner/logs",
@@ -412,9 +412,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         >
           <div className="h-16 flex items-center justify-center border-b bg-gradient-to-r from-blue-500 to-blue-600">
             <h1
-              className={`font-bold text-white transition-all ${
-                collapsed ? "text-xs" : "text-xl"
-              }`}
+              className={`font-bold text-white transition-all ${collapsed ? "text-xs" : "text-xl"
+                }`}
             >
               {collapsed ? brand.short : brand.full}
             </h1>
@@ -424,8 +423,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             mode="inline"
             selectedKeys={[
               user?.role === "admin" &&
-              (location.pathname === "/admin/system-vouchers" ||
-                location.pathname === "/admin/owner-vouchers")
+                (location.pathname === "/admin/system-vouchers" ||
+                  location.pathname === "/admin/owner-vouchers")
                 ? "/admin/vouchers"
                 : location.pathname,
             ]}

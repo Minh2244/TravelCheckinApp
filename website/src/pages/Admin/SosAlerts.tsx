@@ -145,6 +145,8 @@ const SosAlerts = () => {
     distanceM: number;
     durationS?: number;
     source: "osrm" | "haversine";
+    hasNoRoute?: boolean;
+    error?: string;
   } | null>(null);
 
   const selectedPos = useMemo<LatLng | null>(() => {
@@ -219,39 +221,89 @@ const SosAlerts = () => {
       const from = myPos;
       const to = selectedPos;
       const fallbackDistance = haversineMeters(from, to);
-      setRouteInfo({ distanceM: fallbackDistance, source: "haversine" });
-      setRouteLine([from, to]);
 
-      try {
-        const url =
-          `https://router.project-osrm.org/route/v1/driving/` +
-          `${from.lng},${from.lat};${to.lng},${to.lat}` +
-          `?overview=full&geometries=geojson`;
+      let lastError: Error | null = null;
+      let success = false;
+      let data: any = null;
 
-        const res = await fetch(url, { signal: controller.signal });
-        if (!res.ok) return;
-        type OsrmRoute = {
-          distance?: number;
-          duration?: number;
-          geometry?: { coordinates?: Array<[number, number]> };
-        };
-        type OsrmRouteResponse = { routes?: OsrmRoute[] };
+      const urls = [
+        `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`,
+        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`
+      ];
 
-        const json = (await res.json()) as OsrmRouteResponse;
-        const route = json.routes?.[0];
-        const coords: Array<[number, number]> | undefined =
-          route?.geometry?.coordinates;
-        if (!Array.isArray(coords) || coords.length < 2) return;
+      for (const url of urls) {
+        if (controller.signal.aborted) break;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          if (controller.signal.aborted) break;
+          try {
+            const res = await fetch(url, { signal: controller.signal });
+            if (res.status === 400 || res.status === 422) {
+              const errBody = await res.json().catch(() => ({}));
+              if (errBody.code === "NoRoute") {
+                throw new Error("NoRoute");
+              }
+              throw new Error(`HTTP error ${res.status}`);
+            }
+            if (res.status === 429) {
+              throw new Error("Rate limit exceeded");
+            }
+            if (!res.ok) {
+              throw new Error(`HTTP error ${res.status}`);
+            }
+            const json = await res.json();
+            if (json.code && json.code !== "Ok") {
+              if (json.code === "NoRoute") {
+                throw new Error("NoRoute");
+              }
+              throw new Error(`OSRM error: ${json.code}`);
+            }
+            data = json;
+            success = true;
+            break;
+          } catch (err: any) {
+            lastError = err;
+            if (err.name === "AbortError") {
+              break;
+            }
+            if (err.message === "NoRoute") {
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+          }
+        }
+        if (success || (lastError && lastError.message === "NoRoute")) {
+          break;
+        }
+      }
 
-        const line: LatLng[] = coords.map(([lng, lat]) => ({ lat, lng }));
-        setRouteLine(line);
+      if (success && data) {
+        const routes = data.routes ?? [];
+        const route = routes[0];
+        if (!route || !route.geometry?.coordinates?.length) {
+          setRouteLine([from, to]);
+          setRouteInfo({
+            distanceM: fallbackDistance,
+            source: "haversine",
+            hasNoRoute: true,
+          });
+        } else {
+          const coords: Array<[number, number]> = route.geometry.coordinates;
+          const line: LatLng[] = coords.map(([lng, lat]) => ({ lat, lng }));
+          setRouteLine(line);
+          setRouteInfo({
+            distanceM: Number(route.distance) || fallbackDistance,
+            durationS: Number(route.duration) || undefined,
+            source: "osrm",
+          });
+        }
+      } else {
+        setRouteLine([from, to]);
         setRouteInfo({
-          distanceM: Number(route?.distance) || fallbackDistance,
-          durationS: Number(route?.duration) || undefined,
-          source: "osrm",
+          distanceM: fallbackDistance,
+          source: "haversine",
+          hasNoRoute: lastError?.message === "NoRoute",
+          error: lastError?.message || "Connection failed",
         });
-      } catch {
-        // ignore (fallback already set)
       }
     };
 
@@ -531,6 +583,13 @@ const SosAlerts = () => {
                   </Button>
                   {myPos && selectedPos ? (
                     <div className="text-xs text-white/80">
+                      {routeInfo?.source === "haversine" && (
+                        <span className="text-amber-400 font-semibold block mb-1">
+                          {routeInfo.hasNoRoute
+                            ? "⚠️ Điểm SOS không nằm trên mạng lưới đường bộ (Đang hiển thị đường thẳng)"
+                            : "⚠️ Lỗi kết nối OSRM (Đang hiển thị đường thẳng)"}
+                        </span>
+                      )}
                       Khoảng cách:{" "}
                       {formatDistance(
                         routeInfo?.distanceM ??

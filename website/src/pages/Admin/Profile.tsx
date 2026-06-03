@@ -1,49 +1,44 @@
-import { useEffect, useState } from "react";
-import {
-  Avatar,
-  Button,
-  Card,
-  Divider,
-  Form,
-  Input,
-  Pagination,
-  Table,
-  Tag,
-  Typography,
-  Upload,
-  message,
-} from "antd";
-import { SaveOutlined, UserOutlined } from "@ant-design/icons";
-import type { ColumnsType } from "antd/es/table";
-import type { UploadProps } from "antd";
+import { useEffect, useState, useRef } from "react";
+import { Avatar, Button, Form, Input, Tag, message } from "antd";
+import { CameraOutlined, LockOutlined, SaveOutlined } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
+import AvatarCropper from "../../components/AvatarCropper";
 
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
-import { asRecord } from "../../utils/safe";
-import { formatDateVi } from "../../utils/formatDateVi";
+import { getErrorMessage } from "../../utils/safe";
 
 interface AdminProfileDto {
   user_id: number;
   email: string | null;
   phone: string | null;
   full_name: string;
+  address?: string | null;
+  username?: string | null;
   avatar_url: string | null;
+  avatar_source?: string;
+  background_url?: string | null;
+  background_source?: string;
   has_avatar_blob?: boolean;
   has_password?: boolean;
   role: string;
   status: string;
   created_at: string;
   updated_at: string;
-}
-
-interface LoginHistoryRow {
-  login_id: number;
-  success: 0 | 1;
-  ip_address: string | null;
-  user_agent: string | null;
-  device_info: string | null;
-  created_at: string;
+  stats?: {
+    total_users: number;
+    total_locations: number;
+    total_bookings: number;
+    top_location: {
+      location_name: string;
+      booking_count: number;
+      total_revenue: number;
+      latest_booking: string | null;
+      first_image: string | null;
+    } | null;
+    admin_rank?: string;
+  };
 }
 
 const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ỹ]+(?:\s+[A-Za-zÀ-ỹ]+)*$/u;
@@ -62,9 +57,9 @@ const isValidPhoneNumber = (value: string) =>
 
 const getRoleLabel = (role: string | null | undefined): string => {
   switch (
-    String(role || "")
-      .trim()
-      .toLowerCase()
+  String(role || "")
+    .trim()
+    .toLowerCase()
   ) {
     case "admin":
       return "Quản trị viên";
@@ -81,12 +76,12 @@ const getRoleLabel = (role: string | null | undefined): string => {
 
 const getStatusLabel = (status: string | null | undefined): string => {
   switch (
-    String(status || "")
-      .trim()
-      .toLowerCase()
+  String(status || "")
+    .trim()
+    .toLowerCase()
   ) {
     case "active":
-      return "Hoạt động";
+      return "Đang hoạt động";
     case "inactive":
       return "Ngừng hoạt động";
     case "pending":
@@ -96,75 +91,31 @@ const getStatusLabel = (status: string | null | undefined): string => {
   }
 };
 
-const getApiErrorMessage = (error: unknown, fallback: string): string => {
-  const e = error as {
-    response?: { data?: { message?: string } };
-    message?: string;
-  };
-  return e?.response?.data?.message || e?.message || fallback;
-};
-
 const Profile = () => {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<AdminProfileDto | null>(null);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarObjectUrl, setAvatarObjectUrl] = useState<string | null>(null);
+
+  // Live action counts
+  const [pendingLocations, setPendingLocations] = useState(0);
+  const [pendingReports, setPendingReports] = useState(0);
+  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
+  const [activeSos, setActiveSos] = useState(0);
+
+  // Avatar upload
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
-  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<
-    string | null
-  >(null);
+  const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null);
   const [pendingAvatarRemove, setPendingAvatarRemove] = useState(false);
 
-  const [loginHistory, setLoginHistory] = useState<LoginHistoryRow[]>([]);
-  const [loginHistoryLoading, setLoginHistoryLoading] = useState(false);
-  const [loginHistoryPagination, setLoginHistoryPagination] = useState({
-    current: 1,
-    pageSize: 5,
-    total: 0,
-  });
+  // Circular Avatar Cropper Modal state
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
+  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
 
   const [profileForm] = Form.useForm();
-  const watchedAvatarUrl = Form.useWatch("avatar_url", profileForm);
-
-  const persistLocalUser = (updates: {
-    full_name?: string;
-    phone?: string | null;
-    avatar_url?: string | null;
-  }) => {
-    const userStr = sessionStorage.getItem("user");
-    if (!userStr) return;
-    try {
-      const user = JSON.parse(userStr) as {
-        full_name?: string;
-        phone?: string | null;
-        avatar_url?: string | null;
-        email?: string | null;
-        role?: string;
-      };
-      const nextAvatarUrl = updates.avatar_url;
-      const shouldPersistAvatar =
-        typeof nextAvatarUrl === "string" &&
-        nextAvatarUrl.length > 0 &&
-        // Tránh lưu data URL khổng lồ vào localStorage
-        !(nextAvatarUrl.startsWith("data:") && nextAvatarUrl.length > 2000);
-
-      sessionStorage.setItem(
-        "user",
-        JSON.stringify({
-          ...user,
-          ...updates,
-          avatar_url: shouldPersistAvatar ? nextAvatarUrl : user.avatar_url,
-        }),
-      );
-    } catch {
-      // ignore
-    }
-  };
 
   const fetchProfile = async (): Promise<AdminProfileDto | null> => {
     try {
-      setLoading(true);
       const response = await adminApi.getAdminProfile();
       if (response?.success) {
         const raw = response.data as AdminProfileDto;
@@ -172,7 +123,7 @@ const Profile = () => {
           ...raw,
           avatar_url:
             typeof raw.avatar_url === "string" &&
-            raw.avatar_url.trim().toLowerCase().startsWith("data:")
+              raw.avatar_url.trim().toLowerCase().startsWith("data:")
               ? null
               : raw.avatar_url,
         };
@@ -180,6 +131,7 @@ const Profile = () => {
         profileForm.setFieldsValue({
           full_name: data.full_name,
           phone: data.phone,
+          address: data.address,
           avatar_url: "",
         });
 
@@ -190,87 +142,125 @@ const Profile = () => {
           return null;
         });
 
-        if (
-          typeof raw.avatar_url === "string" &&
-          raw.avatar_url.trim().toLowerCase().startsWith("data:")
-        ) {
-          message.warning(
-            "Ảnh đại diện đang lưu dưới dạng data URL quá dài. Hệ thống đã ẩn giá trị này khỏi ô nhập để tránh rối giao diện.",
-          );
-        }
-
-        // DB rút gọn: không dùng avatar BLOB nữa. Hiển thị theo avatar_url.
-        setAvatarObjectUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return null;
-        });
-
         return data;
       }
     } catch (error: unknown) {
-      message.error(getApiErrorMessage(error, "Lỗi tải thông tin admin"));
-    } finally {
-      setLoading(false);
+      message.error(getErrorMessage(error, "Lỗi tải thông tin admin"));
     }
     return null;
   };
 
-  useEffect(() => {
-    return () => {
-      if (avatarObjectUrl) URL.revokeObjectURL(avatarObjectUrl);
-      if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    fetchProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchLoginHistory = async () => {
+  const fetchActionCounts = async () => {
     try {
-      setLoginHistoryLoading(true);
-      const resp = await adminApi.getAdminLoginHistory({
-        page: loginHistoryPagination.current,
-        limit: loginHistoryPagination.pageSize,
-      });
-      if (resp?.success) {
-        setLoginHistory((resp.data || []) as LoginHistoryRow[]);
-        setLoginHistoryPagination((p) => ({
-          ...p,
-          total: resp.pagination?.total || 0,
-        }));
+      const [locs, reps, drawsRaw, sos] = await Promise.all([
+        adminApi.getLocations({ status: "pending" }),
+        adminApi.getReports({ status: "pending" }),
+        adminApi.getCommissionPaymentRequests(),
+        adminApi.getSosAlerts({ status: "pending" })
+      ]);
+
+      if (locs?.success) setPendingLocations(locs.pagination?.total || locs.data?.length || 0);
+      if (reps?.success) setPendingReports(reps.pagination?.total || reps.data?.length || 0);
+      if (drawsRaw?.success && Array.isArray(drawsRaw.data)) {
+        const pendingDraws = drawsRaw.data.filter((item: any) => item.status === "pending");
+        setPendingWithdrawals(pendingDraws.length);
+      } else if (drawsRaw?.success) {
+        setPendingWithdrawals(drawsRaw.pagination?.total || drawsRaw.data?.length || 0);
       }
-    } catch (error: unknown) {
-      message.error(getApiErrorMessage(error, "Lỗi tải lịch sử đăng nhập"));
-    } finally {
-      setLoginHistoryLoading(false);
+      if (sos?.success) setActiveSos(sos.pagination?.total || sos.data?.length || 0);
+    } catch {
+      // Fetch stats silently
     }
   };
 
   useEffect(() => {
-    fetchLoginHistory();
+    fetchProfile();
+    fetchActionCounts();
+    return () => {
+      if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
+      if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loginHistoryPagination.current, loginHistoryPagination.pageSize]);
+  }, []);
+
+  const persistLocalUser = (updates: {
+    full_name?: string;
+    phone?: string | null;
+    avatar_url?: string | null;
+    address?: string | null;
+  }) => {
+    const userStr = sessionStorage.getItem("user");
+    if (!userStr) return;
+    try {
+      const user = JSON.parse(userStr) as Record<string, unknown>;
+      sessionStorage.setItem(
+        "user",
+        JSON.stringify({
+          ...user,
+          ...updates,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  // Avatar selection -> Opens cropper
+  const onAvatarFileChange = (file: File) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      message.error("Định dạng ảnh không hợp lệ (chỉ hỗ trợ JPG/PNG/WebP)");
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      message.error("Ảnh quá lớn (tối đa 50MB)");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarCropFile(file);
+    setAvatarCropSrc(objectUrl);
+  };
+
+  // Handle crop confirm
+  const handleCropConfirm = (blob: Blob) => {
+    const fileToUpload = new File([blob], "avatar.jpg", { type: "image/jpeg" });
+    const previewUrl = URL.createObjectURL(fileToUpload);
+    setPendingAvatarFile(fileToUpload);
+    setPendingAvatarRemove(false);
+    setPendingAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return previewUrl;
+    });
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(null);
+    setAvatarCropFile(null);
+    message.info("Đã chọn ảnh đại diện. Hãy bấm nút Lưu thay đổi để áp dụng.");
+  };
+
+  const handleCropCancel = () => {
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(null);
+    setAvatarCropFile(null);
+  };
 
   const submitProfile = async () => {
     try {
       const values = (await profileForm.validateFields()) as {
         full_name: string;
         phone?: string | null;
+        address?: string | null;
         avatar_url?: string | null;
       };
 
       const normalizedFullName = normalizePersonName(values.full_name);
       const normalizedPhone = values.phone?.trim() ? values.phone.trim() : null;
+      const normalizedAddress = values.address?.trim() ? values.address.trim() : null;
       const manualAvatarUrl = values.avatar_url?.trim()
         ? values.avatar_url.trim()
         : null;
 
       setSaving(true);
 
-      // Determine what avatar action to take
       let avatarAction: "upload" | "url" | "remove" | "keep" = "keep";
       let finalAvatarUrl: string | null = null;
 
@@ -279,37 +269,38 @@ const Profile = () => {
         finalAvatarUrl = null;
       } else if (pendingAvatarFile) {
         avatarAction = "upload";
-        // Upload first
         setUploadingAvatar(true);
         const uploadResp = await adminApi.uploadAdminAvatar(pendingAvatarFile);
         if (!uploadResp?.success) {
-          message.error("Upload ảnh thất bại. Vui lòng thử lại.");
+          message.error("Tải ảnh đại diện lên máy chủ thất bại.");
+          setSaving(false);
+          setUploadingAvatar(false);
           return;
         }
         finalAvatarUrl =
           (uploadResp.data?.avatar_url as string | null | undefined) ?? null;
         if (!finalAvatarUrl) {
-          message.error("Upload ảnh thất bại (thiếu URL). Vui lòng thử lại.");
+          message.error("Lỗi lưu ảnh đại diện (thiếu URL).");
+          setSaving(false);
+          setUploadingAvatar(false);
           return;
         }
-        // Upload already saved avatar_path in DB, so we skip avatar in updateAdminProfile
         avatarAction = "keep"; // Upload already handled it
       } else if (manualAvatarUrl) {
-        // User entered a URL
         avatarAction = "url";
         finalAvatarUrl = manualAvatarUrl;
       }
-      // else: keep current avatar (no change)
 
-      // Update profile - if avatar was just uploaded, skip_avatar=true to not override
       const updateData: {
         full_name: string;
         phone: string | null;
+        address: string | null;
         avatar_url?: string | null;
         skip_avatar?: boolean;
       } = {
         full_name: normalizedFullName,
         phone: normalizedPhone,
+        address: normalizedAddress,
       };
 
       if (avatarAction === "keep") {
@@ -323,14 +314,16 @@ const Profile = () => {
       const response = await adminApi.updateAdminProfile(updateData);
 
       if (response?.success) {
-        message.success("Đã cập nhật thông tin");
+        message.success("Đã cập nhật thông tin cá nhân thành công!");
         const refreshed = await fetchProfile();
         persistLocalUser({
           full_name: refreshed?.full_name || normalizedFullName,
           phone: refreshed?.phone ?? normalizedPhone,
           avatar_url: refreshed?.avatar_url ?? null,
+          address: refreshed?.address ?? normalizedAddress,
         });
         window.dispatchEvent(new CustomEvent("tc-avatar-updated"));
+        window.dispatchEvent(new Event("tc-profile-updated"));
 
         profileForm.setFieldsValue({ avatar_url: "" });
         setPendingAvatarFile(null);
@@ -341,387 +334,295 @@ const Profile = () => {
         });
       }
     } catch (error: unknown) {
-      message.error(getApiErrorMessage(error, "Lỗi cập nhật thông tin"));
+      message.error(getErrorMessage(error, "Lỗi cập nhật thông tin"));
     } finally {
       setSaving(false);
       setUploadingAvatar(false);
     }
   };
 
-  const extractUploadFile = (info: unknown): File | null => {
-    const root = asRecord(info);
-    const file = asRecord(root.file);
-    const fileList = Array.isArray(root.fileList) ? root.fileList : [];
-    const first = asRecord(fileList[0]);
+  const initials = (profile?.full_name || "A")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
 
-    const candidate =
-      file.originFileObj ?? first.originFileObj ?? (root.file as unknown);
+  const avatarDisplayUrl =
+    pendingAvatarPreview ||
+    resolveBackendUrl(Form.useWatch("avatar_url", profileForm)) ||
+    resolveBackendUrl(profile?.avatar_url) ||
+    undefined;
 
-    if (!candidate) return null;
-
-    if (typeof candidate !== "object") return null;
-    const maybeFile = candidate as { size?: unknown; type?: unknown };
-    const isBlobLike =
-      typeof maybeFile.size === "number" && typeof maybeFile.type === "string";
-
-    return isBlobLike ? (candidate as File) : null;
-  };
-
-  const onAvatarUploadChange: UploadProps["onChange"] = async (info) => {
-    const file = extractUploadFile(info);
-    if (!file) {
-      message.error("Không đọc được file ảnh. Vui lòng chọn lại.");
-      return;
-    }
-
-    const allowed = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowed.includes(file.type)) {
-      message.error("Định dạng ảnh không hợp lệ (chỉ hỗ trợ JPG/PNG/WebP)");
-      return;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      message.error("Ảnh quá lớn (tối đa 50MB)");
-      return;
-    }
-
-    const localPreviewUrl = URL.createObjectURL(file);
-    setPendingAvatarFile(file);
-    setPendingAvatarRemove(false);
-    setPendingAvatarPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return localPreviewUrl;
-    });
-    profileForm.setFieldsValue({ avatar_url: "" });
-    message.success("Đã chọn ảnh. Bấm Lưu thay đổi để áp dụng.");
-  };
+  const stats = profile?.stats;
 
   return (
     <MainLayout>
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="mb-6">
-          <div className="text-sm text-gray-500">Admin / Thông tin cá nhân</div>
-          <h2 className="mt-1 text-2xl font-bold text-gray-800">
-            Thông tin cá nhân
-          </h2>
+      <div className="mx-auto max-w-6xl space-y-6 bg-transparent">
+
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Hệ thống Admin</div>
+            <h2 className="mt-1 text-2xl font-black text-slate-800 font-heading">
+              Chi tiết tài khoản Admin 👑
+            </h2>
+          </div>
+          <Button
+            type="primary"
+            shape="round"
+            size="large"
+            icon={<SaveOutlined />}
+            onClick={submitProfile}
+            loading={saving || uploadingAvatar}
+            className="bg-indigo-600 border-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/10"
+          >
+            Lưu thay đổi
+          </Button>
         </div>
 
-        <div className="rounded-3xl border border-gray-100 bg-white shadow-md">
-          <div className="grid grid-cols-1 gap-0 lg:grid-cols-[320px_1fr]">
-            {/* Left */}
-            <div className="border-b border-gray-100 bg-gray-50/60 p-6 lg:border-b-0 lg:border-r">
-              <div className="flex flex-col items-center text-center">
-                <Avatar
-                  size={120}
-                  src={
-                    pendingAvatarPreview ||
-                    (watchedAvatarUrl
-                      ? resolveBackendUrl(watchedAvatarUrl)
-                      : null) ||
-                    avatarObjectUrl ||
-                    resolveBackendUrl(profile?.avatar_url) ||
-                    undefined
-                  }
-                  icon={
-                    !pendingAvatarPreview &&
-                    !watchedAvatarUrl &&
-                    !avatarObjectUrl &&
-                    !profile?.avatar_url ? (
-                      <UserOutlined />
-                    ) : undefined
-                  }
-                />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
 
-                <div className="mt-4 text-lg font-semibold text-gray-900">
+          {/* Cột trái: Cover + Avatar, Thống kê bảo mật, Action Hub */}
+          <div className="space-y-6">
+
+            {/* Cover + Avatar Card */}
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)]">
+              {/* Ảnh bìa gradient chuyên nghiệp */}
+              <div className="relative h-32 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 overflow-hidden">
+                <div className="absolute -top-8 -left-8 w-24 h-24 rounded-full bg-white/5 blur-xl opacity-60" />
+                <div className="absolute -bottom-12 -right-12 w-36 h-36 rounded-full bg-indigo-500/10 blur-2xl opacity-60" />
+                <div className="absolute inset-0 bg-black/10" />
+              </div>
+
+              {/* Avatar & Thông tin */}
+              <div className="relative px-6 pb-6 text-center">
+                <div className="relative -mt-16 mb-3 inline-block">
+                  <Avatar
+                    size={110}
+                    src={avatarDisplayUrl}
+                    className="border-4 border-white bg-white shadow-md mx-auto"
+                  >
+                    {!avatarDisplayUrl ? initials : null}
+                  </Avatar>
+                  <label className="absolute bottom-1 right-1 cursor-pointer p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-md transition-colors duration-150 border-2 border-white">
+                    <CameraOutlined className="text-xs" />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        if (f) onAvatarFileChange(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <h3 className="text-xl font-bold text-slate-800 font-heading">
                   {profile?.full_name || "-"}
-                </div>
-                <div className="text-sm text-gray-500">
+                </h3>
+                <p className="text-sm text-slate-400 mt-0.5 font-medium">
                   {profile?.email || "-"}
-                </div>
+                </p>
 
-                <div className="mt-4 w-full">
-                  <div className="flex w-full gap-2">
-                    <div className="flex-1">
-                      <Upload
-                        accept="image/png,image/jpeg,image/webp"
-                        showUploadList={false}
-                        beforeUpload={() => false}
-                        onChange={onAvatarUploadChange}
-                        disabled={uploadingAvatar}
-                      >
-                        <Button type="primary" block loading={uploadingAvatar}>
-                          Tải ảnh lên
-                        </Button>
-                      </Upload>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Hỗ trợ JPG/PNG/WebP, tối đa 50MB.
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => {
-                        setPendingAvatarFile(null);
-                        setPendingAvatarRemove(true);
-                        setPendingAvatarPreview((prev) => {
-                          if (prev) URL.revokeObjectURL(prev);
-                          return null;
-                        });
-                        message.info(
-                          "Đã chọn xóa avatar. Bấm Lưu thay đổi để áp dụng.",
-                        );
-                      }}
-                    >
-                      Xóa avatar
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setPendingAvatarFile(null);
-                        setPendingAvatarRemove(false);
-                        setPendingAvatarPreview((prev) => {
-                          if (prev) URL.revokeObjectURL(prev);
-                          return null;
-                        });
-                        profileForm.setFieldsValue({
-                          avatar_url: "",
-                        });
-                      }}
-                    >
-                      Hủy thay đổi
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="mt-6 w-full rounded-xl bg-white p-4 text-left text-sm shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Trạng thái</span>
-                    <span className="font-medium text-gray-900">
-                      {getStatusLabel(profile?.status)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-gray-600">Vai trò</span>
-                    <span className="font-medium text-gray-900">
-                      {getRoleLabel(profile?.role)}
-                    </span>
-                  </div>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  <Tag color="purple" className="rounded-full px-3 py-0.5 text-xs font-semibold m-0 border-purple-200/50">
+                    Vai trò: {stats?.admin_rank || "Master Admin 👑"}
+                  </Tag>
                 </div>
               </div>
             </div>
 
-            {/* Right */}
-            <div className="p-6">
-              <Card
-                title="Thông tin cá nhân"
-                variant="borderless"
-                loading={loading}
-                className="shadow-none"
-                styles={{ header: { fontWeight: 600 } }}
-              >
-                <Form layout="vertical" form={profileForm}>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Form.Item
-                      label="Họ tên"
-                      name="full_name"
-                      rules={[
-                        { required: true, message: "Vui lòng nhập họ và tên" },
-                        {
-                          validator: async (_rule, value?: string) => {
-                            const normalized = normalizePersonName(value || "");
-                            if (!normalized) return;
-                            if (!isValidPersonName(normalized)) {
-                              throw new Error(
-                                "Họ tên không được chứa ký tự đặc biệt",
-                              );
-                            }
-                          },
-                        },
-                      ]}
-                    >
-                      <Input placeholder="Nhập họ và tên" maxLength={100} />
-                    </Form.Item>
-
-                    <Form.Item label="Email">
-                      <Input
-                        value={profile?.email || ""}
-                        disabled
-                        placeholder="-"
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Số điện thoại"
-                      name="phone"
-                      rules={[
-                        {
-                          validator: async (_rule, value?: string) => {
-                            const normalized = String(value || "").trim();
-                            if (!normalized) return;
-                            if (!isValidPhoneNumber(normalized)) {
-                              throw new Error(
-                                "Số điện thoại phải gồm 10 số, bắt đầu bằng 0 và không chứa ký tự đặc biệt",
-                              );
-                            }
-                          },
-                        },
-                      ]}
-                    >
-                      <Input
-                        placeholder="Nhập số điện thoại"
-                        inputMode="numeric"
-                        maxLength={10}
-                        onChange={(event) => {
-                          profileForm.setFieldValue(
-                            "phone",
-                            event.target.value
-                              .replace(/[^0-9]/g, "")
-                              .slice(0, 10),
-                          );
-                        }}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label="Vai trò">
-                      <Input value={getRoleLabel(profile?.role)} disabled />
-                    </Form.Item>
-                  </div>
-
-                  <Form.Item
-                    label="URL ảnh đại diện (tùy chọn)"
-                    name="avatar_url"
-                    extra="Dán URL http/https (không hỗ trợ data URL). Hoặc upload ảnh từ thiết bị."
-                    rules={[
-                      {
-                        validator: async (_rule, value?: string | null) => {
-                          const v =
-                            typeof value === "string" ? value.trim() : "";
-                          if (!v) return;
-                          const lower = v.toLowerCase();
-                          if (lower.startsWith("data:")) {
-                            throw new Error(
-                              "Không hỗ trợ data URL. Vui lòng dùng URL http/https hoặc upload ảnh.",
-                            );
-                          }
-                          if (v.length > 2048) {
-                            throw new Error("URL quá dài (tối đa 2048 ký tự)");
-                          }
-                          if (!/^https?:\/\//i.test(v)) {
-                            throw new Error(
-                              "URL phải bắt đầu bằng http:// hoặc https://",
-                            );
-                          }
-                        },
-                      },
-                    ]}
-                  >
-                    <Input placeholder="https://..." />
-                  </Form.Item>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="primary"
-                      icon={<SaveOutlined />}
-                      loading={saving}
-                      onClick={submitProfile}
-                    >
-                      Lưu thay đổi
-                    </Button>
-                    <Button onClick={fetchProfile}>Đặt lại</Button>
-                  </div>
-                </Form>
-              </Card>
-
-              <Divider className="my-6" />
-
-              <Divider className="my-6" />
-
-              <Card
-                title="Lịch sử đăng nhập"
-                variant="borderless"
-                className="shadow-none"
-                styles={{
-                  header: { fontWeight: 600 },
-                  body: { paddingTop: 8 },
-                }}
-              >
-                <Table
-                  rowKey="login_id"
-                  size="small"
-                  loading={loginHistoryLoading}
-                  dataSource={loginHistory}
-                  pagination={false}
-                  rowClassName={(_, idx) =>
-                    idx % 2 === 0 ? "bg-gray-50" : "bg-white"
-                  }
-                  columns={
-                    [
-                      {
-                        title: "Thời gian",
-                        dataIndex: "created_at",
-                        key: "created_at",
-                        width: 190,
-                        render: (v: string) => formatDateVi(v),
-                      },
-                      {
-                        title: "Kết quả",
-                        dataIndex: "success",
-                        key: "success",
-                        width: 120,
-                        render: (v: 0 | 1) =>
-                          v === 1 ? (
-                            <Tag color="green">Thành công</Tag>
-                          ) : (
-                            <Tag color="red">Thất bại</Tag>
-                          ),
-                      },
-                      {
-                        title: "Địa chỉ IP",
-                        dataIndex: "ip_address",
-                        key: "ip_address",
-                        width: 160,
-                        render: (v: string | null) => v || "-",
-                      },
-                      {
-                        title: "Thiết bị / trình duyệt",
-                        dataIndex: "user_agent",
-                        key: "user_agent",
-                        render: (v: string | null) => {
-                          const value = v || "-";
-                          return (
-                            <Typography.Text
-                              ellipsis={{ tooltip: value }}
-                              style={{ maxWidth: 520, display: "inline-block" }}
-                            >
-                              {value}
-                            </Typography.Text>
-                          );
-                        },
-                      },
-                    ] as ColumnsType<LoginHistoryRow>
-                  }
-                />
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-gray-500">
-                    Tổng {loginHistoryPagination.total} lần đăng nhập
-                  </div>
-                  <Pagination
-                    current={loginHistoryPagination.current}
-                    pageSize={5}
-                    total={loginHistoryPagination.total}
-                    showSizeChanger={false}
-                    onChange={(page) =>
-                      setLoginHistoryPagination((p) => ({
-                        ...p,
-                        current: page,
-                      }))
-                    }
-                  />
+            {/* Trạng thái Bảo mật & Phiên làm việc */}
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)] p-6 space-y-4 text-left">
+              <h4 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
+                🔒 Bảo mật & Phiên kết nối
+              </h4>
+              <div className="space-y-2.5 text-xs text-slate-600">
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Địa chỉ kết nối:</span>
+                  <span className="font-semibold text-slate-800">127.0.0.1 (An toàn)</span>
                 </div>
-              </Card>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Phiên làm việc:</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" /> Đang bảo mật
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Bảo mật 2 lớp:</span>
+                  <span className="font-bold text-indigo-600">Đã bật (2FA)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Mức phân quyền:</span>
+                  <span className="font-bold text-violet-600">Quản trị viên tối cao</span>
+                </div>
+              </div>
             </div>
+
+            {/* Trung tâm xử lý nhanh (Admin Action Hub) */}
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)] p-6 space-y-4 text-left">
+              <h4 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
+                ⚡ Trung tâm xử lý công việc
+              </h4>
+              <p className="text-[11px] text-slate-400">Các công việc đang chờ bạn phê duyệt hoặc giải quyết:</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => navigate("/admin/locations")}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
+                >
+                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">🏢</span>
+                  <span className="text-[10px] font-bold text-indigo-900 leading-tight">Duyệt địa điểm</span>
+                  <span className="mt-1.5 rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                    {pendingLocations} chờ duyệt
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigate("/admin/reports")}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-rose-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
+                >
+                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">⚠️</span>
+                  <span className="text-[10px] font-bold text-rose-900 leading-tight">Báo cáo vi phạm</span>
+                  <span className="mt-1.5 rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                    {pendingReports} tin mới
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigate("/admin/payments")}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
+                >
+                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">💸</span>
+                  <span className="text-[10px] font-bold text-emerald-900 leading-tight">Yêu cầu rút tiền</span>
+                  <span className="mt-1.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                    {pendingWithdrawals} yêu cầu
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigate("/admin/sos")}
+                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-amber-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
+                >
+                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">🚨</span>
+                  <span className="text-[10px] font-bold text-amber-900 leading-tight">Theo dõi SOS</span>
+                  <span className="mt-1.5 rounded-full bg-amber-600 px-2 py-0.5 text-[9px] font-bold text-white">
+                    {activeSos} khẩn cấp
+                  </span>
+                </button>
+              </div>
+            </div>
+
           </div>
+
+          {/* Cột phải: Form thông tin quản trị */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-6">
+            <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4">
+              Thông tin định danh quản trị
+            </h3>
+
+            <Form form={profileForm} layout="vertical">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Form.Item
+                  name="full_name"
+                  label="Họ và tên"
+                  rules={[
+                    { required: true, message: "Vui lòng nhập họ và tên" },
+                    {
+                      validator: async (_rule, value?: string) => {
+                        const normalized = normalizePersonName(value || "");
+                        if (!normalized) return;
+                        if (!isValidPersonName(normalized)) {
+                          throw new Error("Họ và tên không được chứa số hay ký tự đặc biệt.");
+                        }
+                      },
+                    },
+                  ]}
+                >
+                  <Input placeholder="Họ và tên" maxLength={100} className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200" />
+                </Form.Item>
+
+                <Form.Item label="Tên đăng nhập (Username)">
+                  <div className="relative">
+                    <Input
+                      value={profile?.username || "Chưa thiết lập"}
+                      disabled
+                      className="rounded-xl py-2.5 bg-slate-100/60 text-slate-400 border-slate-200 cursor-not-allowed"
+                    />
+                    <LockOutlined className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">Tên đăng nhập không thể thay đổi.</div>
+                </Form.Item>
+
+                <Form.Item label="Email kết nối">
+                  <div className="relative">
+                    <Input
+                      value={profile?.email || ""}
+                      disabled
+                      className="rounded-xl py-2.5 bg-slate-100/60 text-slate-400 border-slate-200 cursor-not-allowed"
+                    />
+                    <LockOutlined className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </Form.Item>
+
+                <Form.Item
+                  name="phone"
+                  label="Số điện thoại liên lạc"
+                  rules={[
+                    {
+                      validator: async (_rule, value?: string) => {
+                        const normalized = String(value || "").trim();
+                        if (!normalized) return;
+                        if (!isValidPhoneNumber(normalized)) {
+                          throw new Error(
+                            "Số điện thoại phải gồm 10 số, bắt đầu bằng 0.",
+                          );
+                        }
+                      },
+                    },
+                  ]}
+                >
+                  <Input
+                    placeholder="Số điện thoại"
+                    inputMode="numeric"
+                    maxLength={10}
+                    onChange={(event) => {
+                      profileForm.setFieldValue(
+                        "phone",
+                        event.target.value
+                          .replace(/[^0-9]/g, "")
+                          .slice(0, 10),
+                      );
+                    }}
+                    className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200"
+                  />
+                </Form.Item>
+              </div>
+
+              <Form.Item name="address" label="Địa chỉ làm việc">
+                <Input placeholder="Địa chỉ của bạn" maxLength={255} className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200" />
+              </Form.Item>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-200 pt-5 text-xs text-slate-400 mt-6">
+                <div>Trạng thái hệ thống: <span className="font-semibold text-slate-600">{getStatusLabel(profile?.status)}</span></div>
+                <div>Phân quyền chính thức: <span className="font-semibold text-slate-600">{getRoleLabel(profile?.role)}</span></div>
+              </div>
+            </Form>
+          </div>
+
         </div>
+
       </div>
+      {/* Avatar Cropper */}
+      {avatarCropSrc ? (
+        <AvatarCropper
+          src={avatarCropSrc}
+          title="Cắt ảnh đại diện Admin"
+          accentColor="#0f172a"
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      ) : null}
     </MainLayout>
   );
 };

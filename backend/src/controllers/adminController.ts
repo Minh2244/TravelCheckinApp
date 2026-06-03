@@ -151,11 +151,8 @@ export const getDashboardStats = async (
     );
     const totalLocations = locationRows[0]?.count || 0;
 
-    // Số lịch trình được tạo
-    const [itineraryRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM itineraries",
-    );
-    const totalItineraries = itineraryRows[0]?.count || 0;
+    // Số lịch trình được tạo (Đã gỡ bỏ tính năng này)
+    const totalItineraries = 0;
 
     // Số lượt check-in theo kỳ
     const checkinFilter = periodFilter("checkin_time");
@@ -524,7 +521,10 @@ export const getAdminProfile = async (
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT u.user_id, u.email, u.phone, u.full_name, u.avatar_url, u.avatar_path, u.avatar_source, u.role, u.status, u.created_at, u.updated_at,
+      `SELECT u.user_id, u.email, u.phone, u.full_name, u.address, u.username,
+              u.avatar_url, u.avatar_path, u.avatar_source,
+              u.background_url, u.background_path, u.background_source,
+              u.role, u.status, u.created_at, u.updated_at,
               (u.password_hash IS NOT NULL) AS has_password
        FROM users u
        WHERE u.user_id = ? AND u.role = 'admin'
@@ -545,9 +545,14 @@ export const getAdminProfile = async (
       email: string | null;
       phone: string | null;
       full_name: string;
+      address?: string | null;
+      username?: string | null;
       avatar_url: string | null;
       avatar_path: string | null;
       avatar_source: "upload" | "url" | null;
+      background_url?: string | null;
+      background_path?: string | null;
+      background_source?: "upload" | "url" | null;
       role: string;
       status: string;
       created_at: string;
@@ -567,6 +572,42 @@ export const getAdminProfile = async (
       typeof effectiveAvatarUrl === "string" &&
       effectiveAvatarUrl.trim().length > 0;
 
+    let effectiveBackgroundUrl: string | null = null;
+    if (row.background_source === "upload" && row.background_path) {
+      effectiveBackgroundUrl = row.background_path;
+    } else if (row.background_url) {
+      effectiveBackgroundUrl = row.background_url;
+    }
+
+    // --- Bắt đầu tính toán Stats hệ thống cho Admin ---
+    const [[{ total_users }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total_users FROM users WHERE role = 'user'`
+    );
+
+    const [[{ total_locations }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total_locations FROM locations WHERE status = 'active'`
+    );
+
+    const [[{ total_bookings }]] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total_bookings FROM bookings WHERE status = 'completed'`
+    );
+
+    const [topLocRows] = await pool.query<RowDataPacket[]>(
+      `SELECT l.location_id, l.location_name, COUNT(b.booking_id) AS booking_count,
+              COALESCE(SUM(p.amount), 0) AS total_revenue, MAX(b.created_at) AS latest_booking,
+              l.first_image
+       FROM locations l
+       LEFT JOIN bookings b ON b.location_id = l.location_id AND b.status = 'completed'
+       LEFT JOIN payments p ON p.booking_id = b.booking_id AND p.status = 'completed'
+       GROUP BY l.location_id, l.location_name, l.first_image
+       ORDER BY booking_count DESC, total_revenue DESC
+       LIMIT 1`
+    );
+    const top_location = topLocRows.length > 0 ? topLocRows[0] : null;
+
+    const admin_rank = "Master Administrator 👑";
+    // --- Kết thúc tính toán Stats ---
+
     res.json({
       success: true,
       data: {
@@ -574,8 +615,12 @@ export const getAdminProfile = async (
         email: row.email,
         phone: row.phone,
         full_name: row.full_name,
+        address: row.address,
+        username: row.username,
         avatar_url: effectiveAvatarUrl,
         avatar_source: row.avatar_source || "url",
+        background_url: effectiveBackgroundUrl,
+        background_source: row.background_source || "url",
         has_avatar_blob: false,
         has_avatar_url: hasAvatarUrl,
         has_password: Boolean(row.has_password),
@@ -583,6 +628,19 @@ export const getAdminProfile = async (
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        stats: {
+          total_users: Number(total_users || 0),
+          total_locations: Number(total_locations || 0),
+          total_bookings: Number(total_bookings || 0),
+          top_location: top_location ? {
+            location_name: top_location.location_name,
+            booking_count: Number(top_location.booking_count || 0),
+            total_revenue: Number(top_location.total_revenue || 0),
+            latest_booking: top_location.latest_booking ? new Date(top_location.latest_booking).toISOString() : null,
+            first_image: top_location.first_image,
+          } : null,
+          admin_rank,
+        }
       },
     });
   } catch (error: unknown) {
@@ -604,9 +662,10 @@ export const updateAdminProfile = async (
       res.status(401).json({ success: false, message: "Chưa xác thực" });
       return;
     }
-    const { full_name, phone, avatar_url, skip_avatar } = req.body as {
+    const { full_name, phone, address, avatar_url, skip_avatar } = req.body as {
       full_name?: string;
       phone?: string | null;
+      address?: string | null;
       avatar_url?: string | null;
       skip_avatar?: boolean; // If true, don't touch avatar at all
     };
@@ -638,11 +697,13 @@ export const updateAdminProfile = async (
       return;
     }
 
-    // If skip_avatar is true, only update name and phone
+    const normalizedAddress = typeof address === "string" ? address.trim() : null;
+
+    // If skip_avatar is true, only update name, phone and address
     if (skip_avatar) {
       await pool.query(
-        `UPDATE users SET full_name = ?, phone = ? WHERE user_id = ? AND role = 'admin'`,
-        [normalizedFullName, normalizedPhone, adminId],
+        `UPDATE users SET full_name = ?, phone = ?, address = ? WHERE user_id = ? AND role = 'admin'`,
+        [normalizedFullName, normalizedPhone, normalizedAddress, adminId],
       );
 
       await pool.query(
@@ -653,6 +714,7 @@ export const updateAdminProfile = async (
           JSON.stringify({
             full_name: normalizedFullName,
             phone: normalizedPhone,
+            address: normalizedAddress,
             skip_avatar: true,
             timestamp: new Date(),
           }),
@@ -710,26 +772,26 @@ export const updateAdminProfile = async (
         // This is a path from upload, set as upload source
         await pool.query(
           `UPDATE users
-           SET full_name = ?, phone = ?, avatar_path = ?, avatar_source = 'upload', avatar_url = NULL
+           SET full_name = ?, phone = ?, address = ?, avatar_path = ?, avatar_source = 'upload', avatar_url = NULL
            WHERE user_id = ? AND role = 'admin'`,
-          [normalizedFullName, normalizedPhone, normalizedAvatarUrl, adminId],
+          [normalizedFullName, normalizedPhone, normalizedAddress, normalizedAvatarUrl, adminId],
         );
       } else {
         // This is an external URL, set as url source
         await pool.query(
           `UPDATE users
-           SET full_name = ?, phone = ?, avatar_url = ?, avatar_source = 'url', avatar_path = NULL
+           SET full_name = ?, phone = ?, address = ?, avatar_url = ?, avatar_source = 'url', avatar_path = NULL
            WHERE user_id = ? AND role = 'admin'`,
-          [normalizedFullName, normalizedPhone, normalizedAvatarUrl, adminId],
+          [normalizedFullName, normalizedPhone, normalizedAddress, normalizedAvatarUrl, adminId],
         );
       }
     } else {
       // Clear avatar entirely
       await pool.query(
         `UPDATE users
-         SET full_name = ?, phone = ?, avatar_url = NULL, avatar_path = NULL, avatar_source = 'url'
+         SET full_name = ?, phone = ?, address = ?, avatar_url = NULL, avatar_path = NULL, avatar_source = 'url'
          WHERE user_id = ? AND role = 'admin'`,
-        [normalizedFullName, normalizedPhone, adminId],
+        [normalizedFullName, normalizedPhone, normalizedAddress, adminId],
       );
     }
 
@@ -741,6 +803,7 @@ export const updateAdminProfile = async (
         JSON.stringify({
           full_name: normalizedFullName,
           phone: normalizedPhone,
+          address: normalizedAddress,
           avatar_url:
             normalizedAvatarUrl && normalizedAvatarUrl.length
               ? normalizedAvatarUrl
@@ -820,6 +883,73 @@ export const uploadAdminAvatar = async (
       message:
         err?.message ||
         "Không thể lưu ảnh đại diện. Vui lòng thử ảnh nhỏ hơn hoặc đổi định dạng.",
+    });
+  }
+};
+
+export const uploadAdminBackground = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const adminId = req.userId;
+    if (!adminId) {
+      res.status(401).json({ success: false, message: "Chưa xác thực" });
+      return;
+    }
+
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ success: false, message: "Vui lòng chọn ảnh" });
+      return;
+    }
+
+    const backgroundPath = (
+      await saveUploadedImageToUploads({
+        file,
+        folder: "backgrounds",
+        fileNamePrefix: `admin-bg-${adminId}`,
+      })
+    ).urlPath;
+
+    await pool.query(
+      `UPDATE users
+       SET background_path = ?,
+           background_source = 'upload',
+           background_url = NULL,
+           background_updated_at = NOW(),
+           updated_at = NOW()
+       WHERE user_id = ? AND role = 'admin'`,
+      [backgroundPath, adminId],
+    );
+
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
+      [
+        adminId,
+        "UPLOAD_ADMIN_BACKGROUND",
+        JSON.stringify({
+          mimetype: file.mimetype,
+          size: file.size,
+          background_path: backgroundPath,
+          timestamp: new Date(),
+        }),
+      ],
+    );
+
+    res.json({
+      success: true,
+      message: "Đã cập nhật ảnh nền admin",
+      data: { background_url: backgroundPath },
+    });
+  } catch (error: unknown) {
+    console.error("Lỗi upload background admin:", error);
+    const err = error as { message?: string };
+    res.status(500).json({
+      success: false,
+      message:
+        err?.message ||
+        "Không thể lưu ảnh nền. Vui lòng thử ảnh nhỏ hơn hoặc đổi định dạng.",
     });
   }
 };

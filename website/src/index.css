@@ -293,3 +293,24 @@ h1, h2, h3, h4, h5, h6,
 input:focus, textarea:focus, select:focus {
   outline: none;
 }
+
+/* Sleek custom scrollbar */
+.sleek-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.sleek-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sleek-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(13, 148, 136, 0.2);
+  border-radius: 99px;
+}
+.sleek-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 148, 136, 0.45);
+}
+.sleek-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 148, 136, 0.2) transparent;
+}
+

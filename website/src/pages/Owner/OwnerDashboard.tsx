@@ -54,10 +54,6 @@ type LocationRow = {
   location_type: string;
 };
 
-type CommissionRow = {
-  status: string;
-  total_due?: number | string | null;
-};
 
 const OwnerDashboard = () => {
   const navigate = useNavigate();
@@ -66,7 +62,6 @@ const OwnerDashboard = () => {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
-  const [commissions, setCommissions] = useState<CommissionRow[]>([]);
 
   const [range, setRange] = useState<
     "today" | "week" | "month" | "year" | "all"
@@ -187,10 +182,7 @@ const OwnerDashboard = () => {
         String(asRecord(asRecord(asRecord(meRes).data).actor).role || "") ===
         "owner"
       ) {
-        const commRes = await ownerApi.getCommissions({});
-        setCommissions((commRes?.data || []) as CommissionRow[]);
-      } else {
-        setCommissions([]);
+        await ownerApi.getCommissions({});
       }
     } catch (err: unknown) {
       message.error(getErrorMessage(err, "Lỗi tải dữ liệu Owner"));

@@ -1,6 +1,7 @@
 import { Layout, Button, Image } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import type { ReactNode } from "react";
+import LocationChatBubble from "../components/LocationChatBubble";
 
 const { Header, Content } = Layout;
 
@@ -9,6 +10,7 @@ type Props = {
   subtitle?: string;
   locationName?: string | null;
   locationImageUrl?: string | null;
+  locationId?: number | null;
   onBack?: () => void;
   extra?: ReactNode;
   children: ReactNode;
@@ -19,6 +21,7 @@ const FrontOfficeLayout = ({
   subtitle,
   locationName,
   locationImageUrl,
+  locationId,
   onBack,
   extra,
   children,
@@ -58,6 +61,9 @@ const FrontOfficeLayout = ({
       <Content className="p-4 md:p-6 fo-shell">
         <div className="fo-surface">{children}</div>
       </Content>
+
+      {/* Kênh chat thời gian thực với khách hàng dành cho Nhân viên/Owner */}
+      <LocationChatBubble locationId={locationId} userRole="owner" />
     </Layout>
   );
 };

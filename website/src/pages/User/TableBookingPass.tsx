@@ -66,7 +66,7 @@ const statusMeta = (status: string) => {
   }
 };
 
-export default function TableBookingPass() {
+export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -208,8 +208,7 @@ export default function TableBookingPass() {
     });
   };
 
-  return (
-    <UserLayout title="Vỏ vé ăn uống" subtitle="" activeKey="/user/table-pass">
+  const content = (
       <section className="relative overflow-hidden user-section p-6 sm:p-8 min-h-[70vh]">
 
         <div className="relative flex items-center justify-between flex-wrap gap-3">
@@ -399,6 +398,12 @@ export default function TableBookingPass() {
           </div>
         )}
       </section>
+    );
+
+  if (isEmbedded) return content;
+  return (
+    <UserLayout title="Vỏ vé ăn uống" subtitle="" activeKey="/user/table-pass">
+      {content}
     </UserLayout>
   );
 }

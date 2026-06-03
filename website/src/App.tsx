@@ -45,28 +45,17 @@ const AdminBank = lazy(() => import("./pages/Admin/Bank"));
 const UserDashboard = lazy(() => import("./pages/User/UserDashboard"));
 const UserMap = lazy(() => import("./pages/User/UserMap"));
 const LocationDetail = lazy(() => import("./pages/User/LocationDetail"));
-const QrCheckin = lazy(() => import("./pages/User/QrCheckin"));
-const MyCreatedLocations = lazy(
-  () => import("./pages/User/MyCreatedLocations"),
-);
 const BookingPage = lazy(() => import("./pages/User/BookingPage"));
 const UserProfile = lazy(() => import("./pages/User/Profile"));
 const UserHistory = lazy(() => import("./pages/User/History"));
 const UserVouchers = lazy(() => import("./pages/User/Vouchers"));
 const UserSos = lazy(() => import("./pages/User/Sos"));
-const UserItinerary = lazy(() => import("./pages/User/Itinerary"));
 const SavedLocations = lazy(() => import("./pages/User/SavedLocations"));
 const UserCheckins = lazy(() => import("./pages/User/Checkins"));
-const UserDiary = lazy(() => import("./pages/User/Diary"));
-const UserAiChat = lazy(() => import("./pages/User/AiChat"));
-const UserLeaderboard = lazy(() => import("./pages/User/Leaderboard"));
-const UserGroupCheckin = lazy(() => import("./pages/User/GroupCheckin"));
 const UserBookingReminders = lazy(
   () => import("./pages/User/BookingReminders"),
 );
-const UserTicketCart = lazy(() => import("./pages/User/TicketCart"));
-const TableBookingPass = lazy(() => import("./pages/User/TableBookingPass"));
-const RoomBookingPass = lazy(() => import("./pages/User/RoomBookingPass"));
+const UserMyTickets = lazy(() => import("./pages/User/MyTickets"));
 
 const OwnerDashboard = lazy(() => import("./pages/Owner/OwnerDashboard"));
 const OwnerProfile = lazy(() => import("./pages/Owner/OwnerProfile"));
@@ -424,22 +413,6 @@ function App() {
             }
           />
           <Route
-            path="/user/qr-checkin"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <QrCheckin />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/my-created-locations"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <MyCreatedLocations />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/user/location/:id"
             element={
               <ProtectedRoute allowedRoles={["user"]}>
@@ -459,23 +432,7 @@ function App() {
             path="/user/tickets"
             element={
               <ProtectedRoute allowedRoles={["user"]}>
-                <UserTicketCart />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/table-pass"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <TableBookingPass />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/room-pass"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <RoomBookingPass />
+                <UserMyTickets />
               </ProtectedRoute>
             }
           />
@@ -484,14 +441,6 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["user"]}>
                 <UserProfile />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/itinerary"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserItinerary />
               </ProtectedRoute>
             }
           />
@@ -512,22 +461,6 @@ function App() {
             }
           />
           <Route
-            path="/user/leaderboard"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserLeaderboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/group-checkin"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserGroupCheckin />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/user/booking-reminders"
             element={
               <ProtectedRoute allowedRoles={["user"]}>
@@ -535,22 +468,8 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/user/diary"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserDiary />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/user/ai-chat"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserAiChat />
-              </ProtectedRoute>
-            }
-          />
+
+
           <Route
             path="/user/history"
             element={

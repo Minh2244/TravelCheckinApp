@@ -36,22 +36,22 @@ export const getLocations = async (req: Request, res: Response) => {
       source?: string;
     };
 
-    let query = "SELECT * FROM locations";
+    let query = "SELECT l.* FROM locations l LEFT JOIN users u ON u.user_id = l.owner_id";
     const params: Array<string> = [];
     const filters: string[] = [];
 
     if (type) {
-      filters.push("location_type = ?");
+      filters.push("l.location_type = ?");
       params.push(type);
     }
 
     if (province) {
-      filters.push("province = ?");
+      filters.push("l.province = ?");
       params.push(province);
     }
 
     if (keyword) {
-      filters.push("(location_name LIKE ? OR address LIKE ?)");
+      filters.push("(l.location_name LIKE ? OR l.address LIKE ?)");
       params.push(`%${keyword}%`, `%${keyword}%`);
     }
 
@@ -59,7 +59,8 @@ export const getLocations = async (req: Request, res: Response) => {
     const isPublicConsumer =
       effectiveSource === "web" || effectiveSource === "mobile";
     if (isPublicConsumer) {
-      filters.push("status = 'active'");
+      filters.push("l.status = 'active'");
+      filters.push("(u.role IS NULL OR u.role <> 'user')");
     }
 
     if (filters.length > 0) {

@@ -60,6 +60,12 @@ export const initSocketHub = (io: Server) => {
     existingSockets.add(socket);
     socketsByUserId.set(userId, existingSockets);
 
+    socket.on("join_location_room", (payload: { locationId: number }) => {
+      const room = `location_${payload.locationId}`;
+      void socket.join(room);
+      console.log(`Socket ${socket.id} (user ${userId}) joined room ${room}`);
+    });
+
     socket.on("disconnect", () => {
       const set = socketsByUserId.get(userId);
       if (!set) return;

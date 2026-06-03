@@ -51,10 +51,18 @@ const adminApi = {
   updateAdminProfile: async (data: {
     full_name: string;
     phone?: string | null;
+    address?: string | null;
+    username?: string | null;
     avatar_url?: string | null;
     skip_avatar?: boolean;
   }) => {
     const response = await axiosClient.put("/admin/profile", data);
+    return response.data;
+  },
+  uploadBackground: async (file: File) => {
+    const formData = new FormData();
+    formData.append("background", file);
+    const response = await axiosClient.post("/admin/profile/background", formData);
     return response.data;
   },
   changeAdminPassword: async (data: {
