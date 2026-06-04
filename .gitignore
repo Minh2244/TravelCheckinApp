@@ -1,7 +1,4 @@
-# package.json
-# package-lock.json
-package.json
-package-lock.json
+# Track package.json and package-lock.json for all projects
 
 # Chặn thư mục thư viện gốc (Cái cục nặng nhất nãy giờ)
 node_modules/
