@@ -1,180 +1,216 @@
+// screens/history.tsx
+// Man hinh lich su check-in, hien thi danh sach cac lan check-in cua nguoi dung
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    FlatList,
-    RefreshControl,
-    ActivityIndicator
+  View,
+  Text,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  Image,
+  StyleSheet,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Header from '../../components/Header';
+import Card from '../../components/Card';
+import Badge from '../../components/Badge';
+import EmptyState from '../../components/EmptyState';
+import { colors, spacing, fontSize, radius, fontWeight } from '../../constants/theme';
+import { USER_API } from '../../api/endpoints';
 import axiosClient from '../../api/axiosClient';
-import { useAuthStore } from '../../store/useAuthStore';
+import { Checkin, ApiResponse } from '../../types';
 
-interface CheckinItem {
-    checkin_id: number;
-    location_id: number;
-    checkin_time: string;
-    status: 'pending' | 'verified' | 'failed';
-    notes: string | null;
-    location_name?: string;
-    address?: string;
-    first_image?: string | null;
-    is_user_created?: number;
-}
-
-interface ApiResponse {
-    success: boolean;
-    data: CheckinItem[];
-}
+// Map trang thai check-in sang variant cua Badge
+const STATUS_MAP: Record<Checkin['status'], { variant: 'success' | 'warning' | 'error'; label: string }> = {
+  verified: { variant: 'success', label: 'Da xac thuc' },
+  pending: { variant: 'warning', label: 'Cho duyet' },
+  failed: { variant: 'error', label: 'That bai' },
+};
 
 export default function HistoryScreen() {
-    const insets = useSafeAreaInsets();
-    const [history, setHistory] = useState<CheckinItem[]>([]);
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-    const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-    const fetchHistory = useCallback(async (isRefresh = false) => {
-        const token = useAuthStore.getState().accessToken;
-        if (!token) {
-            setIsLoading(false);
-            setIsRefreshing(false);
-            return;
-        }
-        try {
-            if (isRefresh) setIsRefreshing(true);
-            else setIsLoading(true);
+  // Lay du lieu lich su check-in tu API
+  const fetchCheckins = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) setIsRefreshing(true);
+      else setIsLoading(true);
 
-            const response = await axiosClient.get<ApiResponse>('/user/checkins');
-            if (response.data && response.data.data) {
-                setHistory(response.data.data);
-            }
-        } catch (error) {
-            console.log('Error fetching checkin history', error);
-        } finally {
-            setIsLoading(false);
-            setIsRefreshing(false);
-        }
-    }, []);
+      const response = await axiosClient.get<ApiResponse<Checkin[]>>(USER_API.CHECKINS);
+      if (response.data?.data) {
+        setCheckins(response.data.data);
+      }
+    } catch (error) {
+      // Xu ly loi im lang, khong hien thi cho nguoi dung
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
 
-    useEffect(() => {
-        fetchHistory();
-    }, [fetchHistory]);
+  useEffect(() => {
+    fetchCheckins();
+  }, [fetchCheckins]);
 
-    const formatDate = (dateString: string) => {
-        const d = new Date(dateString);
-        const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        return `${time} - ${date}`;
-    };
+  // Dinh dang thoi gian check-in sang dinh dang doc duoc
+  const formatTime = (dateStr: string): string => {
+    const d = new Date(dateStr);
+    const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return `${time} - ${date}`;
+  };
 
-    const getStatusProps = (status: string) => {
-        switch (status) {
-            case 'verified': return { color: '#10b981', bg: '#dcfce7', icon: 'checkmark-circle' as const, label: 'Đã xác thực' };
-            case 'failed': return { color: '#ef4444', bg: '#fee2e2', icon: 'close-circle' as const, label: 'Thất bại' };
-            default: return { color: '#f59e0b', bg: '#fef3c7', icon: 'time' as const, label: 'Chờ duyệt' };
-        }
-    };
-
-    const renderEmptyComponent = () => {
-        if (isLoading) {
-            return (
-                <View style={styles.centerContainer}>
-                    <ActivityIndicator size="large" color="#14b8a6" />
-                    <Text style={styles.loadingText}>Đang tải lịch sử...</Text>
-                </View>
-            );
-        }
-
-        return (
-            <View style={styles.centerContainer}>
-                <View style={styles.emptyCircle}>
-                    <Ionicons name="footsteps-outline" size={48} color="#cbd5e1" />
-                </View>
-                <Text style={styles.emptyTitle}>Chưa có dấu chân nào</Text>
-                <Text style={styles.emptySubtitle}>Bạn chưa thực hiện Check-in tại địa điểm nào. Hãy bắt đầu hành trình của bạn ngay nhé!</Text>
-            </View>
-        );
-    };
-
-    const renderItem = ({ item }: { item: CheckinItem }) => {
-        const statusProps = getStatusProps(item.status);
-        const locName = item.location_name || 'Địa điểm không xác định';
-        const locAddress = item.address || 'Khu vực tự do';
-
-        return (
-            <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                    <Text style={styles.dateText}>{formatDate(item.checkin_time)}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: statusProps.bg }]}>
-                        <Ionicons name={statusProps.icon} size={14} color={statusProps.color} />
-                        <Text style={[styles.statusText, { color: statusProps.color }]}>{statusProps.label}</Text>
-                    </View>
-                </View>
-
-                <View style={styles.cardBody}>
-                    <View style={styles.iconBox}>
-                        <Ionicons name="location" size={24} color="#3b82f6" />
-                    </View>
-                    <View style={styles.locationInfo}>
-                        <Text style={styles.locationTitle}>{locName}</Text>
-                        <Text style={styles.locationSubtitle} numberOfLines={1}>{locAddress}</Text>
-                    </View>
-                </View>
-
-                {item.notes && (
-                    <View style={styles.notesBox}>
-                        <Ionicons name="document-text-outline" size={16} color="#64748b" />
-                        <Text style={styles.notesText}>{item.notes}</Text>
-                    </View>
-                )}
-            </View>
-        );
-    };
+  // Render tung muc check-in
+  const renderItem = ({ item }: { item: Checkin }) => {
+    const statusInfo = STATUS_MAP[item.status] || STATUS_MAP.pending;
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Lịch sử Check-in</Text>
-                <Text style={styles.headerSubtitle}>Dấu chân hành trình của bạn</Text>
+      <Card style={styles.card}>
+        {/* Anh dia diem hoac icon fallback */}
+        <View style={styles.imageRow}>
+          {item.first_image ? (
+            <Image source={{ uri: item.first_image }} style={styles.locationImage} />
+          ) : (
+            <View style={styles.imageFallback}>
+              <Ionicons name="location-outline" size={28} color={colors.primary} />
             </View>
-
-            <FlatList
-                data={history}
-                keyExtractor={(item) => item.checkin_id.toString()}
-                renderItem={renderItem}
-                contentContainerStyle={styles.listContent}
-                ListEmptyComponent={renderEmptyComponent}
-                refreshControl={
-                    <RefreshControl refreshing={isRefreshing} onRefresh={() => fetchHistory(true)} colors={['#14b8a6']} />
-                }
-            />
+          )}
+          <View style={styles.infoContainer}>
+            <Text style={styles.locationName} numberOfLines={1}>
+              {item.location_name || 'Dia diem khong xac dinh'}
+            </Text>
+            {item.address ? (
+              <Text style={styles.address} numberOfLines={1}>
+                {item.address}
+              </Text>
+            ) : null}
+          </View>
         </View>
+
+        {/* Dong thoi gian va trang thai */}
+        <View style={styles.metaRow}>
+          <View style={styles.timeRow}>
+            <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+            <Text style={styles.timeText}>{formatTime(item.checkin_time)}</Text>
+          </View>
+          <Badge text={statusInfo.label} variant={statusInfo.variant} />
+        </View>
+      </Card>
     );
+  };
+
+  // Hien thi loading ban dau
+  if (isLoading) {
+    return (
+      <View style={styles.screen}>
+        <Header title="Lich su check-in" showBack={false} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <Header title="Lich su check-in" showBack={false} />
+
+      <FlatList
+        data={checkins}
+        keyExtractor={(item) => item.checkin_id.toString()}
+        renderItem={renderItem}
+        contentContainerStyle={checkins.length === 0 ? styles.emptyContent : styles.listContent}
+        ListEmptyComponent={
+          <EmptyState
+            icon="footsteps-outline"
+            title="Chua co lan check-in nao"
+            description="Hay bat dau hanh trinh cua ban bang cach check-in tai mot dia diem!"
+          />
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => fetchCheckins(true)}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8fafc' },
-    header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-    headerTitle: { fontSize: 24, fontWeight: '900', color: '#0f172a' },
-    headerSubtitle: { fontSize: 14, color: '#64748b', marginTop: 4 },
-    listContent: { padding: 20, paddingBottom: 100, flexGrow: 1 },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
-    loadingText: { marginTop: 12, color: '#64748b', fontSize: 14 },
-    emptyCircle: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-    emptyTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 },
-    emptySubtitle: { fontSize: 14, color: '#64748b', textAlign: 'center', lineHeight: 22, paddingHorizontal: 30 },
-    card: { backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginBottom: 16, elevation: 3 },
-    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-    dateText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-    statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-    statusText: { fontSize: 11, fontWeight: 'bold', marginLeft: 4 },
-    cardBody: { flexDirection: 'row', alignItems: 'center' },
-    iconBox: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#eff6ff', justifyContent: 'center', alignItems: 'center' },
-    locationInfo: { flex: 1, marginLeft: 16 },
-    locationTitle: { fontSize: 16, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 },
-    locationSubtitle: { fontSize: 13, color: '#64748b' },
-    notesBox: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f8fafc', padding: 12, borderRadius: 8, marginTop: 16 },
-    notesText: { flex: 1, marginLeft: 8, fontSize: 13, color: '#475569', lineHeight: 18, fontStyle: 'italic' },
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listContent: {
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  emptyContent: {
+    flexGrow: 1,
+  },
+  card: {
+    marginBottom: spacing.md,
+  },
+  imageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  locationImage: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  imageFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoContainer: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  locationName: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+    color: colors.text,
+  },
+  address: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    paddingTop: spacing.sm,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
 });
