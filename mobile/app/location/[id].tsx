@@ -1,724 +1,362 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+// app/location/[id].tsx
+// Chi tiet dia diem: anh, thong tin, dich vu, danh gia, voucher
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  ActivityIndicator,
-  FlatList,
-  TextInput,
-  Alert,
-  Dimensions,
+  View, Text, ScrollView, Image, TouchableOpacity, TextInput,
+  FlatList, StyleSheet, Linking, Alert, RefreshControl,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, router } from 'expo-router';
 import axiosClient from '../../api/axiosClient';
-import { useAuthStore } from '../../store/useAuthStore';
-
-const { width } = Dimensions.get('window');
-
-interface ServiceData {
-  service_id: number;
-  service_name: string;
-  service_type: 'room' | 'table' | 'ticket' | 'food' | 'combo' | 'other';
-  price: number | string;
-  description?: string;
-}
-
-interface ReviewData {
-  review_id: number;
-  rating: number;
-  comment: string;
-  full_name: string;
-  avatar_url: string | null;
-  created_at: string;
-  images?: string | string[];
-}
-
-interface VoucherData {
-  voucher_id: number;
-  code: string;
-  discount_value: number;
-  discount_type: 'percentage' | 'fixed';
-  min_order_value: number;
-  remaining: number;
-}
-
-interface LocationDetail {
-  location_id: number;
-  location_name: string;
-  location_type: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  rating: number;
-  total_reviews: number;
-  description: string | null;
-  first_image: string | null;
-  images: string | string[];
-  opening_hours: string | null;
-  phone: string | null;
-  email: string | null;
-}
-
-type TabType = 'overview' | 'services' | 'reviews';
+import { LOCATIONS_API, USER_API } from '../../api/endpoints';
+import { colors, spacing, fontSize, radius, fontWeight } from '../../constants/theme';
+import { extractOpenClose } from '../../utils/openingHours';
+import Header from '../../components/Header';
+import Card from '../../components/Card';
+import Badge from '../../components/Badge';
+import Button from '../../components/Button';
+import Avatar from '../../components/Avatar';
+import SegmentedControl from '../../components/SegmentedControl';
+import RatingStars from '../../components/RatingStars';
+import EmptyState from '../../components/EmptyState';
+import type { Location, Service, Review, Voucher } from '../../types';
 
 export default function LocationDetailScreen() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const locationId = Number(id);
 
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
-  
-  // Data States
-  const [location, setLocation] = useState<LocationDetail | null>(null);
-  const [services, setServices] = useState<ServiceData[]>([]);
-  const [reviews, setReviews] = useState<ReviewData[]>([]);
-  const [vouchers, setVouchers] = useState<VoucherData[]>([]);
-  const [isFavorited, setIsFavorited] = useState(false);
-  const [weather, setWeather] = useState<{ temp: number | null; desc: string | null }>({ temp: null, desc: null });
+  const [location, setLocation] = useState<Location | null>(null);
+  const [services, setServices] = useState<Service[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Add Review form state
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
+  // Review form
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // Helper dịch loại địa điểm
-  const typeLabelVi = (type?: string) => {
-    if (!type) return 'Địa điểm';
-    const map: Record<string, string> = {
-      hotel: 'Khách sạn',
-      resort: 'Resort',
-      restaurant: 'Nhà hàng',
-      cafe: 'Cà phê',
-      tourist: 'Du lịch',
-    };
-    return map[type.toLowerCase()] || 'Địa điểm';
-  };
-
-  const resolveBackendUrl = (url: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    return `${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '')}${url}`;
-  };
-
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString);
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
-  // Load weather based on coordinates
-  const fetchWeather = async (lat: number, lon: number) => {
+  const fetchData = useCallback(async () => {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const t = json?.current?.temperature_2m;
-      const code = json?.current?.weather_code;
-
-      const weatherCodeText = (c: number): string => {
-        if (c === 0) return 'Trời quang';
-        if (c === 1 || c === 2) return 'Ít mây';
-        if (c === 3) return 'Nhiều mây';
-        if (c === 61 || c === 63 || c === 65) return 'Mưa';
-        if (c === 95) return 'Dông';
-        return 'Thời tiết tốt';
-      };
-
-      setWeather({
-        temp: t != null ? Math.round(t) : null,
-        desc: code != null ? weatherCodeText(code) : null,
-      });
-    } catch (e) {
-      console.log('Error fetching weather in detail', e);
-    }
-  };
-
-  const fetchDetailData = useCallback(async () => {
-    if (!id) return;
-    try {
-      setLoading(true);
-      const [detailRes, serviceRes, reviewRes, voucherRes, favRes] = await Promise.all([
-        axiosClient.get(`/locations/${id}`),
-        axiosClient.get(`/locations/${id}/services`),
-        axiosClient.get(`/locations/${id}/reviews`),
-        axiosClient.get(`/user/vouchers/location/${id}`).catch(() => ({ data: { data: [] } })),
-        axiosClient.get('/user/favorites').catch(() => ({ data: { data: [] } })),
+      const [locRes, svcRes, revRes, vchRes, favRes] = await Promise.all([
+        axiosClient.get(LOCATIONS_API.DETAIL(locationId)),
+        axiosClient.get(LOCATIONS_API.SERVICES(locationId)),
+        axiosClient.get(LOCATIONS_API.REVIEWS(locationId)),
+        axiosClient.get(USER_API.VOUCHERS_LOCATION(locationId)).catch(() => ({ data: [] })),
+        axiosClient.get(USER_API.FAVORITES).catch(() => ({ data: [] })),
       ]);
-
-      const loc = detailRes.data.data;
-      setLocation(loc);
-      setServices(serviceRes.data.data || []);
-      setReviews(reviewRes.data.data || []);
-      setVouchers(voucherRes.data.data || []);
-      
-      // Kiểm tra xem đã yêu thích chưa
-      const favList = favRes.data.data || [];
-      const faved = favList.some((item: any) => Number(item.location_id) === Number(id));
-      setIsFavorited(faved);
-
-      if (loc?.latitude && loc?.longitude) {
-        fetchWeather(Number(loc.latitude), Number(loc.longitude));
-      }
-    } catch (error) {
-      console.log('Error fetching location detail', error);
-      Alert.alert('Lỗi', 'Không thể tải chi tiết địa điểm.');
-    } finally {
-      setLoading(false);
+      setLocation(locRes.data.data || locRes.data);
+      setServices(svcRes.data.data || svcRes.data || []);
+      setReviews(revRes.data.data || revRes.data || []);
+      setVouchers(vchRes.data.data || vchRes.data || []);
+      const favs = favRes.data.data || favRes.data || [];
+      setIsFavorite(favs.some((f: { location_id: number }) => f.location_id === locationId));
+    } catch {
+      // Giu trang thai cu
     }
-  }, [id]);
+  }, [locationId]);
 
-  useEffect(() => {
-    fetchDetailData();
-  }, [fetchDetailData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Toggle favorite
-  const handleToggleFavorite = async () => {
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
+  const toggleFavorite = async () => {
     try {
-      if (isFavorited) {
-        await axiosClient.delete(`/user/favorites/${id}`);
-        setIsFavorited(false);
+      if (isFavorite) {
+        await axiosClient.delete(USER_API.FAVORITES + `/${locationId}`);
       } else {
-        await axiosClient.patch(`/user/favorites/${id}`, { note: '', tags: '' });
-        setIsFavorited(true);
+        await axiosClient.patch(USER_API.FAVORITES + `/${locationId}`, {});
       }
-    } catch (error) {
-      console.log('Toggle favorite failed', error);
-      Alert.alert('Thất bại', 'Không thể cập nhật danh sách yêu thích.');
+      setIsFavorite(!isFavorite);
+    } catch {
+      Alert.alert('Lỗi', 'Không thể cập nhật yêu thích');
     }
   };
 
-  // Claim voucher
-  const handleClaimVoucher = async (voucherId: number) => {
-    try {
-      const res = await axiosClient.post(`/user/vouchers/${voucherId}/claim`);
-      if (res.data && res.data.success) {
-        Alert.alert('Thành công', 'Đã lưu voucher vào ví của bạn.');
-        // Refresh vouchers list
-        const voucherRes = await axiosClient.get(`/user/vouchers/location/${id}`);
-        setVouchers(voucherRes.data.data || []);
-      }
-    } catch (err: any) {
-      Alert.alert('Lưu thất bại', err.response?.data?.message || 'Không thể lưu voucher.');
-    }
-  };
-
-  // Submit review
-  const handleSubmitReview = async () => {
-    if (!comment.trim()) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng nhập nội dung đánh giá của bạn.');
+  const submitReview = async () => {
+    if (reviewRating === 0) {
+      Alert.alert('Thông báo', 'Vui lòng chọn số sao');
       return;
     }
+    setSubmittingReview(true);
     try {
-      setSubmittingReview(true);
-      const res = await axiosClient.post('/user/reviews', {
-        location_id: Number(id),
-        rating: rating,
-        comment: comment.trim(),
-        images: [],
+      await axiosClient.post(USER_API.REVIEWS, {
+        location_id: locationId,
+        rating: reviewRating,
+        comment: reviewComment.trim() || undefined,
       });
-
-      if (res.data && res.data.success) {
-        Alert.alert('Thành công', 'Đánh giá của bạn đã được gửi.');
-        setComment('');
-        // Reload reviews list
-        const reviewRes = await axiosClient.get(`/locations/${id}/reviews`);
-        setReviews(reviewRes.data.data || []);
-      }
-    } catch (err: any) {
-      Alert.alert('Thất bại', err.response?.data?.message || 'Không thể gửi đánh giá.');
+      setReviewRating(0);
+      setReviewComment('');
+      await fetchData();
+      Alert.alert('Thành công', 'Đánh giá đã được gửi');
+    } catch {
+      Alert.alert('Lỗi', 'Không thể gửi đánh giá');
     } finally {
       setSubmittingReview(false);
     }
   };
 
-  // Chỉ đường (điều hướng sang tab Bản đồ)
-  const handleDirections = () => {
-    if (!location) return;
-    router.push({
-      pathname: '/(tabs)/map',
-      params: {
-        destLat: location.latitude,
-        destLng: location.longitude,
-        destName: location.location_name,
-      }
-    });
+  const claimVoucher = async (voucherId: number) => {
+    try {
+      await axiosClient.post(USER_API.VOUCHERS_CLAIM(voucherId));
+      Alert.alert('Thành công', 'Đã nhận voucher');
+      await fetchData();
+    } catch {
+      Alert.alert('Lỗi', 'Không thể nhận voucher');
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#14b8a6" />
-        <Text style={styles.loadingText}>Đang tải chi tiết địa điểm...</Text>
-      </View>
-    );
-  }
-
   if (!location) {
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
-        <Text style={styles.errorText}>Địa điểm không tồn tại hoặc đã bị gỡ bỏ.</Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={styles.backBtnText}>Quay lại</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return <View style={styles.loadingContainer}><Header title="Đang tải..." /></View>;
   }
 
-  const heroImage = resolveBackendUrl(location.first_image);
+  const openingInfo = extractOpenClose(location.opening_hours);
 
   return (
     <View style={styles.container}>
-      {/* Scrollable Content */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Hero image header */}
-        <View style={styles.heroContainer}>
-          {heroImage ? (
-            <Image source={{ uri: heroImage }} style={styles.heroImage} />
-          ) : (
-            <View style={styles.heroFallback}>
-              <Ionicons name="image" size={64} color="#94a3b8" />
-            </View>
-          )}
-
-          {/* Header Buttons */}
-          <View style={[styles.headerOverlay, { paddingTop: insets.top + 10 }]}>
-            <TouchableOpacity style={styles.headerCircleBtn} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={22} color="#1e293b" />
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.headerCircleBtn} onPress={handleToggleFavorite}>
-              <Ionicons name={isFavorited ? "heart" : "heart-outline"} size={22} color={isFavorited ? "#ef4444" : "#1e293b"} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Basic info box */}
-        <View style={styles.infoCard}>
-          <Text style={styles.locationTitle}>{location.location_name}</Text>
-          <Text style={styles.locationAddress}>{location.address}</Text>
-
-          <View style={styles.metaRow}>
-            <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>{typeLabelVi(location.location_type)}</Text>
-            </View>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={16} color="#fbbf24" />
-              <Text style={styles.ratingText}>
-                {Number(location.rating || 0).toFixed(1)} ({location.total_reviews} đánh giá)
-              </Text>
-            </View>
-          </View>
-
-          {/* Weather Widget */}
-          {weather.temp !== null && (
-            <View style={styles.weatherBox}>
-              <Ionicons name="sunny-outline" size={20} color="#f59e0b" />
-              <Text style={styles.weatherText}>Thời tiết hiện tại: {weather.temp}°C, {weather.desc}</Text>
-            </View>
-          )}
-
-          {/* Quick buttons */}
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleDirections}>
-              <Ionicons name="navigate-outline" size={18} color="#14b8a6" />
-              <Text style={styles.actionBtnText}>Chỉ đường</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.actionBtn} onPress={handleToggleFavorite}>
-              <Ionicons name={isFavorited ? "heart" : "heart-outline"} size={18} color={isFavorited ? "#ef4444" : "#64748b"} />
-              <Text style={[styles.actionBtnText, isFavorited && { color: '#ef4444' }]}>{isFavorited ? 'Đã lưu' : 'Lưu lại'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Local Vouchers list */}
-        {vouchers.length > 0 && (
-          <View style={styles.vouchersSection}>
-            <Text style={styles.sectionTitle}>Mã ưu đãi đang diễn ra</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.vouchersScroll}>
-              {vouchers.map((v) => (
-                <View key={v.voucher_id} style={styles.voucherCard}>
-                  <View style={styles.voucherLeft}>
-                    <Text style={styles.voucherValue}>
-                      {v.discount_type === 'percentage' ? `${v.discount_value}%` : `${(v.discount_value / 1000)}k`}
-                    </Text>
-                    <Text style={styles.voucherLabel}>GIẢM</Text>
-                  </View>
-                  <View style={styles.voucherRight}>
-                    <Text style={styles.voucherCode}>{v.code}</Text>
-                    <Text style={styles.voucherMin}>Đơn từ: {(v.min_order_value / 1000)}k</Text>
-                    <TouchableOpacity style={styles.voucherClaimBtn} onPress={() => handleClaimVoucher(v.voucher_id)}>
-                      <Text style={styles.voucherClaimText}>Lưu mã</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
+      <Header title={location.location_name} transparent />
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
+        {/* Hero image */}
+        {location.first_image ? (
+          <Image source={{ uri: location.first_image }} style={styles.heroImage} />
+        ) : (
+          <View style={[styles.heroImage, styles.heroFallback]}>
+            <Ionicons name="image-outline" size={64} color={colors.textMuted} />
           </View>
         )}
 
-        {/* Segmented Tabs (Overview, Services, Reviews) */}
-        <View style={styles.tabsContainer}>
-          {(['overview', 'services', 'reviews'] as TabType[]).map((tab) => {
-            const isActive = activeTab === tab;
-            const label = tab === 'overview' ? 'Giới thiệu' : (tab === 'services' ? 'Dịch vụ & Vé' : 'Đánh giá');
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                onPress={() => setActiveTab(tab)}
-              >
-                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Tab contents */}
-        {activeTab === 'overview' && (
-          <View style={styles.tabContent}>
-            <Text style={styles.descTitle}>Thông tin chung</Text>
-            <Text style={styles.descText}>
-              {location.description || 'Địa điểm chưa cập nhật mô tả giới thiệu chi tiết.'}
-            </Text>
-            
-            <View style={styles.divider} />
-
-            <View style={styles.detailItem}>
-              <Ionicons name="time-outline" size={18} color="#64748b" style={styles.detailIcon} />
-              <View>
-                <Text style={styles.detailLabel}>Giờ hoạt động:</Text>
-                <Text style={styles.detailValue}>{location.opening_hours || 'Chưa cập nhật'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.detailItem}>
-              <Ionicons name="call-outline" size={18} color="#64748b" style={styles.detailIcon} />
-              <View>
-                <Text style={styles.detailLabel}>Điện thoại liên hệ:</Text>
-                <Text style={styles.detailValue}>{location.phone || 'Chưa cập nhật'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.detailItem}>
-              <Ionicons name="mail-outline" size={18} color="#64748b" style={styles.detailIcon} />
-              <View>
-                <Text style={styles.detailLabel}>Email liên lạc:</Text>
-                <Text style={styles.detailValue}>{location.email || 'Chưa cập nhật'}</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {activeTab === 'services' && (
-          <View style={styles.tabContent}>
-            <Text style={styles.descTitle}>Danh sách gói dịch vụ / Đặt chỗ</Text>
-            {services.length === 0 ? (
-              <View style={styles.emptySub}>
-                <Ionicons name="construct-outline" size={32} color="#94a3b8" />
-                <Text style={styles.emptySubText}>Địa điểm này chưa cấu hình gói dịch vụ trực tuyến.</Text>
-              </View>
-            ) : (
-              services.map((s) => (
-                <View key={s.service_id} style={styles.serviceItem}>
-                  <View style={styles.serviceInfo}>
-                    <Text style={styles.serviceName}>{s.service_name}</Text>
-                    <Text style={styles.serviceDesc} numberOfLines={2}>
-                      {s.description || 'Không có mô tả dịch vụ.'}
-                    </Text>
-                    <Text style={styles.servicePrice}>
-                      {Number(s.price) > 0 ? `${Number(s.price).toLocaleString()}đ` : 'Miễn phí đặt chỗ'}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.serviceBookBtn}
-                    onPress={() => router.push(`/booking/${s.service_id}?locationId=${location.location_id}` as any)}
-                  >
-                    <Text style={styles.serviceBookText}>Đặt vé</Text>
-                  </TouchableOpacity>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {activeTab === 'reviews' && (
-          <View style={styles.tabContent}>
-            {/* Viết đánh giá mới */}
-            <View style={styles.addReviewCard}>
-              <Text style={styles.addReviewTitle}>Viết đánh giá của bạn</Text>
-              
-              {/* Star Rating Picker */}
-              <View style={styles.starsRow}>
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <TouchableOpacity key={s} onPress={() => setRating(s)}>
-                    <Ionicons name={rating >= s ? "star" : "star-outline"} size={26} color="#fbbf24" style={{ marginRight: 6 }} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TextInput
-                style={styles.reviewInput}
-                placeholder="Nhập cảm nhận của bạn về chất lượng dịch vụ, thái độ phục vụ..."
-                multiline
-                numberOfLines={3}
-                value={comment}
-                onChangeText={setComment}
+        {/* Info card */}
+        <Card style={styles.infoCard}>
+          <View style={styles.infoHeader}>
+            <Text style={styles.locationName}>{location.location_name}</Text>
+            <TouchableOpacity onPress={toggleFavorite}>
+              <Ionicons
+                name={isFavorite ? 'heart' : 'heart-outline'}
+                size={24}
+                color={isFavorite ? colors.error : colors.textMuted}
               />
-
-              <TouchableOpacity
-                style={styles.submitReviewBtn}
-                onPress={handleSubmitReview}
-                disabled={submittingReview}
-              >
-                {submittingReview ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.submitReviewText}>Gửi đánh giá</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.descTitle}>Đánh giá từ khách hàng ({reviews.length})</Text>
-            {reviews.length === 0 ? (
-              <View style={styles.emptySub}>
-                <Ionicons name="chatbox-ellipses-outline" size={32} color="#94a3b8" />
-                <Text style={styles.emptySubText}>Chưa có bài đánh giá nào. Hãy là người đầu tiên chia sẻ cảm nhận!</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.address}>{location.address || location.province || ''}</Text>
+          <View style={styles.metaRow}>
+            {location.avg_rating != null && location.avg_rating > 0 && (
+              <View style={styles.metaItem}>
+                <Ionicons name="star" size={16} color={colors.warning} />
+                <Text style={styles.metaText}>{location.avg_rating.toFixed(1)} ({location.total_reviews || 0})</Text>
               </View>
-            ) : (
-              reviews.map((r) => (
-                <View key={r.review_id} style={styles.reviewItem}>
-                  <View style={styles.reviewHeader}>
-                    <Image
-                      source={{ uri: r.avatar_url ? (r.avatar_url.startsWith('http') ? r.avatar_url : `${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '')}${r.avatar_url}`) : 'https://via.placeholder.com/150' }}
-                      style={styles.reviewAvatar}
+            )}
+            {openingInfo && <Badge text={`${openingInfo.open}-${openingInfo.close}`} variant="success" />}
+          </View>
+          {/* Quick actions */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => Linking.openURL(`tel:${location.phone}`)}
+            >
+              <Ionicons name="call" size={20} color={colors.primary} />
+              <Text style={styles.actionText}>Gọi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionPrimary]}
+              onPress={() => router.push(`/(tabs)/map` as any)}
+            >
+              <Ionicons name="navigate" size={20} color="#fff" />
+              <Text style={[styles.actionText, { color: '#fff' }]}>Chỉ đường</Text>
+            </TouchableOpacity>
+          </View>
+        </Card>
+
+        {/* Vouchers */}
+        {vouchers.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Voucher khả dụng</Text>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={vouchers}
+              keyExtractor={(item) => String(item.voucher_id)}
+              renderItem={({ item }) => (
+                <Card style={styles.voucherCard}>
+                  <Text style={styles.voucherDiscount}>
+                    {item.discount_type === 'percentage' ? `${item.discount_value}%` : `${item.discount_value.toLocaleString()}đ`}
+                  </Text>
+                  <Text style={styles.voucherCode}>{item.voucher_code}</Text>
+                  <Text style={styles.voucherMin}>Đơn tối thiểu {item.min_order.toLocaleString()}đ</Text>
+                  <Button title="Nhận" onPress={() => claimVoucher(item.voucher_id)} variant="primary" style={{ marginTop: spacing.sm }} />
+                </Card>
+              )}
+            />
+          </View>
+        )}
+
+        {/* Segmented tabs */}
+        <View style={{ paddingHorizontal: spacing.md, marginTop: spacing.md }}>
+          <SegmentedControl options={['Tổng quan', 'Dịch vụ', 'Đánh giá']} selected={activeTab} onChange={setActiveTab} />
+        </View>
+
+        {/* Tab content */}
+        <View style={{ padding: spacing.md, paddingBottom: 100 }}>
+          {activeTab === 0 && (
+            // Tong quan
+            <View>
+              {location.description && (
+                <Text style={styles.description}>{location.description}</Text>
+              )}
+              <Card style={{ marginTop: spacing.md }}>
+                {openingInfo && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="time" size={18} color={colors.textSecondary} />
+                    <Text style={styles.detailText}>Mở cửa: {openingInfo.open} - {openingInfo.close}</Text>
+                  </View>
+                )}
+                {location.phone && (
+                  <TouchableOpacity style={styles.detailRow} onPress={() => Linking.openURL(`tel:${location.phone}`)}>
+                    <Ionicons name="call" size={18} color={colors.textSecondary} />
+                    <Text style={[styles.detailText, { color: colors.primary }]}>{location.phone}</Text>
+                  </TouchableOpacity>
+                )}
+                {location.email && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="mail" size={18} color={colors.textSecondary} />
+                    <Text style={styles.detailText}>{location.email}</Text>
+                  </View>
+                )}
+              </Card>
+            </View>
+          )}
+
+          {activeTab === 1 && (
+            // Dich vu
+            <View>
+              {services.length === 0 ? (
+                <EmptyState icon="cube-outline" title="Chưa có dịch vụ" />
+              ) : (
+                services.map((svc) => (
+                  <Card key={svc.service_id} style={styles.serviceCard}>
+                    <View style={styles.serviceHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.serviceName}>{svc.service_name}</Text>
+                        <Badge text={svc.service_type} variant="info" />
+                      </View>
+                      <Text style={styles.servicePrice}>{svc.price.toLocaleString()}đ</Text>
+                    </View>
+                    {svc.description && <Text style={styles.serviceDesc}>{svc.description}</Text>}
+                    <Button
+                      title="Đặt ngay"
+                      onPress={() => router.push(`/booking/${svc.service_id}` as any)}
+                      variant="primary"
+                      style={{ marginTop: spacing.sm }}
                     />
-                    <View style={styles.reviewUserMeta}>
-                      <Text style={styles.reviewUserName}>{r.full_name}</Text>
-                      <View style={styles.reviewUserStars}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Ionicons key={star} name="star" size={10} color={r.rating >= star ? '#fbbf24' : '#cbd5e1'} />
-                        ))}
-                        <Text style={styles.reviewDate}> • {formatDate(r.created_at)}</Text>
+                  </Card>
+                ))
+              )}
+            </View>
+          )}
+
+          {activeTab === 2 && (
+            // Danh gia
+            <View>
+              {/* Form danh gia */}
+              <Card style={styles.reviewForm}>
+                <Text style={styles.reviewFormTitle}>Viết đánh giá</Text>
+                <RatingStars rating={reviewRating} size={28} interactive onChange={setReviewRating} />
+                <TextInput
+                  style={styles.reviewInput}
+                  placeholder="Chia sẻ trải nghiệm của bạn..."
+                  placeholderTextColor={colors.textMuted}
+                  value={reviewComment}
+                  onChangeText={setReviewComment}
+                  multiline
+                  numberOfLines={3}
+                />
+                <Button title="Gửi đánh giá" onPress={submitReview} loading={submittingReview} />
+              </Card>
+
+              {/* Danh sach danh gia */}
+              {reviews.length === 0 ? (
+                <EmptyState icon="chatbubble-outline" title="Chưa có đánh giá" />
+              ) : (
+                reviews.map((rev) => (
+                  <Card key={rev.review_id} style={styles.reviewCard}>
+                    <View style={styles.reviewHeader}>
+                      <Avatar uri={rev.avatar_url} name={rev.full_name} size={36} />
+                      <View style={{ marginLeft: spacing.sm, flex: 1 }}>
+                        <Text style={styles.reviewName}>{rev.full_name}</Text>
+                        <RatingStars rating={rev.rating} size={14} />
                       </View>
                     </View>
-                  </View>
-                  <Text style={styles.reviewComment}>{r.comment}</Text>
-                </View>
-              ))
-            )}
-          </View>
-        )}
+                    {rev.comment && <Text style={styles.reviewComment}>{rev.comment}</Text>}
+                    {rev.owner_reply && (
+                      <View style={styles.ownerReply}>
+                        <Text style={styles.ownerReplyLabel}>Phản hồi từ chủ địa điểm:</Text>
+                        <Text style={styles.ownerReplyText}>{rev.owner_reply}</Text>
+                      </View>
+                    )}
+                  </Card>
+                ))
+              )}
+            </View>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  scrollContent: { paddingBottom: 50 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  loadingText: { marginTop: 12, color: '#64748b', fontSize: 14 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  errorText: { fontSize: 15, color: '#64748b', textAlign: 'center', marginVertical: 20 },
-  backBtn: { backgroundColor: '#14b8a6', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10 },
-  backBtnText: { color: '#fff', fontWeight: 'bold' },
-  heroContainer: { width: '100%', height: 200, position: 'relative', backgroundColor: '#cbd5e1' },
-  heroImage: { width: '100%', height: '100%' },
-  heroFallback: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
-  headerOverlay: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    top: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    zIndex: 10,
+  container: { flex: 1, backgroundColor: colors.background },
+  loadingContainer: { flex: 1, backgroundColor: colors.background },
+  heroImage: { width: '100%', height: 220 },
+  heroFallback: { backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+  infoCard: { marginHorizontal: spacing.md, marginTop: -40 },
+  infoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  locationName: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text, flex: 1 },
+  address: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  metaItem: { flexDirection: 'row', alignItems: 'center' },
+  metaText: { fontSize: fontSize.sm, color: colors.textSecondary, marginLeft: 4 },
+  actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.primary,
   },
-  headerCircleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  infoCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 16,
-    marginTop: -24,
-    borderRadius: 24,
-    padding: 18,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 4,
-    zIndex: 5,
-  },
-  locationTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 6 },
-  locationAddress: { fontSize: 13, color: '#64748b', marginBottom: 12 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  typeBadge: {
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  typeBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#2563eb' },
-  ratingRow: { flexDirection: 'row', alignItems: 'center' },
-  ratingText: { fontSize: 12, color: '#475569', marginLeft: 4, fontWeight: '600' },
-  weatherBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    padding: 8,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  weatherText: { fontSize: 11, color: '#166534', marginLeft: 6, fontWeight: '500' },
-  quickActions: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 12,
-    justifyContent: 'space-around',
-  },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 16 },
-  actionBtnText: { fontSize: 13, color: '#475569', fontWeight: 'bold', marginLeft: 6 },
-  vouchersSection: { marginTop: 20 },
-  sectionTitle: { fontSize: 15, fontWeight: 'bold', color: '#0f172a', marginHorizontal: 16, marginBottom: 10 },
-  vouchersScroll: { paddingHorizontal: 16, paddingBottom: 4 },
-  voucherCard: {
-    flexDirection: 'row',
-    width: 200,
-    height: 80,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-    overflow: 'hidden',
-    marginRight: 10,
-  },
-  voucherLeft: {
-    width: 60,
-    backgroundColor: '#ffedd5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#fed7aa',
-    borderStyle: 'dashed',
-  },
-  voucherValue: { fontSize: 16, fontWeight: '900', color: '#ea580c' },
-  voucherLabel: { fontSize: 8, fontWeight: '900', color: '#ea580c', marginTop: 2 },
-  voucherRight: { flex: 1, padding: 8, justifyContent: 'space-between' },
-  voucherCode: { fontSize: 12, fontWeight: 'bold', color: '#1e293b' },
-  voucherMin: { fontSize: 9, color: '#64748b' },
-  voucherClaimBtn: {
-    backgroundColor: '#ea580c',
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignItems: 'center',
-  },
-  voucherClaimText: { fontSize: 9, fontWeight: 'bold', color: '#fff' },
-  tabsContainer: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginVertical: 20,
-    backgroundColor: '#cbd5e1',
-    padding: 3,
-    borderRadius: 12,
-  },
-  tabButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9 },
-  tabButtonActive: { backgroundColor: '#ffffff' },
-  tabText: { fontSize: 12, fontWeight: '600', color: '#475569' },
-  tabTextActive: { color: '#0f172a', fontWeight: 'bold' },
-  tabContent: { paddingHorizontal: 16 },
-  descTitle: { fontSize: 15, fontWeight: 'bold', color: '#0f172a', marginBottom: 10 },
-  descText: { fontSize: 13, color: '#334155', lineHeight: 22 },
-  divider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 16 },
-  detailItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  detailIcon: { marginRight: 12 },
-  detailLabel: { fontSize: 10, color: '#94a3b8', textTransform: 'uppercase' },
-  detailValue: { fontSize: 13, color: '#334155', fontWeight: '600', marginTop: 1 },
-  emptySub: { paddingVertical: 32, alignItems: 'center' },
-  emptySubText: { fontSize: 12, color: '#94a3b8', textAlign: 'center', marginTop: 8 },
-  serviceItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  serviceInfo: { flex: 1, marginRight: 10 },
-  serviceName: { fontSize: 14, fontWeight: 'bold', color: '#0f172a' },
-  serviceDesc: { fontSize: 11, color: '#64748b', marginTop: 3 },
-  servicePrice: { fontSize: 13, fontWeight: 'bold', color: '#14b8a6', marginTop: 6 },
-  serviceBookBtn: {
-    backgroundColor: '#14b8a6',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-  },
-  serviceBookText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  addReviewCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    marginBottom: 20,
-  },
-  addReviewTitle: { fontSize: 13, fontWeight: 'bold', color: '#0f172a', marginBottom: 8 },
-  starsRow: { flexDirection: 'row', marginBottom: 12 },
+  actionPrimary: { backgroundColor: colors.primary, borderColor: colors.primary },
+  actionText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold as any, color: colors.primary, marginLeft: 6 },
+  section: { marginTop: spacing.lg, paddingLeft: spacing.md },
+  sectionTitle: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text, marginBottom: spacing.sm },
+  voucherCard: { width: 160, marginRight: spacing.sm },
+  voucherDiscount: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.primary },
+  voucherCode: { fontSize: fontSize.sm, color: colors.text, marginTop: 4 },
+  voucherMin: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
+  description: { fontSize: fontSize.base, color: colors.text, lineHeight: 22 },
+  detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm },
+  detailText: { fontSize: fontSize.base, color: colors.text, marginLeft: spacing.sm },
+  serviceCard: { marginBottom: spacing.sm },
+  serviceHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  serviceName: { fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: colors.text },
+  servicePrice: { fontSize: fontSize.md, fontWeight: fontWeight.bold, color: colors.primary },
+  serviceDesc: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4 },
+  reviewForm: { marginBottom: spacing.md },
+  reviewFormTitle: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text, marginBottom: spacing.sm },
   reviewInput: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 12,
-    height: 70,
-    textAlignVertical: 'top',
-    marginBottom: 12,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+    padding: spacing.sm, fontSize: fontSize.base, color: colors.text,
+    minHeight: 80, textAlignVertical: 'top', marginVertical: spacing.md,
   },
-  submitReviewBtn: {
-    backgroundColor: '#1e293b',
-    height: 38,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  submitReviewText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  reviewItem: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-  },
-  reviewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  reviewAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#cbd5e1' },
-  reviewUserMeta: { marginLeft: 10 },
-  reviewUserName: { fontSize: 12, fontWeight: 'bold', color: '#1e293b' },
-  reviewUserStars: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  reviewDate: { fontSize: 10, color: '#94a3b8' },
-  reviewComment: { fontSize: 12, color: '#334155', lineHeight: 18 },
+  reviewCard: { marginBottom: spacing.sm },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center' },
+  reviewName: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.text },
+  reviewComment: { fontSize: fontSize.sm, color: colors.text, marginTop: spacing.sm, lineHeight: 20 },
+  ownerReply: { marginTop: spacing.sm, paddingLeft: spacing.md, borderLeftWidth: 2, borderLeftColor: colors.primary },
+  ownerReplyLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: colors.primary },
+  ownerReplyText: { fontSize: fontSize.sm, color: colors.text, marginTop: 2 },
 });
