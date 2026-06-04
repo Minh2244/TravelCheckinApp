@@ -1,137 +1,139 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  RefreshControl,
-  Alert,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import axiosClient from '../api/axiosClient';
+// app/saved-locations.tsx
+// Man hinh dia diem da luu: hien thi danh sach yeu thich, xoa khoi danh sach
 
-interface LocationItem {
-  location_id: number;
-  location_name: string;
-  address: string;
-  province: string;
-  rating: number;
-  first_image: string | null;
-  location_type: string;
-}
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, FlatList, TouchableOpacity, Image,
+  StyleSheet, Alert, RefreshControl,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import axiosClient from '../api/axiosClient';
+import { USER_API } from '../api/endpoints';
+import { colors, spacing, fontSize, radius, fontWeight } from '../constants/theme';
+import Header from '../components/Header';
+import Card from '../components/Card';
+import EmptyState from '../components/EmptyState';
+import type { FavoriteLocation } from '../types';
+
+// Ham xu ly URL anh tu backend
+const resolveImageUrl = (url: string | null): string | undefined => {
+  if (!url) return undefined;
+  if (url.startsWith('http')) return url;
+  const base = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || '';
+  return `${base}${url}`;
+};
 
 export default function SavedLocationsScreen() {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [favorites, setFavorites] = useState<LocationItem[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteLocation[]>([]);
 
-  const fetchFavorites = async (isRefresh = false) => {
+  // Lay danh sach dia diem yeu thich
+  const fetchFavorites = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
-
-      const res = await axiosClient.get('/user/favorites');
+      const res = await axiosClient.get(USER_API.FAVORITES);
       setFavorites(res.data.data || []);
-    } catch (err) {
-      console.log('Error fetching favorites', err);
+    } catch {
+      // Giu trang thai cu khi loi
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchFavorites();
   }, []);
 
-  const handleUnfavorite = async (locationId: number) => {
-    try {
-      await axiosClient.delete(`/user/favorites/${locationId}`);
-      setFavorites(prev => prev.filter(item => item.location_id !== locationId));
-    } catch (err) {
-      Alert.alert('Lỗi', 'Không thể xóa địa điểm này khỏi danh sách yêu thích.');
-    }
+  useEffect(() => { fetchFavorites(); }, [fetchFavorites]);
+
+  // Xoa dia diem khoi danh sach yeu thich
+  const handleUnfavorite = (locationId: number) => {
+    Alert.alert('Xóa khỏi yêu thích', 'Bạn có chắc muốn xóa địa điểm này?', [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await axiosClient.delete(`${USER_API.FAVORITES}/${locationId}`);
+            setFavorites(prev => prev.filter(item => item.location_id !== locationId));
+          } catch {
+            Alert.alert('Lỗi', 'Không thể xóa địa điểm này khỏi danh sách yêu thích.');
+          }
+        },
+      },
+    ]);
   };
 
-  const resolveBackendUrl = (url: string | null) => {
-    if (!url) return null;
-    if (url.startsWith('http')) return url;
-    return `${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '')}${url}`;
-  };
+  const renderItem = ({ item }: { item: FavoriteLocation }) => {
+    const imageUrl = resolveImageUrl(item.first_image);
 
-  const renderItem = ({ item }: { item: LocationItem }) => {
-    const imageUrl = resolveBackendUrl(item.first_image);
     return (
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={styles.cardPressable}
-          onPress={() => router.push(`/location/${item.location_id}` as any)}
-          activeOpacity={0.8}
-        >
+      <Card
+        style={styles.card}
+        onPress={() => router.push(`/location/${item.location_id}` as any)}
+      >
+        <View style={styles.cardRow}>
+          {/* Anh dia diem */}
           {imageUrl ? (
             <Image source={{ uri: imageUrl }} style={styles.image} />
           ) : (
-            <View style={styles.fallbackImage}>
-              <Ionicons name="image-outline" size={24} color="#94a3b8" />
+            <View style={styles.imageFallback}>
+              <Ionicons name="image-outline" size={24} color={colors.textMuted} />
             </View>
           )}
+
+          {/* Thong tin dia diem */}
           <View style={styles.info}>
-            <Text style={styles.title} numberOfLines={1}>{item.location_name}</Text>
-            <Text style={styles.address} numberOfLines={1}>{item.address}</Text>
-            
-            <View style={styles.meta}>
-              <Ionicons name="star" size={14} color="#fbbf24" />
-              <Text style={styles.ratingText}>{Number(item.rating || 0).toFixed(1)}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item.location_name}</Text>
+            {item.address ? (
+              <Text style={styles.address} numberOfLines={1}>{item.address}</Text>
+            ) : null}
+
+            {/* Rating */}
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={14} color={colors.warning} />
+              <Text style={styles.ratingText}>{Number(item.avg_rating || 0).toFixed(1)}</Text>
             </View>
           </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => handleUnfavorite(item.location_id)}>
-          <Ionicons name="heart" size={22} color="#ef4444" />
-        </TouchableOpacity>
-      </View>
+          {/* Nut xoa yeu thich */}
+          <TouchableOpacity
+            style={styles.unfavoriteBtn}
+            onPress={() => handleUnfavorite(item.location_id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="heart" size={22} color={colors.error} />
+          </TouchableOpacity>
+        </View>
+      </Card>
     );
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#1e293b" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Địa điểm đã lưu</Text>
-        <View style={{ width: 32 }} />
-      </View>
+    <View style={styles.container}>
+      <Header title="Địa điểm đã lưu" />
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#14b8a6" />
-          <Text style={styles.loadingText}>Đang tải địa điểm đã lưu...</Text>
+          <Ionicons name="heart-outline" size={48} color={colors.textMuted} />
+          <Text style={styles.loadingText}>Đang tải...</Text>
         </View>
       ) : (
         <FlatList
           data={favorites}
-          keyExtractor={(item) => item.location_id.toString()}
+          keyExtractor={(item) => String(item.location_id)}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => fetchFavorites(true)} colors={['#14b8a6']} />
+            <RefreshControl refreshing={refreshing} onRefresh={() => fetchFavorites(true)} tintColor={colors.primary} />
           }
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons name="heart-dislike-outline" size={64} color="#cbd5e1" />
-              <Text style={styles.emptyTitle}>Không có địa điểm nào</Text>
-              <Text style={styles.emptySubtitle}>Hãy nhấn nút lưu hình trái tim ở các trang chi tiết để lưu lại địa điểm bạn yêu thích nhé.</Text>
-            </View>
+            <EmptyState
+              icon="heart-dislike-outline"
+              title="Chưa có địa điểm nào"
+              description="Hãy nhấn nút lưu hình trái tim ở các trang chi tiết để lưu lại địa điểm bạn yêu thích."
+            />
           }
         />
       )}
@@ -140,47 +142,73 @@ export default function SavedLocationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  backBtn: { padding: 4 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#0f172a' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#64748b', fontSize: 14 },
-  list: { padding: 16, paddingBottom: 50 },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: fontSize.base,
+  },
+  list: {
+    padding: spacing.md,
+    paddingBottom: 100,
+  },
   card: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    overflow: 'hidden',
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
   },
-  cardPressable: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 10 },
-  image: { width: 60, height: 60, borderRadius: 12, backgroundColor: '#cbd5e1' },
-  fallbackImage: { width: 60, height: 60, borderRadius: 12, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center' },
-  info: { flex: 1, marginLeft: 12, marginRight: 10 },
-  title: { fontSize: 14, fontWeight: 'bold', color: '#1e293b', marginBottom: 4 },
-  address: { fontSize: 11, color: '#64748b', marginBottom: 6 },
-  meta: { flexDirection: 'row', alignItems: 'center' },
-  ratingText: { fontSize: 11, color: '#475569', fontWeight: 'bold', marginLeft: 4 },
-  deleteBtn: { padding: 14 },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 120, paddingHorizontal: 32 },
-  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: '#334155', marginTop: 16, marginBottom: 8 },
-  emptySubtitle: { fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 18 },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  image: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  imageFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  info: {
+    flex: 1,
+    marginLeft: spacing.md,
+    marginRight: spacing.sm,
+  },
+  name: {
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+    color: colors.text,
+    marginBottom: 4,
+  },
+  address: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    fontSize: fontSize.xs,
+    color: colors.text,
+    fontWeight: fontWeight.semibold,
+    marginLeft: 4,
+  },
+  unfavoriteBtn: {
+    padding: spacing.sm,
+  },
 });
