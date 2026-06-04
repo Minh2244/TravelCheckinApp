@@ -72,7 +72,7 @@ export default function LocationDetailScreen() {
       if (isFavorite) {
         await axiosClient.delete(USER_API.FAVORITES + `/${locationId}`);
       } else {
-        await axiosClient.patch(USER_API.FAVORITES + `/${locationId}`, {});
+        await axiosClient.patch(USER_API.FAVORITES + `/${locationId}`, { note: '', tags: '' });
       }
       setIsFavorite(!isFavorite);
     } catch {
@@ -252,7 +252,7 @@ export default function LocationDetailScreen() {
                     {svc.description && <Text style={styles.serviceDesc}>{svc.description}</Text>}
                     <Button
                       title="Đặt ngay"
-                      onPress={() => router.push(`/booking/${svc.service_id}` as any)}
+                      onPress={() => router.push(`/booking/${svc.service_id}?locationId=${locationId}` as any)}
                       variant="primary"
                       style={{ marginTop: spacing.sm }}
                     />

@@ -65,8 +65,8 @@ export default function AiChatScreen() {
     scrollToBottom();
 
     try {
-      const res = await axiosClient.post('/ai/chat', { message: trimmed });
-      const reply = res.data?.data?.reply || res.data?.reply || 'Khong nhan duoc phan hoi.';
+      const res = await axiosClient.post('/ai/chat', { prompt: trimmed });
+      const reply = res.data?.data?.response || 'Không nhận được phản hồi.';
 
       const aiMessage: ChatMessage = {
         id: generateId(),

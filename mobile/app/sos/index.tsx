@@ -47,7 +47,7 @@ export default function SosScreen() {
         setSent(true);
         Alert.alert(
           'Da gui SOS thanh cong',
-          `Tin hieu khan cap da duoc gui. Ma su co: #${response.data.alert_id ?? 'N/A'}. Ban quan ly se lien he voi ban som nhat.`,
+          `Tín hiệu khẩn cấp đã được gửi. Mã sự cố: #${response.data.data?.alert_id ?? 'N/A'}. Ban quản lý sẽ liên hệ với bạn sớm nhất.`,
           [{ text: 'Da hieu', onPress: () => router.back() }]
         );
       }

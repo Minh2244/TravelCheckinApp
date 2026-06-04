@@ -21,7 +21,7 @@ import LoadingOverlay from '../../components/LoadingOverlay';
 import type { Location, Service, Payment } from '../../types';
 
 export default function BookingScreen() {
-  const { serviceId } = useLocalSearchParams<{ serviceId: string }>();
+  const { serviceId, locationId: locIdParam } = useLocalSearchParams<{ serviceId: string; locationId?: string }>();
   const svcId = Number(serviceId);
   const router = useRouter();
 
@@ -46,22 +46,24 @@ export default function BookingScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  // Tim service tu tat ca locations
+  // Tim service tu locationId duoc truyen qua route
   useEffect(() => {
     const fetch = async () => {
       try {
-        const allLocs = await axiosClient.get(LOCATIONS_API.LIST);
-        const locs = allLocs.data.data || allLocs.data || [];
-        for (const loc of locs) {
-          const svcRes = await axiosClient.get(LOCATIONS_API.SERVICES(loc.location_id));
-          const svcs = svcRes.data.data || svcRes.data || [];
-          const found = svcs.find((s: Service) => s.service_id === svcId);
-          if (found) {
-            setService(found);
-            setLocation(loc);
-            break;
-          }
+        const locId = Number(locIdParam);
+        if (!locId) {
+          Alert.alert('Lỗi', 'Thiếu thông tin địa điểm');
+          setLoading(false);
+          return;
         }
+        const [locRes, svcRes] = await Promise.all([
+          axiosClient.get(LOCATIONS_API.DETAIL(locId)),
+          axiosClient.get(LOCATIONS_API.SERVICES(locId)),
+        ]);
+        setLocation(locRes.data.data || locRes.data);
+        const svcs = svcRes.data.data || svcRes.data || [];
+        const found = svcs.find((s: Service) => s.service_id === svcId);
+        if (found) setService(found);
       } catch {
         Alert.alert('Lỗi', 'Không thể tải thông tin dịch vụ');
       } finally {
@@ -69,7 +71,7 @@ export default function BookingScreen() {
       }
     };
     fetch();
-  }, [svcId]);
+  }, [svcId, locIdParam]);
 
   // Tao don dat cho va payment
   const handleBooking = async () => {
@@ -99,7 +101,7 @@ export default function BookingScreen() {
       if (voucherCode.trim()) payload.voucher_code = voucherCode.trim();
 
       const res = await axiosClient.post(BOOKINGS_API.CREATE, payload);
-      const newBookingId = res.data.bookingId || res.data.data?.bookingId;
+      const newBookingId = res.data.data?.bookingId;
       setBookingId(newBookingId);
 
       // Tao payment
