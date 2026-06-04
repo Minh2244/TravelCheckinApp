@@ -187,10 +187,10 @@ export default function LocationDetailScreen() {
               renderItem={({ item }) => (
                 <Card style={styles.voucherCard}>
                   <Text style={styles.voucherDiscount}>
-                    {item.discount_type === 'percentage' ? `${item.discount_value}%` : `${item.discount_value.toLocaleString()}đ`}
+                    {item.discount_type === 'percentage' ? `${item.discount_value ?? 0}%` : `${(item.discount_value ?? 0).toLocaleString()}đ`}
                   </Text>
                   <Text style={styles.voucherCode}>{item.voucher_code}</Text>
-                  <Text style={styles.voucherMin}>Đơn tối thiểu {item.min_order.toLocaleString()}đ</Text>
+                  <Text style={styles.voucherMin}>Đơn tối thiểu {(item.min_order ?? 0).toLocaleString()}đ</Text>
                   <Button title="Nhận" onPress={() => claimVoucher(item.voucher_id)} variant="primary" style={{ marginTop: spacing.sm }} />
                 </Card>
               )}
@@ -247,7 +247,7 @@ export default function LocationDetailScreen() {
                         <Text style={styles.serviceName}>{svc.service_name}</Text>
                         <Badge text={svc.service_type} variant="info" />
                       </View>
-                      <Text style={styles.servicePrice}>{svc.price.toLocaleString()}đ</Text>
+                      <Text style={styles.servicePrice}>{(svc.price ?? 0).toLocaleString()}đ</Text>
                     </View>
                     {svc.description && <Text style={styles.serviceDesc}>{svc.description}</Text>}
                     <Button
