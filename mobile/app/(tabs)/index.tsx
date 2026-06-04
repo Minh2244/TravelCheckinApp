@@ -1,443 +1,286 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet, RefreshControl, Dimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// app/(tabs)/index.tsx
+// Trang chu — loi chao, thoi tiet, quick actions, goi y dia diem
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  RefreshControl,
+  StyleSheet,
+  ScrollView,
+  Image,
+  Dimensions,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../store/useAuthStore';
 import axiosClient from '../../api/axiosClient';
+import { USER_API } from '../../api/endpoints';
+import { colors, spacing, fontSize, radius, fontWeight } from '../../constants/theme';
+import Avatar from '../../components/Avatar';
+import Card from '../../components/Card';
+import Badge from '../../components/Badge';
+import EmptyState from '../../components/EmptyState';
+import type { UserProfile, Location } from '../../types';
+import useLocationPermission from '../../hooks/useLocationPermission';
 
-const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 48) / 2;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = (SCREEN_WIDTH - spacing.md * 3) / 2;
 
-interface LocationData {
-  location_id: number;
-  location_name: string;
-  first_image: string | null;
-  rating: number;
-  province: string;
-  location_type: string;
-  total_reviews: number;
-}
+// Cac nut hanh dong nhanh
+const QUICK_ACTIONS = [
+  { icon: 'notifications' as const, label: 'Nhắc nhở', route: '/booking-reminders' },
+  { icon: 'heart' as const, label: 'Đã lưu', route: '/saved-locations' },
+  { icon: 'ticket' as const, label: 'Voucher', route: '/vouchers' },
+  { icon: 'time' as const, label: 'Lịch sử', route: '/(tabs)/history' },
+  { icon: 'warning' as const, label: 'SOS', route: '/sos' },
+];
 
-interface DashboardData {
-  recommendations: LocationData[];
-  totalCheckins: number;
-}
+// Mau sac theo hang thanh vien
+const TIER_COLORS: Record<string, string> = {
+  Newbie: colors.textMuted,
+  'Silver Traveler': '#94a3b8',
+  'Gold Explorer': '#f59e0b',
+  'Diamond Pathfinder': '#3b82f6',
+};
 
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
-  const user = useAuthStore((state) => state.user);
-  const [data, setData] = useState<DashboardData>({ recommendations: [], totalCheckins: 0 });
+  const user = useAuthStore((s) => s.user);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [recommendations, setRecommendations] = useState<Location[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [weather, setWeather] = useState<{ temp: number | null; desc: string | null }>({ temp: null, desc: null });
+  const [weather, setWeather] = useState<{ temp: number; desc: string } | null>(null);
+  const { location } = useLocationPermission();
 
-  // Dịch loại địa điểm
-  const typeLabelVi = (type: string) => {
-    const map: Record<string, string> = {
-      hotel: 'Khách sạn',
-      resort: 'Resort',
-      restaurant: 'Nhà hàng',
-      cafe: 'Cà phê',
-      tourist: 'Du lịch',
-    };
-    return map[type.toLowerCase()] || 'Địa điểm';
-  };
-
-  const fetchWeather = async (lat: number, lon: number) => {
+  // Lay profile va goi y dia diem
+  const fetchData = useCallback(async () => {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=auto`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const t = json?.current?.temperature_2m;
-      const code = json?.current?.weather_code;
-
-      const weatherCodeText = (c: number): string => {
-        if (c === 0) return "Trời quang";
-        if (c === 1 || c === 2) return "Ít mây";
-        if (c === 3) return "Nhiều mây";
-        if (c === 45 || c === 48) return "Sương mù";
-        if (c === 51 || c === 53 || c === 55) return "Mưa phùn";
-        if (c === 61 || c === 63 || c === 65) return "Mưa";
-        if (c === 80 || c === 81 || c === 82) return "Mưa rào";
-        if (c === 95) return "Giông";
-        return "Thời tiết tốt";
-      };
-
-      setWeather({
-        temp: t != null ? Math.round(t) : null,
-        desc: code != null ? weatherCodeText(code) : null,
-      });
-    } catch (e) {
-      console.log('Error fetching weather', e);
-    }
-  };
-
-  const fetchDashboard = useCallback(async () => {
-    const token = useAuthStore.getState().accessToken;
-    if (!token) {
-      setRefreshing(false);
-      return;
-    }
-    try {
-      setRefreshing(true);
-      const [recRes, profileRes] = await Promise.all([
-        axiosClient.get('/user/recommendations/locations'),
-        axiosClient.get('/user/profile'),
+      const [profileRes, recRes] = await Promise.all([
+        axiosClient.get(USER_API.PROFILE),
+        axiosClient.get(USER_API.RECOMMENDATIONS, { params: { limit: 10 } }),
       ]);
-      setData({
-        recommendations: recRes.data.data || [],
-        totalCheckins: profileRes.data.data?.total_checkins || 0,
-      });
-
-      // Lấy vị trí thời tiết
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const gps = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        fetchWeather(gps.coords.latitude, gps.coords.longitude);
-      } else {
-        fetchWeather(10.0451, 105.7468); // Cần Thơ mặc định
-      }
-    } catch (err) {
-      console.log('Error fetching dashboard data', err);
-    } finally {
-      setRefreshing(false);
+      setProfile(profileRes.data.data || profileRes.data);
+      setRecommendations(recRes.data.data || recRes.data || []);
+    } catch {
+      // Giu trang thai cu neu loi
     }
   }, []);
 
-  useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
-
-  const memberTier = useMemo(() => {
-    const c = data.totalCheckins;
-    if (c <= 4) return { name: 'Newbie', color: '#94a3b8' };
-    if (c <= 15) return { name: 'Silver Traveler', color: '#14b8a6' };
-    if (c <= 30) return { name: 'Gold Explorer', color: '#e11d48' };
-    return { name: 'Diamond Pathfinder', color: '#3b82f6' };
-  }, [data.totalCheckins]);
-
-  const QUICK_ACTIONS = [
-    { id: '1', title: 'Nhắc lịch', icon: 'calendar-outline', color: '#3b82f6', route: '/booking-reminders' },
-    { id: '2', title: 'Đã lưu', icon: 'heart-outline', color: '#f43f5e', route: '/saved-locations' },
-    { id: '3', title: 'Voucher', icon: 'ticket-outline', color: '#f59e0b', route: '/vouchers' },
-    { id: '4', title: 'Lịch sử', icon: 'footsteps-outline', color: '#10b981', route: '/history' },
-    { id: '5', title: 'SOS', icon: 'warning-outline', color: '#ef4444', route: '/sos' },
-  ];
-
-  const handleActionPress = (action: typeof QUICK_ACTIONS[0]) => {
-    if (action.route === '/sos') {
-      router.push('/sos' as any);
-    } else if (action.route === '/history') {
-      router.push('/(tabs)/history' as any);
-    } else {
-      router.push(action.route as any);
+  // Lay thoi tiet tu Open-Meteo, dung GPS hoac mac dinh Can Tho
+  const fetchWeather = useCallback(async () => {
+    try {
+      const lat = location?.latitude || 10.03;
+      const lon = location?.longitude || 105.77;
+      const res = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code`
+      );
+      const data = await res.json();
+      const temp = Math.round(data.current?.temperature_2m || 0);
+      const code = data.current?.weather_code || 0;
+      const desc =
+        code <= 1
+          ? 'Trời nắng'
+          : code <= 3
+            ? 'Nhiều mây'
+            : code <= 48
+              ? 'Sương mù'
+              : 'Mưa';
+      setWeather({ temp, desc });
+    } catch {
+      // Khong hien thi thoi tiet neu loi
     }
+  }, [location]);
+
+  useEffect(() => {
+    fetchData();
+    fetchWeather();
+  }, [fetchData, fetchWeather]);
+
+  // Keo de tai lai du lieu
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchData();
+    await fetchWeather();
+    setRefreshing(false);
   };
 
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      {/* Top greeting with avatar and weather widget */}
-      <View style={styles.topSection}>
-        <View style={styles.profileSection}>
-          <Image
-            source={{ uri: user?.avatar_url ? (user.avatar_url.startsWith('http') ? user.avatar_url : `${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '')}${user.avatar_url}`) : 'https://via.placeholder.com/150' }}
-            style={styles.avatar}
-          />
-          <View style={styles.greeting}>
-            <Text style={styles.greetingText} numberOfLines={1}>Xin chào, {user?.full_name}</Text>
-            <View style={[styles.tierBadge, { backgroundColor: memberTier.color }]}>
-              <Text style={styles.tierText}>{memberTier.name}</Text>
-            </View>
+  const tier = profile?.stats?.member_tier || 'Newbie';
+  const tierColor = TIER_COLORS[tier] || colors.textMuted;
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+      }
+    >
+      {/* Header: avatar + loi chao + hang thanh vien */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Avatar uri={user?.avatar_url} name={user?.full_name} size={48} />
+          <View style={styles.greetingContainer}>
+            <Text style={styles.greeting}>Xin chào,</Text>
+            <Text style={styles.userName}>{user?.full_name || 'Bạn'}</Text>
           </View>
         </View>
-
-        {/* Weather Widget */}
-        {weather.temp !== null && (
-          <View style={styles.weatherWidget}>
-            <Ionicons name="sunny-outline" size={18} color="#f59e0b" />
-            <View style={styles.weatherInfo}>
-              <Text style={styles.weatherTemp}>{weather.temp}°C</Text>
-              <Text style={styles.weatherDesc} numberOfLines={1}>{weather.desc}</Text>
-            </View>
-          </View>
-        )}
+        <Badge text={tier} variant={tier === 'Newbie' ? 'muted' : 'warning'} />
       </View>
 
-      {/* Grid actions (5 buttons layout) */}
-      <View style={styles.quickActionGrid}>
+      {/* Thoi tiet */}
+      {weather && (
+        <Card style={styles.weatherCard}>
+          <Ionicons name="partly-sunny" size={28} color={colors.warning} />
+          <View style={styles.weatherTextContainer}>
+            <Text style={styles.weatherTemp}>{weather.temp}°C</Text>
+            <Text style={styles.weatherDesc}>{weather.desc}</Text>
+          </View>
+        </Card>
+      )}
+
+      {/* Quick actions — 5 nut hanh dong */}
+      <View style={styles.quickActions}>
         {QUICK_ACTIONS.map((action) => (
-          <TouchableOpacity key={action.id} style={styles.actionButton} onPress={() => handleActionPress(action)}>
-            <View style={[styles.actionIcon, { backgroundColor: `${action.color}10` }]}>
-              <Ionicons name={action.icon as any} size={22} color={action.color} />
+          <TouchableOpacity
+            key={action.label}
+            style={styles.quickAction}
+            onPress={() => router.push(action.route as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.quickActionIcon}>
+              <Ionicons name={action.icon} size={22} color={colors.primary} />
             </View>
-            <Text style={styles.actionText}>{action.title}</Text>
+            <Text style={styles.quickActionLabel}>{action.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>Đề xuất cho bạn</Text>
-    </View>
-  );
-
-  const renderLocationCard = ({ item }: { item: LocationData }) => {
-    const imageUrl = item.first_image
-      ? (item.first_image.startsWith('http') ? item.first_image : `${process.env.EXPO_PUBLIC_API_URL?.replace('/api', '')}${item.first_image}`)
-      : null;
-
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => router.push(`/location/${item.location_id}` as any)}
-        activeOpacity={0.9}
-      >
-        <View style={styles.cardImageContainer}>
-          {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.cardImage} />
-          ) : (
-            <View style={styles.cardFallbackImage}>
-              <Ionicons name="image-outline" size={32} color="#94a3b8" />
-            </View>
+      {/* Goi y dia diem — 2 cot FlatList */}
+      <Text style={styles.sectionTitle}>Gợi ý cho bạn</Text>
+      {recommendations.length === 0 ? (
+        <EmptyState
+          icon="location-outline"
+          title="Chưa có gợi ý"
+          description="Hãy khám phá thêm địa điểm!"
+        />
+      ) : (
+        <FlatList
+          data={recommendations}
+          numColumns={2}
+          scrollEnabled={false}
+          keyExtractor={(item) => String(item.location_id)}
+          columnWrapperStyle={styles.gridRow}
+          renderItem={({ item }) => (
+            <Card
+              style={styles.locationCard as never}
+              onPress={() => router.push(`/location/${item.location_id}` as never)}
+            >
+              {item.first_image ? (
+                <Image source={{ uri: item.first_image }} style={styles.locationImage} />
+              ) : (
+                <View style={[styles.locationImage, styles.locationImageFallback]}>
+                  <Ionicons name="image-outline" size={32} color={colors.textMuted} />
+                </View>
+              )}
+              <View style={styles.locationInfo}>
+                <Text style={styles.locationName} numberOfLines={2}>
+                  {item.location_name}
+                </Text>
+                <Text style={styles.locationAddress} numberOfLines={1}>
+                  {item.address || item.province || ''}
+                </Text>
+                {item.avg_rating != null && item.avg_rating > 0 && (
+                  <View style={styles.ratingRow}>
+                    <Ionicons name="star" size={14} color={colors.warning} />
+                    <Text style={styles.ratingText}>{item.avg_rating.toFixed(1)}</Text>
+                  </View>
+                )}
+              </View>
+            </Card>
           )}
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>{typeLabelVi(item.location_type)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.cardBody}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.location_name}</Text>
-          
-          <View style={styles.cardFooter}>
-            <View style={styles.locationRow}>
-              <Ionicons name="location-outline" size={12} color="#64748b" />
-              <Text style={styles.locationText} numberOfLines={1}>{item.province}</Text>
-            </View>
-            
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={12} color="#fbbf24" />
-              <Text style={styles.ratingText}>{Number(item.rating || 0).toFixed(1)}</Text>
-            </View>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  return (
-    <FlatList
-      data={data.recommendations}
-      keyExtractor={(item) => item.location_id.toString()}
-      ListHeaderComponent={renderHeader}
-      renderItem={renderLocationCard}
-      numColumns={2}
-      columnWrapperStyle={styles.columnWrapper}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 16 }]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchDashboard} colors={['#14b8a6']} />}
-    />
+        />
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 110,
-    backgroundColor: '#f8fafc',
-  },
-  headerContainer: {
-    marginBottom: 20,
-    width: '100%',
-  },
-  topSection: {
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, paddingBottom: 100 },
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
-  profileSection: {
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+  greetingContainer: { marginLeft: spacing.sm },
+  greeting: { fontSize: fontSize.sm, color: colors.textSecondary },
+  userName: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text },
+  weatherCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-    marginRight: 10,
+    marginBottom: spacing.md,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 2,
-    borderColor: '#14b8a6',
-    backgroundColor: '#e2e8f0',
-  },
-  greeting: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  greetingText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  tierBadge: {
-    marginTop: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  tierText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  weatherWidget: {
+  weatherTextContainer: { marginLeft: spacing.sm },
+  weatherTemp: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text },
+  weatherDesc: { fontSize: fontSize.sm, color: colors.textSecondary },
+  quickActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  weatherInfo: {
-    marginLeft: 6,
-  },
-  weatherTemp: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  weatherDesc: {
-    fontSize: 9,
-    color: '#64748b',
-    maxWidth: 70,
-  },
-  quickActionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
-  actionButton: {
-    width: '18%',
+  quickAction: { alignItems: 'center', width: 64 },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
-  },
-  actionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: spacing.xs,
   },
-  actionText: {
-    fontSize: 10,
-    color: '#334155',
-    fontWeight: '600',
+  quickActionLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    marginBottom: 12,
-    marginTop: 8,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+    color: colors.text,
+    marginBottom: spacing.md,
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  card: {
-    width: COLUMN_WIDTH,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cardImageContainer: {
+  gridRow: { gap: spacing.md, marginBottom: spacing.md },
+  locationCard: { width: CARD_WIDTH, padding: 0, overflow: 'hidden' },
+  locationImage: {
     width: '100%',
-    height: 110,
-    position: 'relative',
-    backgroundColor: '#f1f5f9',
+    height: 100,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
   },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  cardFallbackImage: {
-    width: '100%',
-    height: '100%',
+  locationImageFallback: {
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  typeBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+  locationInfo: { padding: spacing.sm },
+  locationName: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    color: colors.text,
   },
-  typeBadgeText: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#ffffff',
+  locationAddress: {
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
-  cardBody: {
-    padding: 10,
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 6,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 6,
-  },
-  locationText: {
-    fontSize: 10,
-    color: '#64748b',
-    marginLeft: 3,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   ratingText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginLeft: 2,
+    fontSize: fontSize.xs,
+    color: colors.textSecondary,
+    marginLeft: 4,
   },
 });
