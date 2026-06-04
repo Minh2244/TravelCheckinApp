@@ -1,3 +1,6 @@
+// app/_layout.tsx
+// Root layout — dang ky tat ca screen, auth gate
+
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
@@ -5,14 +8,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/components/useColorScheme';
-// 1. IMPORT THÊM CÁI STORE CỦA MÌNH VÀO ĐÂY
+import { useColorScheme } from 'react-native';
 import { useAuthStore } from '../store/useAuthStore';
 import { router } from 'expo-router';
 
-export {
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
   initialRouteName: '(tabs)',
@@ -35,9 +35,7 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
-  }
+  if (!loaded) return null;
 
   return <RootLayoutNav />;
 }
@@ -47,7 +45,6 @@ function RootLayoutNav() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const [isReady, setIsReady] = useState(false);
 
-  // 2. KHỞI TẠO STATE ĐĂNG NHẬP Ở ĐÂY
   useEffect(() => {
     const initAuth = async () => {
       await useAuthStore.persist.rehydrate();
@@ -56,10 +53,8 @@ function RootLayoutNav() {
     initAuth();
   }, []);
 
-  // Điều hướng người dùng dựa trên trạng thái đăng nhập
   useEffect(() => {
     if (!isReady) return;
-
     const timer = setTimeout(() => {
       if (!accessToken) {
         router.replace('/login' as any);
@@ -67,26 +62,26 @@ function RootLayoutNav() {
         router.replace('/(tabs)' as any);
       }
     }, 100);
-
     return () => clearTimeout(timer);
   }, [accessToken, isReady]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
-        {/* Khai báo màn hình Đăng nhập */}
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-
-        {/* Khai báo màn hình Đăng ký */}
-        <Stack.Screen name="register" options={{ headerShown: false }} />
-
-        {/* Khai báo màn hình Quên mật khẩu */}
-        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-
-        {/* Khai báo luồng Tabs */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
-        {/* Đổi cái modal cũ thành màn hình SOS của mình */}
+        <Stack.Screen name="login" />
+        <Stack.Screen name="register" />
+        <Stack.Screen name="forgot-password" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="location/[id]" />
+        <Stack.Screen name="booking/[serviceId]" />
+        <Stack.Screen name="checkin" />
+        <Stack.Screen name="saved-locations" />
+        <Stack.Screen name="vouchers" />
+        <Stack.Screen name="booking-reminders" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="diary" />
+        <Stack.Screen name="leaderboard" />
+        <Stack.Screen name="ai-chat" />
         <Stack.Screen name="sos" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
