@@ -167,7 +167,7 @@ export default function BookingScreen() {
         <Card>
           <Text style={styles.svcName}>{service.service_name}</Text>
           <Badge text={service.service_type} variant="info" />
-          <Text style={styles.svcPrice}>{service.price.toLocaleString()}đ</Text>
+          <Text style={styles.svcPrice}>{(service.price ?? 0).toLocaleString()}đ</Text>
           <Text style={styles.locName}>{location.location_name}</Text>
         </Card>
 
@@ -239,7 +239,7 @@ export default function BookingScreen() {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Tổng tiền</Text>
             <Text style={styles.totalValue}>
-              {(service.price * quantity).toLocaleString()}đ
+              {((service.price ?? 0) * quantity).toLocaleString()}đ
             </Text>
           </View>
         </Card>
