@@ -97,10 +97,17 @@ axiosClient.interceptors.response.use(
         });
 
         const newAccessToken = res.data.accessToken;
+        const currentUser = useAuthStore.getState().user;
+        if (!currentUser) {
+          useAuthStore.getState().logout();
+          router.replace('/login' as any);
+          processQueue(new Error('User not found'), null);
+          return Promise.reject(error);
+        }
         useAuthStore.getState().setAuth(
           newAccessToken,
           refreshToken,
-          useAuthStore.getState().user!
+          currentUser
         );
 
         processQueue(null, newAccessToken);
