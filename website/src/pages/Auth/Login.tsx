@@ -209,9 +209,13 @@ const Login = () => {
     window.addEventListener("message", handleMessage);
 
     checkClosedInterval = setInterval(() => {
-      if (popup && popup.closed) {
-        cleanUp();
-        setGoogleLoading(false);
+      try {
+        if (popup && popup.closed) {
+          cleanUp();
+          setGoogleLoading(false);
+        }
+      } catch (err) {
+        // Cross-Origin-Opener-Policy could block access to popup.closed
       }
     }, 500);
 
@@ -309,9 +313,13 @@ const Login = () => {
     window.addEventListener("message", handleMessage);
 
     checkClosedInterval = setInterval(() => {
-      if (popup && popup.closed) {
-        cleanUp();
-        setFacebookLoading(false);
+      try {
+        if (popup && popup.closed) {
+          cleanUp();
+          setFacebookLoading(false);
+        }
+      } catch (err) {
+        // Cross-Origin-Opener-Policy could block access to popup.closed
       }
     }, 500);
 

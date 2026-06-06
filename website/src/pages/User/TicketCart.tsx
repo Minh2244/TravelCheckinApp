@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import userApi from "../../api/userApi";
+import LocationChatBubble from "../../components/LocationChatBubble";
 import useTouristTicketSync from "../../modules/frontOffice/hooks/useTouristTicketSync";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { formatMoney } from "../../utils/formatMoney";
@@ -213,6 +214,7 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<UserTouristTicketItem[]>([]);
+  const [chatLocation, setChatLocation] = useState<{ id: number; name: string; image: string | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -423,10 +425,23 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                             <span className="text-slate-400">💵 Giá vé:</span>
                             <span className="font-bold text-emerald-700">{priceLabel}</span>
                           </div>
-                          <div className="flex justify-center sm:justify-start pt-1">
+                          <div className="flex items-center gap-2 pt-1 flex-wrap justify-center sm:justify-start">
                             <span className="bg-slate-100/80 text-slate-700 px-3.5 py-1 rounded-xl font-mono text-[13.5px] font-bold border border-slate-200/70 shadow-sm">
                               Mã vé: {ticket.ticket_code}
                             </span>
+                            {ticket.location_id && (
+                              <button
+                                type="button"
+                                onClick={() => setChatLocation({
+                                  id: Number(ticket.location_id),
+                                  name: ticket.location_name || "Khu du lịch",
+                                  image: null
+                                })}
+                                className="inline-flex items-center rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-650 text-xs font-bold px-3.5 py-1 shadow-sm transition-all"
+                              >
+                                💬 Nhắn tin
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -548,6 +563,22 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                         </svg>
                         <span>Ngày sử dụng: <span className="font-semibold text-slate-800">{useDateLabel}</span></span>
                       </div>
+
+                      {group.locationId && (
+                        <div className="flex items-center justify-center md:justify-start pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setChatLocation({
+                              id: Number(group.locationId),
+                              name: group.locationName || "Khu du lịch",
+                              image: null
+                            })}
+                            className="inline-flex items-center rounded-xl border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-600 text-xs font-bold px-3 py-1 shadow-sm transition-all"
+                          >
+                            💬 Nhắn tin cho khu du lịch
+                          </button>
+                        </div>
+                      )}
 
                       <div className="flex flex-wrap justify-center md:justify-start gap-2 pt-2">
                         {ticketBreakdown.map(([name, item]) => (
@@ -718,6 +749,15 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
           </div>
         )}
 
+        {chatLocation && (
+          <LocationChatBubble
+            locationId={chatLocation.id}
+            userRole="user"
+            locationName={chatLocation.name}
+            locationImage={chatLocation.image}
+            initialOpen={true}
+          />
+        )}
       </section>
     );
 

@@ -33,7 +33,8 @@ const PORT = process.env.PORT || 3000;
 const userTopic = (userId: number) => `user_${userId}`;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
 // Serve uploaded files (avatars/backgrounds) from backend/uploads
 const uploadRoot = path.resolve(__dirname, "..", "uploads");
@@ -572,6 +573,7 @@ const startServer = async () => {
       cors: {
         origin: "*",
       },
+      maxHttpBufferSize: 1e8, // 100MB to support large base64 image data transfers
     });
     app.set("socketio", io);
     initSocketHub(io);

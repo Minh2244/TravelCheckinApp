@@ -5,6 +5,7 @@ import viVN from "antd/locale/vi_VN";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
 import UserLayout from "../../layouts/UserLayout";
+import LocationChatBubble from "../../components/LocationChatBubble";
 import { useBookings } from "../../hooks/useBookings";
 import bookingApi from "../../api/bookingApi";
 import locationApi from "../../api/locationApi";
@@ -4550,6 +4551,15 @@ const BookingPage = () => {
             </div>
           </div>
         </section>
+
+        {locationIdNum && (
+          <LocationChatBubble
+            locationId={locationIdNum}
+            userRole="user"
+            locationName={location?.location_name || "Địa điểm"}
+            locationImage={location?.first_image || null}
+          />
+        )}
       </UserLayout>
     </ConfigProvider>
   );
