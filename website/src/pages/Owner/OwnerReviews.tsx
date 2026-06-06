@@ -237,7 +237,14 @@ const OwnerReviews = () => {
         width: 120,
         render: (s: string) => {
           const v = String(s || "").toLowerCase();
-          const label = v === "active" ? "HIỆN" : v === "hidden" ? "ẨN" : String(s).toUpperCase();
+          const label =
+            v === "active"
+              ? "HIỆN"
+              : v === "hidden"
+                ? "ẨN"
+                : v === "deleted"
+                  ? "ĐÃ XÓA"
+                  : String(s).toUpperCase();
           return (
             <Tag
               color={v === "active" ? "green" : v === "hidden" ? "orange" : "red"}

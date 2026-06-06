@@ -440,7 +440,6 @@ export default function FrontOfficeTouristTicketsHistory() {
           );
         },
       },
-      Table.EXPAND_COLUMN as any,
     ],
     [],
   );
@@ -960,6 +959,7 @@ export default function FrontOfficeTouristTicketsHistory() {
                   columnTitle: (
                     <span className="whitespace-nowrap">Chi tiết</span>
                   ),
+                  expandIconColumnIndex: invoiceColumns.length,
                   columnWidth: 90,
                   expandedRowRender: (row) => {
                     const items = Array.isArray(row.items)

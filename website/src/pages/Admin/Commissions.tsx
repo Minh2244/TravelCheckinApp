@@ -40,6 +40,7 @@ interface Commission {
   owner_name: string;
   owner_email: string;
   owner_status?: "active" | "locked" | "pending" | string;
+  billing_period?: string;
   commission_amount: number;
   vat_amount: number;
   total_due: number;
@@ -275,6 +276,11 @@ const Commissions = () => {
       title: "Email",
       dataIndex: "owner_email",
       key: "owner_email",
+    },
+    {
+      title: "Kỳ đối soát",
+      dataIndex: "billing_period",
+      key: "billing_period",
     },
     {
       title: "Hoa hồng",

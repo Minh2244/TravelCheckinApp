@@ -6047,11 +6047,9 @@ export const getCommissions = async (
         u.user_id as owner_id,
         u.full_name as owner_name,
         u.email as owner_email,
-        u.status as owner_status,
-        p.amount as payment_amount
+        u.status as owner_status
       FROM commissions c
       JOIN users u ON c.owner_id = u.user_id
-      JOIN payments p ON c.payment_id = p.payment_id
     `;
     const params: Array<string | number> = [];
 
@@ -11917,148 +11915,9 @@ export const confirmPaymentAndCreateCommission = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
-  const paymentId = Number(req.params.id);
-  const adminId = req.userId;
-  const { due_days } = req.body as { due_days?: number };
-
-  if (!Number.isFinite(paymentId)) {
-    res.status(400).json({ success: false, message: "paymentId không hợp lệ" });
-    return;
-  }
-  if (!adminId) {
-    res.status(401).json({ success: false, message: "Chưa xác thực" });
-    return;
-  }
-
-  const dueDays =
-    Number.isFinite(due_days) && (due_days as number) >= 0
-      ? Math.floor(due_days as number)
-      : 7;
-
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    const [paymentRows] = await conn.query<RowDataPacket[]>(
-      `SELECT p.payment_id, p.amount, p.location_id, p.booking_id, p.status,
-              p.commission_rate, p.commission_amount, p.vat_rate, p.vat_amount,
-              l.owner_id
-       FROM payments p
-       JOIN locations l ON l.location_id = p.location_id
-       WHERE p.payment_id = ?
-       FOR UPDATE`,
-      [paymentId],
-    );
-
-    if (!paymentRows[0]) {
-      await conn.rollback();
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy payment" });
-      return;
-    }
-
-    const payment = paymentRows[0] as {
-      payment_id: number;
-      amount: string;
-      location_id: number;
-      booking_id: number | null;
-      status: "pending" | "completed" | "failed" | "refunded";
-      owner_id: number;
-      commission_rate: string | number | null;
-      commission_amount: string | number | null;
-      vat_rate: string | number | null;
-      vat_amount: string | number | null;
-    };
-
-    const [existingCommissionRows] = await conn.query<RowDataPacket[]>(
-      `SELECT commission_id FROM commissions WHERE payment_id = ? LIMIT 1 FOR UPDATE`,
-      [paymentId],
-    );
-    if (existingCommissionRows[0]) {
-      await conn.commit();
-      res.json({
-        success: true,
-        message: "Payment đã được confirm trước đó",
-        data: { commission_id: existingCommissionRows[0].commission_id },
-      });
-      return;
-    }
-
-    const safeCommissionRate = Number.isFinite(Number(payment.commission_rate))
-      ? Number(payment.commission_rate)
-      : 2.5;
-    const safeVatRate = Number.isFinite(Number(payment.vat_rate))
-      ? Number(payment.vat_rate)
-      : 10;
-    const commissionAmount = Number(payment.commission_amount || 0);
-    const vatAmount = Number(payment.vat_amount || 0);
-    const totalDue = +(commissionAmount + vatAmount).toFixed(2);
-
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + dueDays);
-    const dueDateStr = dueDate.toISOString().slice(0, 10);
-
-    const [insertCommissionResult] = await conn.query<any>(
-      `INSERT INTO commissions (owner_id, payment_id, booking_id, commission_amount, vat_amount, total_due, due_date, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [
-        payment.owner_id,
-        paymentId,
-        payment.booking_id,
-        commissionAmount,
-        vatAmount,
-        totalDue,
-        dueDateStr,
-      ],
-    );
-
-    await conn.query(
-      `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
-      [
-        adminId,
-        "CONFIRM_PAYMENT_CREATE_COMMISSION",
-        JSON.stringify({
-          payment_id: paymentId,
-          owner_id: payment.owner_id,
-          commission_rate: safeCommissionRate,
-          vat_rate: safeVatRate,
-          commission_amount: commissionAmount,
-          vat_amount: vatAmount,
-          total_due: totalDue,
-          due_date: dueDateStr,
-          timestamp: new Date(),
-        }),
-      ],
-    );
-
-    await conn.commit();
-
-    res.status(201).json({
-      success: true,
-      message: "Đã confirm payment và tạo commission",
-      data: {
-        commission_id: insertCommissionResult?.insertId,
-        owner_id: payment.owner_id,
-        payment_id: paymentId,
-        booking_id: payment.booking_id,
-        commission_rate: safeCommissionRate,
-        vat_rate: safeVatRate,
-        commission_amount: commissionAmount,
-        vat_amount: vatAmount,
-        total_due: totalDue,
-        due_date: dueDateStr,
-      },
-    });
-  } catch (error: unknown) {
-    try {
-      await conn.rollback();
-    } catch {
-      // ignore
-    }
-    console.error("Lỗi confirmPaymentAndCreateCommission:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
-  } finally {
-    conn.release();
-  }
+  res.status(400).json({
+    success: false,
+    message: "Tính năng tạo hoa hồng thủ công đã bị vô hiệu hóa. Hệ thống đã tự động chốt hoa hồng vào ngày 15 hàng tháng.",
+  });
+  return;
 };
