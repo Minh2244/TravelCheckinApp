@@ -1,7 +1,7 @@
 import { Layout, Button, Image } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import type { ReactNode } from "react";
-import LocationChatBubble from "../components/LocationChatBubble";
+import OwnerChatManager from "../components/OwnerChatManager";
 
 const { Header, Content } = Layout;
 
@@ -62,8 +62,8 @@ const FrontOfficeLayout = ({
         <div className="fo-surface">{children}</div>
       </Content>
 
-      {/* Kênh chat thời gian thực với khách hàng dành cho Nhân viên/Owner */}
-      <LocationChatBubble locationId={locationId} userRole="owner" />
+      {/* Quản lý các khung chat nổi tự động bật lên khi có khách nhắn cho Owner */}
+      <OwnerChatManager locationId={locationId} />
     </Layout>
   );
 };

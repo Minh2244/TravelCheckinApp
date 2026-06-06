@@ -49,10 +49,12 @@ export const initSocketHub = (io: Server) => {
 
     const existingSockets = socketsByUserId.get(userId) ?? new Set<Socket>();
     if (existingSockets.size > 0) {
-      for (const existing of existingSockets) {
-        revokeSocket(existing, "Tài khoản đang được đăng nhập tại nơi khác.");
+      for (const existing of Array.from(existingSockets)) {
+        if (existing.data?.sessionId !== sessionId) {
+          revokeSocket(existing, "Tài khoản đang được đăng nhập tại nơi khác.");
+          existingSockets.delete(existing);
+        }
       }
-      existingSockets.clear();
     }
 
     socket.data.userId = userId;
@@ -60,10 +62,19 @@ export const initSocketHub = (io: Server) => {
     existingSockets.add(socket);
     socketsByUserId.set(userId, existingSockets);
 
-    socket.on("join_location_room", (payload: { locationId: number }) => {
-      const room = `location_${payload.locationId}`;
+    socket.on("join_location_room", (payload: { locationId: number; customerId?: number }) => {
+      const { locationId, customerId } = payload;
+      const targetCustomerId = customerId || userId;
+      const room = `location_${locationId}_customer_${targetCustomerId}`;
       void socket.join(room);
-      console.log(`Socket ${socket.id} (user ${userId}) joined room ${room}`);
+      console.log(`Socket ${socket.id} (user ${userId}) joined private room ${room}`);
+    });
+
+    socket.on("join_location_owner_room", (payload: { locationId: number }) => {
+      const { locationId } = payload;
+      const room = `location_${locationId}_owners`;
+      void socket.join(room);
+      console.log(`Socket ${socket.id} (owner ${userId}) joined owners room ${room}`);
     });
 
     socket.on("disconnect", () => {

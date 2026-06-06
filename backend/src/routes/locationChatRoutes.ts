@@ -2,12 +2,16 @@ import { Router } from "express";
 import { authenticateToken } from "../middleware/authMiddleware";
 import {
   getLocationChatHistory,
-  postLocationChatMessage
+  postLocationChatMessage,
+  getLocationActiveSessions
 } from "../controllers/locationChatController";
 
 const router = Router();
 
 router.use(authenticateToken);
+
+// GET /api/chat/location/:locationId/sessions
+router.get("/location/:locationId/sessions", getLocationActiveSessions);
 
 // GET /api/chat/location/:locationId
 router.get("/location/:locationId", getLocationChatHistory);
@@ -16,3 +20,4 @@ router.get("/location/:locationId", getLocationChatHistory);
 router.post("/location/:locationId", postLocationChatMessage);
 
 export default router;
+

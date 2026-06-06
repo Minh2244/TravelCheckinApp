@@ -1152,7 +1152,12 @@ const LocationDetail = () => {
           </div>
           
           {/* Kênh chat thời gian thực với địa điểm */}
-          <LocationChatBubble locationId={locationId} userRole="user" />
+          <LocationChatBubble
+            locationId={locationId}
+            userRole="user"
+            locationName={location?.location_name}
+            locationImage={location?.first_image || (location?.images && location.images[0])}
+          />
         </div>
       </section>
     </UserLayout>
