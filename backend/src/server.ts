@@ -24,6 +24,7 @@ import { ensureBookingTableReservationsSchema } from "./utils/tableReservations"
 import { initSocketHub } from "./utils/socketHub";
 import { ensureLocationChatSchema } from "./utils/locationChat";
 import locationChatRoutes from "./routes/locationChatRoutes";
+import { startCommissionCron } from "./cron/commissionJob";
 
 dotenv.config();
 
@@ -577,6 +578,8 @@ const startServer = async () => {
     });
     app.set("socketio", io);
     initSocketHub(io);
+
+    startCommissionCron();
 
     httpServer.listen(PORT, () => {
       console.log(`📡 Server đang chạy tại: http://localhost:${PORT}`);

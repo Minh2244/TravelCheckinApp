@@ -2688,7 +2688,7 @@ export default function FrontOfficeRestaurant(props: {
         confirmLoading={qrScanning}
         okText="Xác nhận Check-in"
         cancelText="Đóng"
-        destroyOnClose
+        destroyOnHidden
         centered
         width={480}
       >
@@ -2722,7 +2722,7 @@ export default function FrontOfficeRestaurant(props: {
         open={scanModalOpen}
         onCancel={() => setScanModalOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         centered
       >
         <div className="text-sm text-gray-600 mb-2 font-medium">

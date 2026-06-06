@@ -2938,7 +2938,14 @@ export const createOwnerCommissionPaymentRequest = async (
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0);
 
-    const transferNote = `TC-${auth.userId}-${Date.now()}`;
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      `SELECT full_name FROM users WHERE user_id = ? LIMIT 1`,
+      [auth.userId]
+    );
+    const rawName = userRows[0]?.full_name || "Owner";
+    const normalizeName = (str: string) => 
+      str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^a-zA-Z0-9 ]/g, "");
+    const transferNote = `${normalizeName(rawName)} thanh toan hoa hong`.trim();
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO audit_logs (user_id, action, details)
@@ -6355,10 +6362,8 @@ export const getOwnerCommissions = async (
 
     const params: any[] = [auth.userId];
     let sql = `
-      SELECT c.*, p.amount as payment_amount, p.status as payment_status, l.location_name
+      SELECT c.*
       FROM commissions c
-      LEFT JOIN payments p ON p.payment_id = c.payment_id
-      LEFT JOIN locations l ON l.location_id = p.location_id
       WHERE c.owner_id = ?
     `;
 
@@ -6370,6 +6375,38 @@ export const getOwnerCommissions = async (
     sql += ` ORDER BY c.created_at DESC LIMIT 200`;
 
     const [rows] = await pool.query<RowDataPacket[]>(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (error: any) {
+    res
+      .status(error?.statusCode || 500)
+      .json({ success: false, message: error?.message || "Lỗi server" });
+  }
+};
+
+export const getOwnerPendingCommissionPayments = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    if (auth.role !== "owner") {
+      res.status(403).json({ success: false, message: "Chỉ owner được phép" });
+      return;
+    }
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT p.payment_id, p.amount, p.commission_amount, p.vat_amount, p.payment_time,
+              b.booking_id, l.location_name
+       FROM payments p
+       JOIN locations l ON l.location_id = p.location_id
+       LEFT JOIN bookings b ON b.booking_id = p.booking_id
+       WHERE l.owner_id = ?
+         AND p.status = 'completed'
+         AND p.commission_id IS NULL
+       ORDER BY p.payment_time DESC`,
+      [auth.userId],
+    );
+
     res.json({ success: true, data: rows });
   } catch (error: any) {
     res

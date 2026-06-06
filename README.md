@@ -13,7 +13,7 @@ TravelCheckinApp is a comprehensive travel ecosystem consisting of three main co
 | Component | Description | Technology |
 |-----------|-------------|------------|
 | Backend API | RESTful server with real-time capabilities | Node.js, Express 5, TypeScript |
-| Mobile App | Consumer-facing app for travelers | React Native, Expo SDK 56, TypeScript |
+| Mobile App | Consumer-facing app for travelers | React Native, Expo SDK 54, TypeScript |
 | Web Dashboard | Admin, Owner, and User management panels | React 19, Vite 7, Ant Design, TypeScript |
 
 The platform enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations.
@@ -158,7 +158,7 @@ D. Token refresh with separate access and refresh tokens (JWT).
 
 | Category | Technology |
 |----------|------------|
-| Framework | React Native 0.85.3 + Expo SDK 56 |
+| Framework | React Native 0.85.3 + Expo SDK 54 |
 | Routing | expo-router (file-based) |
 | State Management | Zustand |
 | HTTP Client | Axios |

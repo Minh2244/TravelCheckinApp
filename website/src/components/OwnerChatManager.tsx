@@ -28,14 +28,11 @@ const fileToBase64 = (file: File): Promise<string> => {
 const formatMessageTime = (dateStr: string) => {
   try {
     const date = new Date(dateStr);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
     const timeStr = date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (isToday) return timeStr;
-    
     const day = String(date.getDate()).padStart(2, "0");
     const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${timeStr} ${day}/${month}`;
+    const year = date.getFullYear();
+    return `${timeStr} ${day}/${month}/${year}`;
   } catch {
     return "";
   }
@@ -48,6 +45,7 @@ interface ChatSession {
   isMinimized?: boolean;
   customerAvatar?: string | null;
   unreadCount?: number;       // Số tin chưa đọc từ OwnerChatWindow
+  lastMessageAt?: string;     // Thời điểm tin nhắn cuối cùng để check dismissed state
 }
 
 export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) {
@@ -82,6 +80,17 @@ export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) 
           const apiSessions = res.data;
           const mergedChatsMap = new Map<number, ChatSession>();
 
+          // Lấy danh sách các chat đã bị chủ động đóng (dismissed)
+          let dismissedMap: Record<number, string> = {};
+          try {
+            const dismissedRaw = localStorage.getItem(`owner_dismissed_chats_${activeLocationId}`);
+            if (dismissedRaw) {
+              dismissedMap = JSON.parse(dismissedRaw);
+            }
+          } catch (e) {
+            console.error("[OwnerChatManager] Lỗi đọc dismissed chats:", e);
+          }
+
           // Đưa các chat từ localStorage vào trước
           for (const c of storedChats) {
             mergedChatsMap.set(c.customerId, c);
@@ -91,16 +100,34 @@ export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) 
           for (const sess of apiSessions) {
             const existing = mergedChatsMap.get(sess.customerId);
             
-            // Nếu có tin nhắn chưa trả lời (unreadCount > 0) hoặc session này đã từng được mở
-            if (sess.unreadCount > 0 || existing) {
+            // Kiểm tra xem session này có bị dismissed hay không
+            const dismissedTime = dismissedMap[sess.customerId];
+            const isDismissed = dismissedTime && new Date(sess.lastMessageAt).getTime() <= new Date(dismissedTime).getTime();
+
+            if (existing) {
+              // Nếu session đã tồn tại trong local state/localStorage
+              // Chỉ coi là tin nhắn mới nếu unreadCount > 0 VÀ thời điểm tin nhắn mới từ API mới hơn thời điểm tin cũ đã lưu
+              const isNewMessageArrived = sess.unreadCount > 0 && existing.lastMessageAt && sess.lastMessageAt && new Date(sess.lastMessageAt).getTime() > new Date(existing.lastMessageAt).getTime();
+              
               mergedChatsMap.set(sess.customerId, {
                 customerId: sess.customerId,
                 customerName: sess.customerName,
-                customerAvatar: sess.customerAvatar || (existing ? existing.customerAvatar : null),
-                // Nếu chưa từng mở thì mặc định thu nhỏ
-                isMinimized: existing ? existing.isMinimized : true,
-                hasNewMessage: sess.unreadCount > 0 ? true : (existing ? existing.hasNewMessage : false),
+                customerAvatar: sess.customerAvatar || existing.customerAvatar,
+                isMinimized: existing.isMinimized,
+                hasNewMessage: isNewMessageArrived ? true : existing.hasNewMessage,
+                unreadCount: isNewMessageArrived ? sess.unreadCount : (existing.unreadCount || 0),
+                lastMessageAt: isNewMessageArrived ? sess.lastMessageAt : existing.lastMessageAt,
+              });
+            } else if (sess.unreadCount > 0 && !isDismissed) {
+              // Nếu chưa tồn tại nhưng có tin nhắn chưa đọc từ API và chưa bị dismissed
+              mergedChatsMap.set(sess.customerId, {
+                customerId: sess.customerId,
+                customerName: sess.customerName,
+                customerAvatar: sess.customerAvatar,
+                isMinimized: true, // Mặc định thu nhỏ khi mới xuất hiện tự động
+                hasNewMessage: true,
                 unreadCount: sess.unreadCount,
+                lastMessageAt: sess.lastMessageAt,
               });
             }
           }
@@ -210,10 +237,40 @@ export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) 
   }, [activeLocationId, socketUrl]);
 
   const handleCloseChat = (customerId: number) => {
+    // Luôn lấy thời điểm đóng hiện tại làm mốc dismissed
+    // Bất kỳ tin nhắn nào có trước thời điểm này sẽ được coi là đã đọc/đã đóng
+    const dismissedTime = new Date().toISOString();
+    
+    // Lưu vào danh sách đã đóng để không tự động hiện lại khi load trang
+    try {
+      const dismissedKey = `owner_dismissed_chats_${activeLocationId}`;
+      const dismissedRaw = localStorage.getItem(dismissedKey);
+      const dismissedMap = dismissedRaw ? JSON.parse(dismissedRaw) : {};
+      dismissedMap[customerId] = dismissedTime;
+      localStorage.setItem(dismissedKey, JSON.stringify(dismissedMap));
+    } catch (e) {
+      console.error("[OwnerChatManager] Lỗi lưu dismissed chats:", e);
+    }
+
     setOpenChats((prev) => prev.filter((c) => c.customerId !== customerId));
   };
 
   const handleClearHighlight = (customerId: number) => {
+    // Xóa khỏi danh sách dismissed khi người dùng tương tác mở cửa sổ chat
+    try {
+      const dismissedKey = `owner_dismissed_chats_${activeLocationId}`;
+      const dismissedRaw = localStorage.getItem(dismissedKey);
+      if (dismissedRaw) {
+        const dismissedMap = JSON.parse(dismissedRaw);
+        if (dismissedMap[customerId]) {
+          delete dismissedMap[customerId];
+          localStorage.setItem(dismissedKey, JSON.stringify(dismissedMap));
+        }
+      }
+    } catch (e) {
+      console.error("[OwnerChatManager] Lỗi xóa unread/dismissed:", e);
+    }
+
     setOpenChats((prev) =>
       prev.map((c) =>
         c.customerId === customerId ? { ...c, hasNewMessage: false } : c

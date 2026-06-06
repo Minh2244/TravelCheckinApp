@@ -32,14 +32,11 @@ const fileToBase64 = (file: File): Promise<string> => {
 const formatMessageTime = (dateStr: string) => {
   try {
     const date = new Date(dateStr);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
     const timeStr = date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (isToday) return timeStr;
-    
     const day = String(date.getDate()).padStart(2, "0");
     const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${timeStr} ${day}/${month}`;
+    const year = date.getFullYear();
+    return `${timeStr} ${day}/${month}/${year}`;
   } catch {
     return "";
   }

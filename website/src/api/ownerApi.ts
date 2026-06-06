@@ -257,6 +257,11 @@ const ownerApi = {
     return res.data;
   },
 
+  getPendingCommissionPayments: async () => {
+    const res = await axiosClient.get("/owner/commissions/pending-payments");
+    return res.data;
+  },
+
   createCommissionPaymentRequest: async (payload?: { note?: string }) => {
     const res = await axiosClient.post(
       "/owner/commissions/payment-request",

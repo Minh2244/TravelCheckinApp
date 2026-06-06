@@ -1173,11 +1173,6 @@ export default function FrontOfficePaymentsHistory() {
     [isHotelMode, hotelColumns, restaurantColumns],
   );
 
-  const columnsWithExpand = useMemo<any[]>(
-    () => [...columns, Table.EXPAND_COLUMN],
-    [columns],
-  );
-
   return (
     <FrontOfficeLayout
       title="Lịch sử thanh toán"
@@ -1671,10 +1666,11 @@ export default function FrontOfficePaymentsHistory() {
             scroll={{ y: 340, x: true }}
             expandable={{
               columnTitle: <span className="whitespace-nowrap">Chi tiết</span>,
+              expandIconColumnIndex: columns.length,
               columnWidth: 90,
               expandedRowRender: expandedInvoiceRender,
             }}
-            columns={columnsWithExpand}
+            columns={columns}
           />
         </Card>
       </Space>

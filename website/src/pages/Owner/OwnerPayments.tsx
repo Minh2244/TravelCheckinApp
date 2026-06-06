@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
@@ -11,6 +10,15 @@ import {
   Tag,
   message,
 } from "antd";
+import {
+  DollarOutlined,
+  WalletOutlined,
+  CreditCardOutlined,
+  ReloadOutlined,
+  FileTextOutlined,
+  GlobalOutlined,
+  ShopOutlined,
+} from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -35,12 +43,7 @@ type PaymentsSummary = {
   transfer: number;
 };
 
-type SeriesPoint = {
-  day: string;
-  total: number;
-  commission: number;
-  after_commission: number;
-};
+
 
 type HistoryRow = {
   payment_id: number;
@@ -85,6 +88,9 @@ type HistoryRow = {
     unit_price: number;
     line_total: number;
   }>;
+  voucher_code?: string | null;
+  discount_amount?: number;
+  final_amount?: number;
 };
 
 type TicketInvoiceItem = {
@@ -189,14 +195,13 @@ export default function OwnerPayments() {
     cash: 0,
     transfer: 0,
   });
-  const [series, setSeries] = useState<SeriesPoint[]>([]);
+
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(
     null,
   );
 
-  const chartSvgRef = useRef<SVGSVGElement | null>(null);
-  const [hoverChartIndex, setHoverChartIndex] = useState<number | null>(null);
+  // No chart state variables needed
 
   const isTouristLocation = useMemo(() => {
     const t = String(selectedLocation?.location_type || "").toLowerCase();
@@ -229,17 +234,7 @@ export default function OwnerPayments() {
     if (nextId) setLocationId(nextId);
   }, [navigate, sp]);
 
-  const selectDateFromChart = useCallback(
-    (rawDay: string) => {
-      const raw = String(rawDay || "").trim();
-      if (raw.length < 10) return;
-      const d = dayjs(raw.slice(0, 10), "YYYY-MM-DD");
-      if (!d.isValid()) return;
-      setPickedDate(d.format("YYYY-MM-DD"));
-      setRange("day");
-    },
-    [setPickedDate, setRange],
-  );
+  // selectDateFromChart removed
 
   const loadData = useCallback(async () => {
     if (!locationId) return;
@@ -267,23 +262,7 @@ export default function OwnerPayments() {
         transfer: Number(asRecord(payData.summary).transfer || 0),
       });
 
-      const s = Array.isArray(payData.series) ? payData.series : [];
-      setSeries(
-        s
-          .map((x: any) => ({
-            day: String(x.day || ""),
-            total: Number(x.total || 0),
-            commission: Number(x.commission || 0),
-            after_commission: Number(x.after_commission || 0),
-          }))
-          .filter(
-            (x: any) =>
-              x.day &&
-              Number.isFinite(x.total) &&
-              Number.isFinite(x.commission) &&
-              Number.isFinite(x.after_commission),
-          ),
-      );
+
 
       if (isTouristLocation) {
         setInvoiceSummary(
@@ -384,6 +363,9 @@ export default function OwnerPayments() {
                 name: (asRecord(r.processed_by).name as any) ?? null,
               },
               items: Array.isArray(r.items) ? (r.items as any) : [],
+              voucher_code: r.voucher_code == null ? null : String(r.voucher_code),
+              discount_amount: r.discount_amount == null ? undefined : Number(r.discount_amount),
+              final_amount: r.final_amount == null ? undefined : Number(r.final_amount),
             } as HistoryRow;
           })
           .filter((x: HistoryRow) => Number.isFinite(x.payment_id)),
@@ -424,22 +406,63 @@ export default function OwnerPayments() {
     [],
   );
 
-  const weekMeta = useMemo(() => {
-    const anchor = dayjs(pickedDate, "YYYY-MM-DD");
-    if (!anchor.isValid()) return null;
-    const dow = anchor.day();
-    const diffFromMonday = (dow + 6) % 7;
-    const start = anchor.subtract(diffFromMonday, "day").startOf("day");
-    const end = start.add(6, "day").startOf("day");
-    return { start, end };
-  }, [pickedDate]);
-
-  const chartSeries = useMemo(() => series, [series]);
+  // weekMeta and chartSeries removed
 
   const isHotelMode = useMemo(
     () => history.some((r) => Boolean(r.hotel)),
     [history],
   );
+
+  const opStats = useMemo(() => {
+    let totalOrders = 0;
+    let totalQty = 0;
+    let onlineOrders = 0;
+    let onlineRevenue = 0;
+    let posOrders = 0;
+    let posRevenue = 0;
+
+    if (isTouristLocation) {
+      const invs = invoiceSummary?.invoices ?? [];
+      totalOrders = invs.length;
+      invs.forEach((row) => {
+        const qty = Number(row.total_qty || 0);
+        const amt = Number(row.total_amount || 0);
+        totalQty += qty;
+        if (row.source === "pos") {
+          posOrders++;
+          posRevenue += amt;
+        } else {
+          onlineOrders++;
+          onlineRevenue += amt;
+        }
+      });
+    } else {
+      totalOrders = history.length;
+      history.forEach((row) => {
+        const qty = Number(row.total_qty || 0);
+        const amt = Number(row.amount || 0);
+        totalQty += qty;
+        
+        const isOnline = (row.booking_id != null && Number(row.booking_id) > 0) || row.transaction_source === "online_booking";
+        if (isOnline) {
+          onlineOrders++;
+          onlineRevenue += amt;
+        } else {
+          posOrders++;
+          posRevenue += amt;
+        }
+      });
+    }
+
+    return {
+      totalOrders,
+      totalQty,
+      onlineOrders,
+      onlineRevenue,
+      posOrders,
+      posRevenue,
+    };
+  }, [history, invoiceSummary, isTouristLocation]);
 
   const expandedInvoiceRender = useCallback((row: HistoryRow) => {
     const hotelRooms = Array.isArray(row.hotel_rooms) ? row.hotel_rooms : [];
@@ -478,7 +501,7 @@ export default function OwnerPayments() {
     const prefix = isHotel ? "RS" : isTouristLocation ? "SB" : "DI";
 
     return (
-      <div className="rounded-2xl border bg-white p-4">
+      <div className="rounded-2xl border bg-white p-4 font-sans">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="text-base font-semibold text-blue-800">
@@ -502,6 +525,26 @@ export default function OwnerPayments() {
             </div>
           </div>
         </div>
+
+        {row.voucher_code ? (
+          <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+            <div className="text-sm font-semibold text-emerald-800">🎫 Voucher áp dụng</div>
+            <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <span className="text-slate-500">Mã:</span>
+                <span className="ml-1 font-semibold">{row.voucher_code}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Giảm:</span>
+                <span className="ml-1 font-semibold text-red-600">-{formatMoney(row.discount_amount || 0)}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Thực tế:</span>
+                <span className="ml-1 font-semibold">{formatMoney(row.final_amount || row.amount)}</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {roomsForRender.length > 0 ? (
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -590,7 +633,7 @@ export default function OwnerPayments() {
               {row.items.map((it) => (
                 <div
                   key={`${it.service_id}-${it.service_name}`}
-                  className="grid grid-cols-[1fr_60px_110px_120px] py-2 text-sm"
+                  className="grid grid-cols-[1fr_60px_110px_120px] py-2 text-sm font-sans"
                 >
                   <div className="min-w-0 truncate">{it.service_name}</div>
                   <div className="text-right font-semibold">{it.quantity}</div>
@@ -622,16 +665,17 @@ export default function OwnerPayments() {
       {
         title: "Hóa đơn",
         render: (_: unknown, row: HistoryRow) => {
+          const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
               <span className="font-semibold text-blue-700">
-                #RS-{row.booking_id}
+                #RS-{row.booking_id}{vcTag}
               </span>
             );
           }
           return (
             <span className="font-semibold text-blue-700">
-              #RS-POS-{row.payment_id}
+              #RS-POS-{row.payment_id}{vcTag}
             </span>
           );
         },
@@ -729,16 +773,17 @@ export default function OwnerPayments() {
       {
         title: "Hóa đơn",
         render: (_: unknown, row: HistoryRow) => {
+          const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
               <span className="font-semibold text-blue-700">
-                #DI-{row.booking_id}
+                #DI-{row.booking_id}{vcTag}
               </span>
             );
           }
           return (
             <span className="font-semibold text-blue-700">
-              #DI-POS-{row.payment_id}
+              #DI-POS-{row.payment_id}{vcTag}
             </span>
           );
         },
@@ -834,16 +879,17 @@ export default function OwnerPayments() {
         title: "Hóa đơn",
         width: 140,
         render: (_: unknown, row: TicketInvoiceRow) => {
+          const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
               <span className="font-semibold text-blue-700">
-                #SB-{row.booking_id}
+                #SB-{row.booking_id}{vcTag}
               </span>
             );
           }
           return (
             <span className="font-semibold text-blue-700">
-              #SB-POS-{row.payment_id}
+              #SB-POS-{row.payment_id}{vcTag}
             </span>
           );
         },
@@ -941,481 +987,161 @@ export default function OwnerPayments() {
   return (
     <MainLayout>
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-        <Card title="Lịch sử tổng hợp" loading={loading}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-sm text-gray-600">Địa điểm</div>
-              <Select
-                style={{ minWidth: 260 }}
-                value={locationId ?? undefined}
-                placeholder="Chọn địa điểm"
-                onChange={(v) => setLocationId(Number(v))}
-                options={locations.map((l) => ({
-                  label: l.location_name,
-                  value: l.location_id,
-                }))}
-              />
+        <Card loading={loading} className="shadow-sm border-slate-100 rounded-2xl">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-800 mb-1">Lịch sử tổng hợp</h1>
+              <p className="text-xs text-slate-400">Xem và đối soát doanh thu của các địa điểm theo thời gian</p>
             </div>
+            
+            <div className="flex flex-wrap flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Địa điểm:</span>
+                <Select
+                  style={{ minWidth: 220 }}
+                  value={locationId ?? undefined}
+                  placeholder="Chọn địa điểm"
+                  onChange={(v) => setLocationId(Number(v))}
+                  options={locations.map((l) => ({
+                    label: l.location_name,
+                    value: l.location_id,
+                  }))}
+                  className="rounded-lg hover:border-emerald-500 transition-colors"
+                />
+              </div>
 
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <Segmented
-                options={segmentedOptions}
-                value={range}
-                onChange={(v) => setRange(v as RangeKey)}
-              />
-              <DatePicker
-                value={dayjs(pickedDate, "YYYY-MM-DD") as any}
-                format={DATE_UI_FORMAT}
-                onChange={(_d: any, dateString: string | null) => {
-                  if (!dateString) return;
-                  const next = dayjs(dateString, DATE_UI_FORMAT);
-                  if (!next.isValid()) return;
-                  setPickedDate(next.format("YYYY-MM-DD"));
-                }}
-                allowClear={false}
-              />
-              <Button onClick={() => void loadData()} loading={loading}>
-                Tải lại
-              </Button>
+              <div className="hidden sm:block h-6 w-px bg-slate-200" />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Segmented
+                  options={segmentedOptions}
+                  value={range}
+                  onChange={(v) => setRange(v as RangeKey)}
+                  className="bg-slate-100 p-0.5 rounded-lg text-xs"
+                />
+                <DatePicker
+                  value={dayjs(pickedDate, "YYYY-MM-DD") as any}
+                  format={DATE_UI_FORMAT}
+                  onChange={(_d: any, dateString: string | null) => {
+                    if (!dateString) return;
+                    const next = dayjs(dateString, DATE_UI_FORMAT);
+                    if (!next.isValid()) return;
+                    setPickedDate(next.format("YYYY-MM-DD"));
+                  }}
+                  allowClear={false}
+                  className="rounded-lg py-1.5"
+                />
+                <Button 
+                  icon={<ReloadOutlined />} 
+                  onClick={() => void loadData()} 
+                  loading={loading}
+                  className="rounded-lg flex items-center border-slate-200 hover:border-emerald-500 text-slate-600 hover:text-emerald-600"
+                >
+                  Tải lại
+                </Button>
+              </div>
             </div>
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tổng doanh thu</div>
-            <div className="text-lg font-bold">
-              {formatMoney(summary.total)}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50/50 border border-emerald-100/80 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1">Tổng doanh thu</div>
+              <div className="text-2xl font-extrabold text-emerald-950">
+                {formatMoney(summary.total)}
+              </div>
             </div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tiền mặt</div>
-            <div className="text-lg font-bold">{formatMoney(summary.cash)}</div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Chuyển khoản</div>
-            <div className="text-lg font-bold">
-              {formatMoney(summary.transfer)}
+            <div className="h-12 w-12 flex items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 shadow-inner">
+              <DollarOutlined style={{ fontSize: "22px" }} />
             </div>
-          </Card>
+          </div>
+
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50/50 border border-amber-100/80 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">Tiền mặt</div>
+              <div className="text-2xl font-extrabold text-amber-950">
+                {formatMoney(summary.cash)}
+              </div>
+            </div>
+            <div className="h-12 w-12 flex items-center justify-center rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/20 shadow-inner">
+              <WalletOutlined style={{ fontSize: "22px" }} />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50/50 border border-blue-100/80 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-1">Chuyển khoản</div>
+              <div className="text-2xl font-extrabold text-blue-950">
+                {formatMoney(summary.transfer)}
+              </div>
+            </div>
+            <div className="h-12 w-12 flex items-center justify-center rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20 shadow-inner">
+              <CreditCardOutlined style={{ fontSize: "22px" }} />
+            </div>
+          </div>
         </div>
 
-        <Card title="Biểu đồ doanh thu">
-          {range === "week" && weekMeta ? (
-            <div className="mb-2 text-xs text-gray-500">
-              Tuần: {weekMeta.start.format(DATE_UI_FORMAT)} -{" "}
-              {weekMeta.end.format(DATE_UI_FORMAT)}
-            </div>
-          ) : null}
-
-          {chartSeries.length === 0 ? (
-            <div className="text-sm text-gray-500">Chưa có dữ liệu.</div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-amber-500" />
-                  <span>Hoa hồng</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded bg-emerald-600" />
-                  <span>Owner nhận</span>
-                </div>
+        {/* Operational Statistics widgets */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-violet-50 to-purple-50/50 border border-violet-100 rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-violet-700 uppercase tracking-wider mb-1">
+                {isTouristLocation ? "Tổng số vé đã bán" : "Tổng số hóa đơn"}
               </div>
-
-              {(() => {
-                const n = chartSeries.length;
-                const W = 720;
-                const H = 240;
-                const padX = 28;
-                const padTop = 16;
-                const padBottom = 44;
-
-                const plotW = W - padX * 2;
-                const plotH = H - padTop - padBottom;
-
-                const niceCeil = (v: number) => {
-                  const x = Math.max(1, Number(v || 0));
-                  const exp = Math.floor(Math.log10(x));
-                  const base = 10 ** exp;
-                  const f = x / base;
-                  const nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
-                  return nice * base;
-                };
-
-                const maxTotal = Math.max(
-                  1,
-                  ...chartSeries.map((x: any) =>
-                    Math.max(
-                      0,
-                      Number(x.after_commission || 0) +
-                        Number(x.commission || 0),
-                    ),
-                  ),
-                );
-                const yMax = niceCeil(maxTotal);
-                const y0 = padTop + plotH;
-
-                const toY = (value: number) => {
-                  const ratio = yMax <= 0 ? 0 : value / yMax;
-                  const clamped = Math.max(0, Math.min(1, ratio));
-                  return padTop + (1 - clamped) * plotH;
-                };
-
-                const canDrillDown = range === "week" || range === "month";
-
-                const labelEvery = (() => {
-                  if (n <= 12) return 1;
-                  if (n <= 24) return 2;
-                  if (n <= 36) return 3;
-                  if (n <= 48) return 4;
-                  if (n <= 72) return 6;
-                  if (n <= 120) return 10;
-                  return 20;
-                })();
-
-                const minWidth = Math.max(520, Math.min(6000, n * 28));
-
-                const points = chartSeries.map((x: any, i) => {
-                  const rawDay = String(x.day || "");
-                  const ownerValue = Number(x.after_commission || 0);
-                  const commissionValue = Number(x.commission || 0);
-                  const totalValue = Math.max(0, ownerValue + commissionValue);
-
-                  const slotW = plotW / n;
-                  const barW = Math.max(6, Math.min(28, slotW * 0.66));
-                  const barX = padX + slotW * i + (slotW - barW) / 2;
-
-                  const getDowLabel = (d: dayjs.Dayjs) =>
-                    ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][d.day()];
-
-                  let dayLabel = rawDay;
-                  let subLabel = "";
-                  let titleLabel = rawDay;
-
-                  if (range === "day") {
-                    const hh = rawDay.includes("T")
-                      ? rawDay.split("T")[1]?.slice(0, 2) || ""
-                      : "";
-                    dayLabel = hh;
-                    titleLabel = rawDay.includes("T")
-                      ? `${rawDay.slice(0, 10)} ${hh}:00`
-                      : rawDay;
-                  } else if (range === "week" || range === "month") {
-                    const d = dayjs(rawDay, "YYYY-MM-DD");
-                    if (d.isValid()) {
-                      titleLabel = d.format("DD/MM/YYYY");
-                      if (range === "week") {
-                        dayLabel = d.format("DD/MM");
-                        subLabel = getDowLabel(d);
-                      } else {
-                        dayLabel = d.format("DD");
-                        subLabel = "";
-                      }
-                    }
-                  } else {
-                    const d = dayjs(rawDay, "YYYY-MM");
-                    if (d.isValid()) {
-                      titleLabel = d.format("MM/YYYY");
-                      dayLabel =
-                        range === "year" ? d.format("MM") : d.format("MM/YY");
-                      subLabel = "";
-                    }
-                  }
-
-                  const yOwnerTop = toY(ownerValue);
-                  const yTotalTop = toY(totalValue);
-
-                  return {
-                    key: `${rawDay || i}`,
-                    rawDay,
-                    barX,
-                    barW,
-                    ownerValue,
-                    commissionValue,
-                    totalValue,
-                    yOwnerTop,
-                    yTotalTop,
-                    y0,
-                    dayLabel,
-                    subLabel,
-                    titleLabel,
-                  };
-                });
-
-                const hoverIdx =
-                  hoverChartIndex == null
-                    ? null
-                    : Math.max(0, Math.min(n - 1, hoverChartIndex));
-                const hp = hoverIdx == null ? null : points[hoverIdx];
-
-                const onMove = (e: MouseEvent<SVGSVGElement>) => {
-                  if (!chartSvgRef.current) return;
-                  const rect = chartSvgRef.current.getBoundingClientRect();
-                  if (!rect.width) return;
-                  const mx = ((e.clientX - rect.left) / rect.width) * W;
-                  const slotW = plotW / n;
-                  const idx = Math.floor((mx - padX) / slotW);
-                  const clamped = Math.max(0, Math.min(n - 1, idx));
-                  setHoverChartIndex(clamped);
-                };
-
-                const onLeave = () => setHoverChartIndex(null);
-
-                return (
-                  <div className="w-full overflow-x-auto">
-                    <div className="min-w-[520px]" style={{ minWidth }}>
-                      <svg
-                        ref={chartSvgRef}
-                        viewBox={`0 0 ${W} ${H}`}
-                        width="100%"
-                        height={240}
-                        role="img"
-                        aria-label="Biểu đồ doanh thu"
-                        onMouseMove={onMove}
-                        onMouseLeave={onLeave}
-                        onClick={() => {
-                          if (!hp) return;
-                          if (!canDrillDown) return;
-                          selectDateFromChart(hp.rawDay);
-                        }}
-                      >
-                        {Array.from({ length: 5 }).map((_, i) => {
-                          const y = padTop + (plotH * i) / 4;
-                          return (
-                            <line
-                              key={i}
-                              x1={padX}
-                              y1={y}
-                              x2={W - padX}
-                              y2={y}
-                              stroke="currentColor"
-                              className="text-gray-100"
-                              strokeWidth={2}
-                            />
-                          );
-                        })}
-
-                        <line
-                          x1={padX}
-                          y1={padTop + plotH}
-                          x2={W - padX}
-                          y2={padTop + plotH}
-                          stroke="currentColor"
-                          className="text-gray-200"
-                          strokeWidth={2}
-                        />
-
-                        {points.map((p) => {
-                          const ownerH = Math.max(0, p.y0 - p.yOwnerTop);
-                          const commissionTop = p.yTotalTop;
-                          const commissionH = Math.max(
-                            0,
-                            p.yOwnerTop - commissionTop,
-                          );
-                          return (
-                            <g
-                              key={`bar-${p.key}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canDrillDown) return;
-                                selectDateFromChart(p.rawDay);
-                              }}
-                              style={{
-                                cursor: canDrillDown ? "pointer" : "default",
-                              }}
-                            >
-                              <rect
-                                x={p.barX}
-                                y={p.yOwnerTop}
-                                width={p.barW}
-                                height={ownerH}
-                                rx={3}
-                                fill="currentColor"
-                                className="text-emerald-600"
-                                opacity={0.95}
-                              />
-                              <rect
-                                x={p.barX}
-                                y={commissionTop}
-                                width={p.barW}
-                                height={commissionH}
-                                rx={3}
-                                fill="currentColor"
-                                className="text-amber-500"
-                                opacity={0.95}
-                              />
-                            </g>
-                          );
-                        })}
-
-                        {!hp ? null : (
-                          <g>
-                            <line
-                              x1={hp.barX + hp.barW / 2}
-                              y1={padTop}
-                              x2={hp.barX + hp.barW / 2}
-                              y2={padTop + plotH}
-                              stroke="currentColor"
-                              className="text-gray-200"
-                              strokeWidth={2}
-                            />
-
-                            {(() => {
-                              const boxW = 210;
-                              const boxH = 98;
-                              const boxX = Math.max(
-                                8,
-                                Math.min(
-                                  W - boxW - 8,
-                                  hp.barX + hp.barW / 2 + 12,
-                                ),
-                              );
-                              const topY = hp.yTotalTop;
-                              const boxY = Math.max(
-                                8,
-                                Math.min(
-                                  padTop + plotH - boxH - 8,
-                                  topY - boxH - 10,
-                                ),
-                              );
-
-                              const pct =
-                                hp.totalValue > 0
-                                  ? (hp.commissionValue / hp.totalValue) * 100
-                                  : 0;
-
-                              return (
-                                <g>
-                                  <rect
-                                    x={boxX}
-                                    y={boxY}
-                                    width={boxW}
-                                    height={boxH}
-                                    rx={10}
-                                    fill="currentColor"
-                                    className="text-gray-800"
-                                    opacity={0.92}
-                                  />
-                                  <text
-                                    x={boxX + 12}
-                                    y={boxY + 22}
-                                    fontSize={12}
-                                    fill="#fff"
-                                  >
-                                    {hp.titleLabel}
-                                  </text>
-                                  <g>
-                                    <rect
-                                      x={boxX + 12}
-                                      y={boxY + 30}
-                                      width={10}
-                                      height={10}
-                                      fill="currentColor"
-                                      className="text-emerald-600"
-                                    />
-                                    <text
-                                      x={boxX + 28}
-                                      y={boxY + 39}
-                                      fontSize={12}
-                                      fill="#fff"
-                                    >
-                                      {`Owner nhận: ${formatMoney(hp.ownerValue)}`}
-                                    </text>
-                                  </g>
-                                  <g>
-                                    <rect
-                                      x={boxX + 12}
-                                      y={boxY + 48}
-                                      width={10}
-                                      height={10}
-                                      fill="currentColor"
-                                      className="text-amber-500"
-                                    />
-                                    <text
-                                      x={boxX + 28}
-                                      y={boxY + 57}
-                                      fontSize={12}
-                                      fill="#fff"
-                                    >
-                                      {`Hoa hồng: ${formatMoney(hp.commissionValue)}`}
-                                    </text>
-                                  </g>
-                                  <g>
-                                    <text
-                                      x={boxX + 12}
-                                      y={boxY + 75}
-                                      fontSize={12}
-                                      fill="#fff"
-                                    >
-                                      {`Tổng: ${formatMoney(hp.totalValue)}  (${pct.toFixed(1)}% hoa hồng)`}
-                                    </text>
-                                  </g>
-                                </g>
-                              );
-                            })()}
-                          </g>
-                        )}
-
-                        {points.map((p, i) => {
-                          const show = i % labelEvery === 0 || i === n - 1;
-                          if (!show) return null;
-                          const hasTop = Boolean(
-                            String(p.dayLabel || "").trim(),
-                          );
-                          const hasBottom = Boolean(
-                            String(p.subLabel || "").trim(),
-                          );
-                          if (!hasTop && !hasBottom) return null;
-                          return (
-                            <g
-                              key={`lbl-${p.key}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!canDrillDown) return;
-                                selectDateFromChart(p.rawDay);
-                              }}
-                              style={{
-                                cursor: canDrillDown ? "pointer" : "default",
-                              }}
-                            >
-                              {!hasTop ? null : (
-                                <text
-                                  x={p.barX + p.barW / 2}
-                                  y={H - 24}
-                                  textAnchor="middle"
-                                  fontSize={11}
-                                  fill="currentColor"
-                                  className="text-gray-500"
-                                >
-                                  {p.dayLabel}
-                                </text>
-                              )}
-                              {!hasBottom ? null : (
-                                <text
-                                  x={p.barX + p.barW / 2}
-                                  y={H - 10}
-                                  textAnchor="middle"
-                                  fontSize={11}
-                                  fill="currentColor"
-                                  className="text-gray-500"
-                                >
-                                  {p.subLabel}
-                                </text>
-                              )}
-                            </g>
-                          );
-                        })}
-                      </svg>
-                    </div>
-                  </div>
-                );
-              })()}
+              <div className="text-xl font-bold text-violet-950">
+                {isTouristLocation ? `${opStats.totalQty} vé` : `${opStats.totalOrders} đơn`}
+              </div>
+              <div className="text-xs text-violet-500 mt-1">
+                {isTouristLocation ? `Từ ${opStats.totalOrders} lượt thanh toán` : `Hoàn tất giao dịch`}
+              </div>
             </div>
-          )}
-        </Card>
+            <div className="h-10 w-10 flex items-center justify-center rounded-full bg-violet-500/10 text-violet-600 border border-violet-500/20">
+              <FileTextOutlined style={{ fontSize: "18px" }} />
+            </div>
+          </div>
 
-        <Card title={isTouristLocation ? "Lịch sử vé" : "Lịch sử hóa đơn"}>
+          <div className="bg-gradient-to-br from-sky-50 to-blue-50/50 border border-sky-100 rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-1">Đặt trước (Online)</div>
+              <div className="text-xl font-bold text-sky-950">
+                {formatMoney(opStats.onlineRevenue)}
+              </div>
+              <div className="text-xs text-sky-500 mt-1">
+                {opStats.onlineOrders} {isTouristLocation ? "lượt đặt vé" : "hóa đơn"}
+              </div>
+            </div>
+            <div className="h-10 w-10 flex items-center justify-center rounded-full bg-sky-500/10 text-sky-600 border border-sky-500/20">
+              <GlobalOutlined style={{ fontSize: "18px" }} />
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-rose-50 to-pink-50/50 border border-rose-100 rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-rose-700 uppercase tracking-wider mb-1">Bán tại quầy (POS)</div>
+              <div className="text-xl font-bold text-rose-950">
+                {formatMoney(opStats.posRevenue)}
+              </div>
+              <div className="text-xs text-rose-500 mt-1">
+                {opStats.posOrders} {isTouristLocation ? "lượt mua quầy" : "hóa đơn"}
+              </div>
+            </div>
+            <div className="h-10 w-10 flex items-center justify-center rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/20">
+              <ShopOutlined style={{ fontSize: "18px" }} />
+            </div>
+          </div>
+        </div>
+
+        <Card 
+          title={
+            <div className="flex items-center justify-between w-full">
+              <span>{isTouristLocation ? "Lịch sử vé" : "Lịch sử hóa đơn"}</span>
+              <span className="text-xs font-normal text-slate-400">
+                Hiển thị {isTouristLocation ? `${topInvoices.length} lượt` : `${history.length} hóa đơn`}
+              </span>
+            </div>
+          }
+        >
           {isTouristLocation ? (
             <Table<TicketInvoiceRow>
               rowKey={(r, idx) => String(r.payment_id ?? r.booking_id ?? idx)}
@@ -1428,8 +1154,10 @@ export default function OwnerPayments() {
                 columnTitle: (
                   <span className="whitespace-nowrap">Chi tiết</span>
                 ),
+                expandIconColumnIndex: invoiceColumns.length,
+                columnWidth: 90,
                 expandedRowRender: (row) => (
-                  <div className="rounded-2xl border bg-white p-4">
+                  <div className="rounded-2xl border bg-white p-4 font-sans">
                     {row.voucher_code && row.voucher_code.trim() && (
                       <div className="mb-3 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2">
                         <span className="text-sm font-bold text-emerald-700">

@@ -1151,18 +1151,18 @@ Mỗi bước bao gồm:
 
 ## TỔNG KẾT
 
-| Giai đoạn | Số bước | Thời gian ước tính | Độ khó TB |
-|-----------|---------|-------------------|-----------|
-| 1. Foundation | 5 | 1h50p | ⭐ Dễ |
-| 2. Auth Flow | 4 | 1h50p | ⭐⭐ TB |
-| 3. Tab Screens | 3 | 1h40p | ⭐⭐ TB |
-| 4. Map & Check-in | 5 | 2h45p | ⭐⭐⭐ Khó |
-| 5. Location Detail | 4 | 1h45p | ⭐⭐ TB |
-| 6. Booking System | 5 | 2h50p | ⭐⭐⭐⭐ RK |
-| 7. Tickets & Passes | 2 | 50p | ⭐⭐ TB |
-| 8. Secondary Screens | 6 | 1h45p | ⭐⭐ TB |
-| 9. Shared Components | 2 | 55p | ⭐ Dễ |
-| **TỔNG** | **36 bước** | **~16h30p** | |
+| Giai đoạn | Số bước | Thời gian ước tính | Độ khó TB | Trạng thái |
+|-----------|---------|-------------------|-----------|------------|
+| 1. Foundation | 5 | 1h50p | ⭐ Dễ | ✅ HOÀN THÀNH |
+| 2. Auth Flow | 4 | 1h50p | ⭐⭐ TB | ✅ HOÀN THÀNH |
+| 3. Tab Screens | 3 | 1h40p | ⭐⭐ TB | ⏸️ CHỜ |
+| 4. Map & Check-in | 5 | 2h45p | ⭐⭐⭐ Khó | ⏸️ CHỜ |
+| 5. Location Detail | 4 | 1h45p | ⭐⭐ TB | ⏸️ CHỜ |
+| 6. Booking System | 5 | 2h50p | ⭐⭐⭐⭐ RK | ⏸️ CHỜ |
+| 7. Tickets & Passes | 2 | 50p | ⭐⭐ TB | ⏸️ CHỜ |
+| 8. Secondary Screens | 6 | 1h45p | ⭐⭐ TB | ⏸️ CHỜ |
+| 9. Shared Components | 2 | 55p | ⭐ Dễ | ⏸️ CHỜ |
+| **TỔNG** | **36 bước** | **~16h30p** | | **2/9 ✅** |
 
 ### Quy trình mỗi bước
 

@@ -34,6 +34,7 @@ import {
   getOwnerBookings,
   getOwnerCheckins,
   getOwnerCommissions,
+  getOwnerPendingCommissionPayments,
   getOwnerEmployeeDetail,
   getOwnerEmployees,
   updateOwnerEmployee,
@@ -184,6 +185,7 @@ router.put("/payments/:id/mark-completed", markOwnerPaymentCompleted);
 
 // Commissions (owner-only)
 router.get("/commissions", getOwnerCommissions);
+router.get("/commissions/pending-payments", getOwnerPendingCommissionPayments);
 router.post(
   "/commissions/payment-request",
   createOwnerCommissionPaymentRequest,
