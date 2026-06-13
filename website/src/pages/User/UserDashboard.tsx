@@ -330,27 +330,25 @@ const UserDashboard = () => {
       ),
     },
     {
-      label: "QR",
-      path: "/user/qr-checkin",
-      color: "bg-teal-50 text-teal-600 border-teal-200/60",
-      icon: (
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" />
-          <rect x="14" y="3" width="7" height="7" />
-          <rect x="3" y="14" width="7" height="7" />
-          <path d="M14 14h3v3h-3z" />
-          <path d="M17 17h4" />
-        </svg>
-      ),
-    },
-
-    {
       label: "Đã lưu",
       path: "/user/saved-locations",
       color: "bg-amber-50 text-amber-600 border-amber-200/60",
       icon: (
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 3h12v18l-6-4-6 4z" />
+        </svg>
+      ),
+    },
+    {
+      label: "Lịch trình",
+      path: "/user/itineraries",
+      color: "bg-indigo-50 text-indigo-600 border-indigo-200/60",
+      icon: (
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
       ),
     },
@@ -708,10 +706,6 @@ const UserDashboard = () => {
               </h3>
             </div>
             <ul className="space-y-2.5 text-sm text-slate-600">
-              <li className="flex items-start gap-2.5">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                Dùng QR check-in để tích điểm nhanh hơn
-              </li>
               <li className="flex items-start gap-2.5">
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400" />
                 Lưu địa điểm yêu thích để xem lại sau
