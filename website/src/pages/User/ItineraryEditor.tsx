@@ -127,7 +127,7 @@ const ItineraryEditor = () => {
   }, [searchQuery]);
 
   const addFromSystem = (loc: LocationOption) => {
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: "", time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
+    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
     closeModal();
   };
 
@@ -377,8 +377,8 @@ const ItineraryEditor = () => {
                         <input
                           value={item.time}
                           onChange={(e) => updateItem(item.tempId, "time", e.target.value)}
-                          placeholder="Giờ"
-                          className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-300 outline-none"
+                          placeholder="Giờ đi"
+                          className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-300 outline-none"
                         />
                         <input
                           value={item.note}
@@ -391,7 +391,7 @@ const ItineraryEditor = () => {
                           onChange={(e) => updateItem(item.tempId, "estimated_cost", e.target.value)}
                           placeholder="Chi phí"
                           type="number"
-                          className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-300 outline-none"
+                          className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-indigo-300 outline-none"
                         />
                       </div>
                     </div>
@@ -486,7 +486,7 @@ const ItineraryEditor = () => {
               <div className="w-full md:w-1/2 p-6 overflow-auto max-h-[500px]">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1 h-px bg-slate-100" />
-                  <span className="text-xs font-bold text-slate-500">📍 Chọn trên bản đồ hoặc nhập tay</span>
+                  <span className="text-xs font-bold text-slate-500">✨ Thêm địa điểm tự do</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
@@ -502,12 +502,12 @@ const ItineraryEditor = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Giờ</label>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Giờ khởi hành</label>
                       <input type="time" value={addTime} onChange={(e) => setAddTime(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 focus:border-indigo-300 outline-none" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Chi phí (VND)</label>
-                      <input type="number" value={addCost} onChange={(e) => setAddCost(e.target.value)} placeholder="0" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Chi phí dự kiến</label>
+                      <input type="number" value={addCost} onChange={(e) => setAddCost(e.target.value)} placeholder="VND" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
                     </div>
                   </div>
                   <div>
