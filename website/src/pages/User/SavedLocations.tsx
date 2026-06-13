@@ -69,10 +69,7 @@ const SavedLocations = () => {
       <section className="user-section p-4 sm:p-6 lg:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-slate-900 font-heading">
-              Địa điểm đã lưu
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="text-sm text-slate-500">
               Những địa điểm bạn lưu để xem lại nhanh hoặc đặt trước sau.
             </p>
           </div>
