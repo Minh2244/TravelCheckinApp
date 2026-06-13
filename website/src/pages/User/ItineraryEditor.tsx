@@ -8,6 +8,7 @@ import { getErrorMessage } from "../../utils/safe";
 
 interface ItineraryItemForm {
   tempId: string;
+  item_id?: number;
   day_number: number;
   sort_order: number;
   location_id: number | null;
@@ -17,6 +18,9 @@ interface ItineraryItemForm {
   note: string;
   estimated_cost: string;
   location_name?: string;
+  visited_at?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
 }
 
 interface LocationOption {
@@ -45,6 +49,11 @@ const ItineraryEditor = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Navigation mode
+  const [navMode, setNavMode] = useState(false);
+  const [navTarget, setNavTarget] = useState<ItineraryItemForm | null>(null);
+  const [myPosition, setMyPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   // Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -78,6 +87,7 @@ const ItineraryEditor = () => {
           setItems(
             (d.items || []).map((item: any, idx: number) => ({
               tempId: newTempId(),
+              item_id: item.item_id,
               day_number: item.day_number,
               sort_order: item.sort_order ?? idx,
               location_id: item.location_id,
@@ -86,7 +96,10 @@ const ItineraryEditor = () => {
               time: item.time || "",
               note: item.note || "",
               estimated_cost: item.estimated_cost != null ? String(item.estimated_cost) : "",
-              location_name: item.location_name || "",
+              location_name: item.location_name || item.custom_name || "",
+              visited_at: item.visited_at || null,
+              location_lat: item.location_lat != null ? Number(item.location_lat) : null,
+              location_lng: item.location_lng != null ? Number(item.location_lng) : null,
             }))
           );
         }
@@ -151,6 +164,46 @@ const ItineraryEditor = () => {
       else await userApi.createItinerary(payload);
       navigate("/user/itineraries");
     } catch (err) { alert(getErrorMessage(err, "Không thể lưu lịch trình")); } finally { setSaving(false); }
+  };
+
+  // Đánh dấu đã đến
+  const handleToggleVisited = async (item: ItineraryItemForm) => {
+    if (!item.item_id || !id) return;
+    try {
+      const res = await userApi.toggleItemVisited(Number(id), item.item_id);
+      if (res.success) {
+        setItems((prev) =>
+          prev.map((i) =>
+            i.tempId === item.tempId
+              ? { ...i, visited_at: res.data.visited_at }
+              : i
+          )
+        );
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Không thể cập nhật");
+    }
+  };
+
+  // Bắt đầu dẫn đường đến địa điểm
+  const handleStartNav = (item: ItineraryItemForm) => {
+    setNavTarget(item);
+    setNavMode(true);
+    // Lấy GPS hiện tại
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setMyPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Tính khoảng cách giữa 2 điểm (haversine)
+  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
   const dayItems = items.filter((i) => i.day_number === activeDay);
@@ -335,12 +388,39 @@ const ItineraryEditor = () => {
                         />
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeItem(item.tempId)}
-                      className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                    </button>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      {/* Nút Đã đến */}
+                      {isEdit && item.item_id && (
+                        <button
+                          onClick={() => void handleToggleVisited(item)}
+                          className={`rounded-lg px-2 py-1 text-xs font-semibold transition-all ${
+                            item.visited_at
+                              ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                              : "bg-white text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600"
+                          }`}
+                          title={item.visited_at ? `Đã đến lúc ${new Date(item.visited_at).toLocaleString("vi-VN")}` : "Đánh dấu đã đến"}
+                        >
+                          {item.visited_at ? "✅ Đã đến" : "⬜ Đã đến"}
+                        </button>
+                      )}
+                      {/* Nút Bắt đầu dẫn đường */}
+                      {item.location_id && item.location_lat && item.location_lng && (
+                        <button
+                          onClick={() => handleStartNav(item)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-all"
+                          title="Bắt đầu dẫn đường"
+                        >
+                          🚀 Bắt đầu
+                        </button>
+                      )}
+                      {/* Nút xóa */}
+                      <button
+                        onClick={() => removeItem(item.tempId)}
+                        className="rounded-lg p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -437,6 +517,74 @@ const ItineraryEditor = () => {
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   Thêm địa điểm tự do
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Navigation Mode Overlay */}
+      {navMode && navTarget && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-white">
+            <button
+              onClick={() => { setNavMode(false); setNavTarget(null); }}
+              className="flex items-center gap-2 text-slate-600 hover:text-slate-800"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+              <span className="text-sm font-semibold">Quay lại</span>
+            </button>
+            <div className="text-sm font-bold text-slate-800">
+              🎯 {navTarget.location_name || navTarget.custom_name}
+            </div>
+            <div className="w-20" />
+          </div>
+
+          {/* Map */}
+          <div className="flex-1 relative">
+            <LocationPickerMap
+              onSelectLocation={() => {}}
+              className="h-full"
+            />
+            {/* Overlay thông tin đích */}
+            <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-slate-200 p-4">
+              <div className="max-w-lg mx-auto">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="font-bold text-base text-slate-800 mb-1">
+                      📍 {navTarget.location_name || navTarget.custom_name}
+                    </div>
+                    {navTarget.custom_address && (
+                      <div className="text-xs text-slate-500 mb-1">{navTarget.custom_address}</div>
+                    )}
+                    {navTarget.note && (
+                      <div className="text-xs text-slate-400 italic">📝 {navTarget.note}</div>
+                    )}
+                    {myPosition && navTarget.location_lat && navTarget.location_lng && (
+                      <div className="text-xs text-indigo-600 font-semibold mt-1">
+                        📏 {haversineKm(myPosition.lat, myPosition.lng, navTarget.location_lat, navTarget.location_lng).toFixed(1)} km
+                      </div>
+                    )}
+                  </div>
+                  {/* Nút Đã đến trong navigation */}
+                  {navTarget.item_id && (
+                    <button
+                      onClick={() => {
+                        void handleToggleVisited(navTarget);
+                        setNavMode(false);
+                        setNavTarget(null);
+                      }}
+                      className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                        navTarget.visited_at
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          : "bg-emerald-600 text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700"
+                      }`}
+                    >
+                      {navTarget.visited_at ? "✅ Đã đến" : "✅ Đánh dấu đã đến"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
