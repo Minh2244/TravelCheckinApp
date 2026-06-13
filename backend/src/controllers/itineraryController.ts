@@ -12,6 +12,8 @@ interface ItineraryItemInput {
   location_id?: number | null;
   custom_name?: string | null;
   custom_address?: string | null;
+  custom_lat?: number | null;
+  custom_lng?: number | null;
   time?: string | null;
   note?: string | null;
   estimated_cost?: number | null;
