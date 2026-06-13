@@ -1977,6 +1977,12 @@ const BookingPage = () => {
     });
   }, [savedVouchers, locationIdNum, isHotelBooking, isFoodLocation, isTouristLocation, prepayChoice, preorderEnabled]);
 
+  const showVoucherSection = useMemo(() => {
+    if (isFoodLocation && !preorderEnabled) return false;
+    if (isHotelBooking && prepayChoice !== "transfer") return false;
+    return true;
+  }, [isFoodLocation, preorderEnabled, isHotelBooking, prepayChoice]);
+
   const bookingNotes = useMemo(() => {
     if (isFoodLocation || isTableBooking) {
       return [
@@ -3539,107 +3545,113 @@ const BookingPage = () => {
                 </div>
               ) : null}
 
-              {applicableVouchers.length > 0 && (
+              {showVoucherSection && (
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
                   <label className="text-sm font-semibold text-emerald-800">
                     🎫 Voucher đã lưu
                   </label>
-                  <div className="mt-3 space-y-2 max-h-[530px] overflow-y-auto pr-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedVoucherId(null);
-                        setVoucherDiscount(0);
-                      }}
-                      className={`w-full text-left rounded-xl border p-3 transition text-sm ${
-                        selectedVoucherId == null
-                          ? "border-emerald-400 bg-emerald-50"
-                          : "border-gray-200 bg-white hover:border-gray-300"
-                      }`}
-                    >
-                      <span className="font-medium text-gray-700">Không sử dụng voucher</span>
-                    </button>
-                    {applicableVouchers.map((v: any) => {
-                      const isSelected = selectedVoucherId === v.voucher_id;
-                      const now = new Date();
-                      const isExpired = new Date(v.end_date) < now;
-                      return (
-                        <button
-                          key={v.voucher_id}
-                          type="button"
-                          disabled={isExpired}
-                          onClick={() => {
-                            const id = v.voucher_id;
-                            setSelectedVoucherId(id);
-                            const total = isTouristLocation
-                              ? ticketTotal
-                              : isHotelBooking || isRoomBooking
-                                ? selectedTotal
-                                : preorderTotal || 0;
-                            let discount = 0;
-                            if (v.discount_type === "percent") {
-                              discount = (total * Number(v.discount_value)) / 100;
-                              if (v.max_discount_amount)
-                                discount = Math.min(discount, Number(v.max_discount_amount));
-                            } else {
-                              discount = Number(v.discount_value);
-                            }
-                            discount = Math.min(discount, total);
-                            setVoucherDiscount(discount);
-                          }}
-                          className={`w-full text-left rounded-xl border p-3 transition ${
-                            isExpired
-                              ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
-                              : isSelected
-                                ? "border-emerald-400 bg-emerald-50 shadow-sm"
-                                : "border-gray-200 bg-white hover:border-gray-300"
-                          }`}
-                        >
-                          <div className="text-sm font-bold text-rose-700">
-                            🎫{" "}
-                            {v.discount_type === "percent"
-                              ? `GIẢM ${Number(v.discount_value) % 1 === 0 ? Number(v.discount_value) : Number(v.discount_value).toFixed(0)}% hóa đơn`
-                              : `GIẢM ${Number(v.discount_value).toLocaleString("vi-VN")}đ`}
-                          </div>
-                          {v.discount_type === "percent" && v.max_discount_amount ? (
-                            <div className="mt-1 text-xs text-rose-600 font-semibold">
-                              Tối đa: {Number(v.max_discount_amount).toLocaleString("vi-VN")}đ
+                  {applicableVouchers.length > 0 ? (
+                    <div className="mt-3 space-y-2 max-h-[530px] overflow-y-auto pr-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedVoucherId(null);
+                          setVoucherDiscount(0);
+                        }}
+                        className={`w-full text-left rounded-xl border p-3 transition text-sm ${
+                          selectedVoucherId == null
+                            ? "border-emerald-400 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="font-medium text-gray-700">Không sử dụng voucher</span>
+                      </button>
+                      {applicableVouchers.map((v: any) => {
+                        const isSelected = selectedVoucherId === v.voucher_id;
+                        const now = new Date();
+                        const isExpired = new Date(v.end_date) < now;
+                        return (
+                          <button
+                            key={v.voucher_id}
+                            type="button"
+                            disabled={isExpired}
+                            onClick={() => {
+                              const id = v.voucher_id;
+                              setSelectedVoucherId(id);
+                              const total = isTouristLocation
+                                ? ticketTotal
+                                : isHotelBooking || isRoomBooking
+                                  ? selectedTotal
+                                  : preorderTotal || 0;
+                              let discount = 0;
+                              if (v.discount_type === "percent") {
+                                discount = (total * Number(v.discount_value)) / 100;
+                                if (v.max_discount_amount)
+                                  discount = Math.min(discount, Number(v.max_discount_amount));
+                              } else {
+                                discount = Number(v.discount_value);
+                              }
+                              discount = Math.min(discount, total);
+                              setVoucherDiscount(discount);
+                            }}
+                            className={`w-full text-left rounded-xl border p-3 transition ${
+                              isExpired
+                                ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
+                                : isSelected
+                                  ? "border-emerald-400 bg-emerald-50 shadow-sm"
+                                  : "border-gray-200 bg-white hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="text-sm font-bold text-rose-700">
+                              🎫{" "}
+                              {v.discount_type === "percent"
+                                ? `GIẢM ${Number(v.discount_value) % 1 === 0 ? Number(v.discount_value) : Number(v.discount_value).toFixed(0)}% hóa đơn`
+                                : `GIẢM ${Number(v.discount_value).toLocaleString("vi-VN")}đ`}
                             </div>
-                          ) : null}
-                          <div className="mt-1.5 text-xs text-slate-700 font-semibold">
-                            {v.campaign_name || "Voucher"}
-                          </div>
-                          {v.campaign_description && (
-                            <div className="mt-0.5 text-xs text-slate-500">
-                              {v.campaign_description}
+                            {v.discount_type === "percent" && v.max_discount_amount ? (
+                              <div className="mt-1 text-xs text-rose-600 font-semibold">
+                                Tối đa: {Number(v.max_discount_amount).toLocaleString("vi-VN")}đ
+                              </div>
+                            ) : null}
+                            <div className="mt-1.5 text-xs text-slate-700 font-semibold">
+                              {v.campaign_name || "Voucher"}
                             </div>
-                          )}
-                          {Number(v.min_order_value) > 0 && (
+                            {v.campaign_description && (
+                              <div className="mt-0.5 text-xs text-slate-500">
+                                {v.campaign_description}
+                              </div>
+                            )}
+                            {Number(v.min_order_value) > 0 && (
+                              <div className="mt-1 text-xs text-slate-500">
+                                Đơn tối thiểu: {Number(v.min_order_value).toLocaleString("vi-VN")}đ
+                              </div>
+                            )}
+                            <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-500">
+                              <span>NSD: {new Date(v.start_date).toLocaleDateString("vi-VN")}</span>
+                              <span>HSD: {new Date(v.end_date).toLocaleDateString("vi-VN")}</span>
+                            </div>
                             <div className="mt-1 text-xs text-slate-500">
-                              Đơn tối thiểu: {Number(v.min_order_value).toLocaleString("vi-VN")}đ
+                              Địa điểm: {(() => {
+                                const locNames: string[] = Array.isArray(v.location_names)
+                                  ? v.location_names.filter((n: any) => n)
+                                  : [];
+                                if (locNames.length > 0) return locNames.join(", ");
+                                if (v.location_name) return v.location_name;
+                                return "Toàn hệ thống";
+                              })()}
                             </div>
-                          )}
-                          <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-500">
-                            <span>NSD: {new Date(v.start_date).toLocaleDateString("vi-VN")}</span>
-                            <span>HSD: {new Date(v.end_date).toLocaleDateString("vi-VN")}</span>
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            Địa điểm: {(() => {
-                              const locNames: string[] = Array.isArray(v.location_names)
-                                ? v.location_names.filter((n: any) => n)
-                                : [];
-                              if (locNames.length > 0) return locNames.join(", ");
-                              if (v.location_name) return v.location_name;
-                              return "Toàn hệ thống";
-                            })()}
-                          </div>
-                          {isExpired && (
-                            <div className="mt-1.5 text-xs font-semibold text-red-500">Đã hết hạn</div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                            {isExpired && (
+                              <div className="mt-1.5 text-xs font-semibold text-red-500">Đã hết hạn</div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-sm text-emerald-800 bg-white border border-dashed border-emerald-200 rounded-xl p-3 text-center">
+                      Bạn chưa lưu voucher nào khả dụng cho địa điểm này.
+                    </div>
+                  )}
                   {voucherDiscount > 0 && (
                     <div className="mt-3 text-sm text-emerald-700 font-semibold">
                       Giảm: -{voucherDiscount.toLocaleString("vi-VN")}đ

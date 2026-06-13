@@ -542,8 +542,8 @@ const OwnerServices = () => {
           );
         },
       },
-      { title: "Tên", dataIndex: "service_name" },
-      { title: "Danh mục", dataIndex: "category_name", width: 200 },
+      { title: "Tên", dataIndex: "service_name", width: 220, ellipsis: true },
+      { title: "Danh mục", dataIndex: "category_name", width: 200, ellipsis: true },
       {
         title: "Loại",
         dataIndex: "service_type",
@@ -801,7 +801,7 @@ const OwnerServices = () => {
               pagination={false}
               scroll={{ y: 320 }}
               columns={[
-                { title: "Tên danh mục", dataIndex: "category_name" },
+                { title: "Tên danh mục", dataIndex: "category_name", width: 300, ellipsis: true },
                 { title: "Thứ tự", dataIndex: "sort_order", width: 120 },
                 {
                   title: "Hành động",
@@ -839,7 +839,7 @@ const OwnerServices = () => {
             dataSource={services}
             columns={columns}
             pagination={false}
-            scroll={{ y: 520 }}
+            scroll={{ x: 1400, y: 520 }}
           />
         </Card>
       </Space>

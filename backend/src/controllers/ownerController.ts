@@ -10,7 +10,7 @@ import {
   ensureBookingTableReservationsSchema,
   releaseTableReservations,
 } from "../utils/tableReservations";
-import { saveUploadedImageToUploads } from "../utils/uploadImage";
+import { saveImageToDB, linkImageToEntity, removeEntityImages, getEntityImageUrls } from "../utils/uploadImage";
 import {
   publishToUser,
   publishToUsers,
@@ -2267,12 +2267,12 @@ export const updateOwnerProfile = async (
         return;
       }
       const isHttp = /^https?:\/\//i.test(normalizedAvatarUrl);
-      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/");
+      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/") || normalizedAvatarUrl.startsWith("/api/images/");
       if (!isHttp && !isLocalUpload) {
         res.status(400).json({
           success: false,
           message:
-            "Avatar URL phải bắt đầu bằng http://, https:// hoặc /uploads/...",
+            "Avatar URL phải bắt đầu bằng http://, https:// hoặc /api/images/...",
         });
         return;
       }
@@ -2286,7 +2286,7 @@ export const updateOwnerProfile = async (
         [normalizedFullName, normalizedPhone, normalizedAddress, auth.userId],
       );
     } else if (normalizedAvatarUrl) {
-      if (normalizedAvatarUrl.startsWith("/uploads/")) {
+      if (normalizedAvatarUrl.startsWith("/uploads/") || normalizedAvatarUrl.startsWith("/api/images/")) {
         await pool.query(
           `UPDATE users
            SET full_name = ?, phone = ?, address = ?, avatar_url = ?, avatar_path = ?, avatar_source = 'upload', avatar_updated_at = NOW()
@@ -2357,30 +2357,29 @@ export const uploadOwnerAvatar = async (
       return;
     }
 
-    const saved = await saveUploadedImageToUploads({
-      file,
-      folder: "avatars",
-      fileNamePrefix: `avatar-${auth.userId}`,
-    });
+    const result = await saveImageToDB(file, "avatar_owner", auth.userId, "owner");
+
+    await removeEntityImages("owner", auth.userId, "avatar");
+    await linkImageToEntity(result.imageId, "owner", auth.userId, "avatar", 0, true);
 
     await pool.query(
       `UPDATE users
        SET avatar_url = ?, avatar_path = ?, avatar_source = 'upload', avatar_updated_at = NOW()
        WHERE user_id = ?`,
-      [saved.urlPath, saved.urlPath, auth.userId],
+      [result.url, result.url, auth.userId],
     );
 
     await logAudit(auth.userId, "UPLOAD_OWNER_AVATAR", {
       mimetype: file.mimetype,
       size: file.size,
-      avatar_path: saved.urlPath,
+      image_id: result.imageId,
       timestamp: new Date(),
     });
 
     res.status(201).json({
       success: true,
       message: "Upload avatar thành công",
-      data: { avatar_url: saved.urlPath },
+      data: { avatar_url: result.url },
     });
   } catch (error: any) {
     res
@@ -2406,34 +2405,30 @@ export const uploadOwnerBackground = async (
       return;
     }
 
-    const saved = await saveUploadedImageToUploads({
-      file,
-      folder: "backgrounds",
-      fileNamePrefix: `background-${auth.userId}`,
-    });
+    const result = await saveImageToDB(file, "user_background", auth.userId, "owner");
+
+    await removeEntityImages("owner", auth.userId, "background");
+    await linkImageToEntity(result.imageId, "owner", auth.userId, "background", 0, true);
 
     await pool.query(
       `UPDATE users
-       SET background_path = ?,
-           background_source = 'upload',
-           background_url = NULL,
-           background_updated_at = NOW(),
-           updated_at = NOW()
+       SET background_path = ?, background_source = 'upload', background_url = ?,
+           background_updated_at = NOW(), updated_at = NOW()
        WHERE user_id = ?`,
-      [saved.urlPath, auth.userId],
+      [result.url, result.url, auth.userId],
     );
 
     await logAudit(auth.userId, "UPLOAD_OWNER_BACKGROUND", {
       mimetype: file.mimetype,
       size: file.size,
-      background_path: saved.urlPath,
+      image_id: result.imageId,
       timestamp: new Date(),
     });
 
     res.status(201).json({
       success: true,
       message: "Upload ảnh nền thành công",
-      data: { background_url: saved.urlPath },
+      data: { background_url: result.url },
     });
   } catch (error: any) {
     res
@@ -2459,23 +2454,19 @@ export const uploadOwnerServiceImage = async (
       return;
     }
 
-    const saved = await saveUploadedImageToUploads({
-      file,
-      folder: "services",
-      fileNamePrefix: `service-${auth.userId}`,
-    });
+    const result = await saveImageToDB(file, "service_image", auth.userId, "owner");
 
     await logAudit(auth.userId, "UPLOAD_OWNER_SERVICE_IMAGE", {
       mimetype: file.mimetype,
       size: file.size,
-      image_path: saved.urlPath,
+      image_id: result.imageId,
       timestamp: new Date(),
     });
 
     res.status(201).json({
       success: true,
       message: "Upload ảnh dịch vụ thành công",
-      data: { url: saved.urlPath },
+      data: { url: result.url },
     });
   } catch (error: any) {
     res
@@ -3038,13 +3029,11 @@ export const createOwnerLocation = async (
     }
 
     const images: string[] = [];
+    const imageIds: number[] = [];
     for (const file of uploadedFiles) {
-      const { urlPath } = await saveUploadedImageToUploads({
-        file,
-        folder: "locations",
-        fileNamePrefix: `location-${auth.userId}`,
-      });
-      if (urlPath) images.push(urlPath);
+      const result = await saveImageToDB(file, "location_image", auth.userId, "owner");
+      images.push(result.url);
+      imageIds.push(result.imageId);
     }
     const rawOpeningHours = body.opening_hours ?? null;
     let opening_hours: unknown = rawOpeningHours;
@@ -3109,8 +3098,22 @@ export const createOwnerLocation = async (
       ],
     );
 
+    const locationId = result.insertId;
+
+    // Link images to location entity
+    for (let i = 0; i < imageIds.length; i++) {
+      await linkImageToEntity(
+        imageIds[i],
+        "location",
+        locationId,
+        "gallery",
+        i,
+        i === 0, // first image is primary
+      );
+    }
+
     await logAudit(auth.userId, "CREATE_OWNER_LOCATION", {
-      location_id: result.insertId,
+      location_id: locationId,
       location_name,
       location_type,
       image_url: images[0] || null,
@@ -3121,7 +3124,7 @@ export const createOwnerLocation = async (
     res.status(201).json({
       success: true,
       message: "Tạo địa điểm thành công (đang chờ duyệt)",
-      data: { location_id: result.insertId },
+      data: { location_id: locationId, images },
     });
   } catch (error: any) {
     res
@@ -3178,14 +3181,26 @@ export const updateOwnerLocation = async (
 
     if (uploadedFiles.length > 0) {
       const uploadedPaths: string[] = [];
+      const uploadedIds: number[] = [];
       for (const file of uploadedFiles) {
-        const { urlPath } = await saveUploadedImageToUploads({
-          file,
-          folder: "locations",
-          fileNamePrefix: `location-${ownerId}`,
-        });
-        if (urlPath) uploadedPaths.push(urlPath);
+        const result = await saveImageToDB(file, "location_image", auth.userId, "owner");
+        uploadedPaths.push(result.url);
+        uploadedIds.push(result.imageId);
       }
+
+      // Link new images to location
+      const existingCount = existingImages.length;
+      for (let i = 0; i < uploadedIds.length; i++) {
+        await linkImageToEntity(
+          uploadedIds[i],
+          "location",
+          locationId,
+          "gallery",
+          existingCount + i,
+          false,
+        );
+      }
+
       body.images = [...existingImages, ...uploadedPaths];
     } else if (existingImages.length > 0) {
       body.images = existingImages;
@@ -6049,7 +6064,7 @@ export const createOrGetPaymentForBooking = async (
         settings.default_commission_rate ??
         2.5,
       );
-      const vatRate = Number(settings.vat_rate ?? 10);
+      const vatRate = Number(settings.vat_rate ?? 0);
 
       const amount = Number(booking.final_amount);
       const safeCommissionRate = Number.isFinite(commissionRate)
@@ -10379,7 +10394,7 @@ export const checkoutHotelStay = async (
         settings.default_commission_rate ??
         2.5,
       );
-      const vatRate = Number(settings.vat_rate ?? 10);
+      const vatRate = Number(settings.vat_rate ?? 0);
 
       const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 2.5;
       const safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
@@ -14248,7 +14263,7 @@ export const payPosOrder = async (
           settings.default_commission_rate ??
           2.5,
         );
-        vatRate = Number(settings.vat_rate ?? 10);
+        vatRate = Number(settings.vat_rate ?? 0);
         if (!Number.isFinite(commissionRate)) commissionRate = 2.5;
         if (!Number.isFinite(vatRate)) vatRate = 10;
       }
@@ -17432,6 +17447,122 @@ export const payTouristPosTicketsBatch = async (
     } finally {
       conn.release();
     }
+  } catch (error: any) {
+    res
+      .status(error?.statusCode || 500)
+      .json({ success: false, message: error?.message || "Lỗi server" });
+  }
+};
+
+/**
+ * PUT /api/owner/locations/:locationId/cover-image
+ * Change the cover/primary image for a location
+ */
+export const setLocationCoverImage = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    if (auth.role !== "owner") {
+      res.status(403).json({ success: false, message: "Chỉ owner được phép" });
+      return;
+    }
+
+    const locationId = Number(req.params.locationId);
+    const { image_id } = req.body as { image_id?: number };
+
+    if (!image_id) {
+      res.status(400).json({ success: false, message: "Thiếu image_id" });
+      return;
+    }
+
+    // Verify image belongs to this location
+    const [exists] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM entity_images WHERE image_id = ? AND entity_type = 'location' AND entity_id = ?`,
+      [image_id, locationId],
+    );
+    if (exists.length === 0) {
+      res.status(404).json({ success: false, message: "Ảnh không thuộc địa điểm này" });
+      return;
+    }
+
+    // Remove primary from all gallery images of this location
+    await pool.query(
+      `UPDATE entity_images SET is_primary = 0 WHERE entity_type = 'location' AND entity_id = ? AND role = 'gallery'`,
+      [locationId],
+    );
+
+    // Set new cover image
+    await pool.query(
+      `UPDATE entity_images SET is_primary = 1, sort_order = 0 WHERE image_id = ? AND entity_type = 'location' AND entity_id = ?`,
+      [image_id, locationId],
+    );
+
+    // Re-sort other images
+    await pool.query(
+      `UPDATE entity_images SET sort_order = sort_order + 1
+       WHERE entity_type = 'location' AND entity_id = ? AND image_id != ? AND role = 'gallery'`,
+      [locationId, image_id],
+    );
+
+    res.json({ success: true, message: "Đã đổi ảnh bìa" });
+  } catch (error: any) {
+    res
+      .status(error?.statusCode || 500)
+      .json({ success: false, message: error?.message || "Lỗi server" });
+  }
+};
+
+/**
+ * PUT /api/owner/services/:serviceId/cover-image
+ * Change the cover/primary image for a service
+ */
+export const setServiceCoverImage = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    if (auth.role !== "owner") {
+      res.status(403).json({ success: false, message: "Chỉ owner được phép" });
+      return;
+    }
+
+    const serviceId = Number(req.params.serviceId);
+    const { image_id } = req.body as { image_id?: number };
+
+    if (!image_id) {
+      res.status(400).json({ success: false, message: "Thiếu image_id" });
+      return;
+    }
+
+    const [exists] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM entity_images WHERE image_id = ? AND entity_type = 'service' AND entity_id = ?`,
+      [image_id, serviceId],
+    );
+    if (exists.length === 0) {
+      res.status(404).json({ success: false, message: "Ảnh không thuộc dịch vụ này" });
+      return;
+    }
+
+    await pool.query(
+      `UPDATE entity_images SET is_primary = 0 WHERE entity_type = 'service' AND entity_id = ? AND role = 'gallery'`,
+      [serviceId],
+    );
+
+    await pool.query(
+      `UPDATE entity_images SET is_primary = 1, sort_order = 0 WHERE image_id = ? AND entity_type = 'service' AND entity_id = ?`,
+      [image_id, serviceId],
+    );
+
+    await pool.query(
+      `UPDATE entity_images SET sort_order = sort_order + 1
+       WHERE entity_type = 'service' AND entity_id = ? AND image_id != ? AND role = 'gallery'`,
+      [serviceId, image_id],
+    );
+
+    res.json({ success: true, message: "Đã đổi ảnh bìa dịch vụ" });
   } catch (error: any) {
     res
       .status(error?.statusCode || 500)

@@ -198,7 +198,8 @@ const Profile = () => {
       });
 
       if (resp?.success) {
-        setProfile(resp.data);
+        // Goi lai fetchProfile de lay day du stats (checkin_count, member_tier...)
+        await fetchProfile();
         setMessage("Đã cập nhật thông tin cá nhân thành công!");
         setPendingAvatarFile(null);
         setPendingAvatarRemove(false);
@@ -388,35 +389,6 @@ const Profile = () => {
                   </span>
                 </div>
               ) : null}
-            </div>
-
-            {/* Hộp quà Voucher lữ hành */}
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-4">
-              <h4 className="text-base font-bold text-slate-800 font-heading flex items-center gap-2">
-                🎁 Hộp quà voucher của bạn
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-rose-50/60 to-amber-50/60 border border-rose-100/50">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">✈️</span>
-                    <div>
-                      <div className="text-xs font-bold text-rose-800">GIẢM 10% VÉ BAY</div>
-                      <div className="text-[9px] text-rose-600/80">Hạn dùng: 30/06/2026</div>
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-bold bg-rose-500 text-white px-2 py-0.5 rounded-full">Sử dụng</span>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-teal-50/60 to-indigo-50/60 border border-teal-100/50">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">🏨</span>
-                    <div>
-                      <div className="text-xs font-bold text-teal-800">GIẢM 150K ĐẶT PHÒNG</div>
-                      <div className="text-[9px] text-teal-600/80">Hạn dùng: 15/07/2026</div>
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-bold bg-teal-600 text-white px-2 py-0.5 rounded-full">Sử dụng</span>
-                </div>
-              </div>
             </div>
 
             {/* Thẻ Địa điểm Yêu thích nhất */}

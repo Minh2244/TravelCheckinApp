@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar, Button, Form, Input, Tag, message } from "antd";
 import { CameraOutlined, LockOutlined, SaveOutlined, EyeOutlined, EyeInvisibleOutlined } from "@ant-design/icons";
 import AvatarCropper from "../../components/AvatarCropper";
@@ -92,7 +92,6 @@ const OwnerProfile = () => {
 
   // Circular Avatar cropper states
   const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
-  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -144,7 +143,6 @@ const OwnerProfile = () => {
       return false;
     }
     const objectUrl = URL.createObjectURL(file);
-    setAvatarCropFile(file);
     setAvatarCropSrc(objectUrl);
     return false;
   };
@@ -160,14 +158,12 @@ const OwnerProfile = () => {
     });
     if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
     setAvatarCropSrc(null);
-    setAvatarCropFile(null);
     message.info("Đã chọn ảnh đại diện. Nhấp nút Lưu thay đổi để cập nhật.");
   };
 
   const handleCropCancel = () => {
     if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
     setAvatarCropSrc(null);
-    setAvatarCropFile(null);
   };
 
 

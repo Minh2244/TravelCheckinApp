@@ -203,7 +203,7 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
         settings.default_commission_rate ??
         2.5,
     );
-    const vatRate = Number(settings.vat_rate ?? 10);
+    const vatRate = Number(settings.vat_rate ?? 0);
     const safeCommissionRate = Number.isFinite(commissionRate)
       ? commissionRate
       : 2.5;
@@ -605,7 +605,7 @@ export const createOrGetUserPaymentForBooking = async (params: {
         settings.default_commission_rate ??
         2.5,
     );
-    const vatRate = Number(settings.vat_rate ?? 10);
+    const vatRate = Number(settings.vat_rate ?? 0);
 
     const amount = Number(booking.final_amount);
     if (!Number.isFinite(amount) || amount <= 0) {

@@ -6,6 +6,19 @@ import {
   ensureBookingTableReservationsSchema,
   formatMysqlDateTime,
 } from "../utils/tableReservations";
+import { getEntityImageUrls, getPrimaryImageUrl } from "../utils/uploadImage";
+
+/**
+ * Get location images from entity_images table, falling back to JSON column
+ */
+async function getLocationImages(locationId: number): Promise<{ images: string[]; first_image: string | null }> {
+  const images = await getEntityImageUrls("location", locationId, "gallery");
+  if (images.length > 0) {
+    const primary = await getPrimaryImageUrl("location", locationId);
+    return { images, first_image: primary || images[0] };
+  }
+  return { images: [], first_image: null };
+}
 
 const PREPAY_UNCONFIRMED_MARKER = "PREPAY_UNCONFIRMED";
 
@@ -60,7 +73,15 @@ export const getLocations = async (req: Request, res: Response) => {
       effectiveSource === "web" || effectiveSource === "mobile";
     if (isPublicConsumer) {
       filters.push("l.status = 'active'");
-      filters.push("(u.role IS NULL OR u.role <> 'user')");
+      // Cho phep user thay location do chinh minh tao (owner_id = userId) nhung phai nam trong danh sach da luu
+      if (req.userId) {
+        filters.push(
+          "(u.role IS NULL OR u.role <> 'user' OR (l.owner_id = ? AND l.location_id IN (SELECT location_id FROM favorite_locations WHERE user_id = ?)))",
+        );
+        params.push(String(req.userId), String(req.userId));
+      } else {
+        filters.push("(u.role IS NULL OR u.role <> 'user')");
+      }
     }
 
     if (filters.length > 0) {
@@ -71,11 +92,21 @@ export const getLocations = async (req: Request, res: Response) => {
 
     void source;
 
+    // Override images with URLs from entity_images table for each location
+    const locations = Array.isArray(rows) ? rows : [];
+    for (const loc of locations) {
+      const imgData = await getLocationImages((loc as Record<string, unknown>).location_id as number);
+      if (imgData.images.length > 0) {
+        (loc as Record<string, unknown>).images = imgData.images;
+        (loc as Record<string, unknown>).first_image = imgData.first_image;
+      }
+    }
+
     res.json({
       success: true,
       message: "Lấy danh sách địa điểm thành công",
-      count: Array.isArray(rows) ? rows.length : 0,
-      data: rows,
+      count: locations.length,
+      data: locations,
     });
   } catch (error) {
     console.error("Lỗi lấy danh sách địa điểm:", error);
@@ -113,6 +144,13 @@ export const getLocationById = async (req: Request, res: Response) => {
 
     // location_views đã bị loại bỏ trong DB rút gọn
     void source;
+
+    // Override images with URLs from entity_images table
+    const imgData = await getLocationImages(locationId);
+    if (imgData.images.length > 0) {
+      (location as Record<string, unknown>).images = imgData.images;
+      (location as Record<string, unknown>).first_image = imgData.first_image;
+    }
 
     res.json({ success: true, data: location });
   } catch (error) {

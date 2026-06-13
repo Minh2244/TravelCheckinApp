@@ -1,13 +1,25 @@
 /**
  * Tab Navigator — 5 tabs chính
  * TravelCheckinApp Mobile
+ * Xử lý safe area cho tai thỏ + nút điều hướng
  */
 
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fontSize } from '../../constants/theme';
 
 export default function TabLayout() {
+  // Tự động đo vùng an toàn theo từng điện thoại
+  // iPhone có tai thỏ: top ~59, bottom ~34
+  // Android 3 nút: top ~24, bottom ~48
+  // Android gesture: top ~24, bottom ~20
+  const insets = useSafeAreaInsets();
+
+  // Chiều cao tab bar cơ bản + padding dưới cho safe area
+  const TAB_BAR_BASE_HEIGHT = 60;
+  const TAB_BAR_BASE_PADDING_BOTTOM = 8;
+
   return (
     <Tabs
       screenOptions={{
@@ -18,8 +30,11 @@ export default function TabLayout() {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          // Chiều cao tab bar + vùng safe area dưới
+          height: TAB_BAR_BASE_HEIGHT + insets.bottom,
+          // Padding dưới = mặc định + insets.bottom
+          // Đảm bảo tab bar nằm TRÊN nút điều hướng
+          paddingBottom: TAB_BAR_BASE_PADDING_BOTTOM + insets.bottom,
           paddingTop: 4,
         },
         tabBarLabelStyle: {

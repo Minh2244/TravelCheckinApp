@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Avatar, Button, Form, Input, Tag, message } from "antd";
 import { CameraOutlined, LockOutlined, SaveOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
@@ -110,7 +110,6 @@ const Profile = () => {
 
   // Circular Avatar Cropper Modal state
   const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
-  const [avatarCropFile, setAvatarCropFile] = useState<File | null>(null);
 
   const [profileForm] = Form.useForm();
 
@@ -217,7 +216,6 @@ const Profile = () => {
       return;
     }
     const objectUrl = URL.createObjectURL(file);
-    setAvatarCropFile(file);
     setAvatarCropSrc(objectUrl);
   };
 
@@ -233,14 +231,12 @@ const Profile = () => {
     });
     if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
     setAvatarCropSrc(null);
-    setAvatarCropFile(null);
     message.info("Đã chọn ảnh đại diện. Hãy bấm nút Lưu thay đổi để áp dụng.");
   };
 
   const handleCropCancel = () => {
     if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
     setAvatarCropSrc(null);
-    setAvatarCropFile(null);
   };
 
   const submitProfile = async () => {
@@ -346,9 +342,11 @@ const Profile = () => {
     .charAt(0)
     .toUpperCase();
 
+  const watchedAvatarUrl = Form.useWatch("avatar_url", profileForm);
+
   const avatarDisplayUrl =
     pendingAvatarPreview ||
-    resolveBackendUrl(Form.useWatch("avatar_url", profileForm)) ||
+    resolveBackendUrl(watchedAvatarUrl) ||
     resolveBackendUrl(profile?.avatar_url) ||
     undefined;
 

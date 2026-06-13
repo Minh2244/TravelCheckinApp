@@ -2,20 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
-  DatePicker,
   Image,
-  Input,
-  Modal,
   Popconfirm,
   Select,
-  Segmented,
-  Space,
   Table,
   Tag,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { getErrorMessage } from "../../utils/safe";
@@ -86,15 +80,6 @@ const ReviewManagement = () => {
   const [ownerId, setOwnerId] = useState<number | null>(null);
   const [locationId, setLocationId] = useState<number | null>(null);
   const [ratingFilter, setRatingFilter] = useState<number>(0);
-  const [timeRange, setTimeRange] = useState<
-    "today" | "week" | "month" | "year" | "all"
-  >("today");
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState("");
-  const [reportTarget, setReportTarget] = useState<ReviewRow | null>(null);
-  const [reportType, setReportType] = useState<"user" | "owner">("user");
 
   const loadOwners = useCallback(async () => {
     try {
@@ -147,17 +132,19 @@ const ReviewManagement = () => {
       if (ratingFilter > 0) params.rating = ratingFilter;
       const res = await adminApi.getReviews({
         ...params,
-        range: timeRange,
-        date: selectedDate || undefined,
+        range: "all",
       });
-      setRows(Array.isArray(res?.data) ? (res.data as ReviewRow[]) : []);
+      const data = Array.isArray(res?.data) ? (res.data as ReviewRow[]) : [];
+      // 1/ user tự xóa bình luận rồi sao trang admin vẫn còn mà không tự xóa theo
+      // => Lọc bỏ những đánh giá đã bị xóa (ẩn trên giao diện admin)
+      setRows(data.filter((r) => String(r.status || "").toLowerCase() !== "deleted"));
     } catch (err: unknown) {
       message.error(getErrorMessage(err, "Lỗi tải danh sách đánh giá"));
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [locationId, ownerId, ratingFilter, selectedDate, timeRange]);
+  }, [locationId, ownerId, ratingFilter]);
 
   useEffect(() => {
     void loadOwners();
@@ -198,41 +185,6 @@ const ReviewManagement = () => {
     [loadReviews],
   );
 
-  const openReportUser = useCallback((row: ReviewRow) => {
-    setReportTarget(row);
-    setReportType("user");
-    setReportReason("");
-    setReportOpen(true);
-  }, []);
-
-  const openReportOwner = useCallback((row: ReviewRow) => {
-    setReportTarget(row);
-    setReportType("owner");
-    setReportReason("");
-    setReportOpen(true);
-  }, []);
-
-  const submitReport = useCallback(async () => {
-    if (!reportTarget) return;
-    try {
-      if (reportType === "owner") {
-        await adminApi.reportOwnerReply(reportTarget.review_id, {
-          reason: reportReason,
-        });
-        message.success("Đã báo cáo owner");
-      } else {
-        await adminApi.reportReviewUser(reportTarget.review_id, {
-          reason: reportReason,
-        });
-        message.success("Đã tạo báo cáo user vi phạm");
-      }
-      setReportOpen(false);
-      setReportReason("");
-    } catch (err: unknown) {
-      message.error(getErrorMessage(err, "Lỗi gửi báo cáo"));
-    }
-  }, [reportReason, reportTarget, reportType]);
-
   const repliedRows = useMemo(
     () =>
       rows.filter(
@@ -246,8 +198,8 @@ const ReviewManagement = () => {
   const userReviewColumns: ColumnsType<ReviewRow> = useMemo(
     () => [
       {
-        title: "Thứ tự",
-        render: (_: unknown, __: ReviewRow, index: number) => index + 1,
+        title: "STT",
+        render: (_: unknown, __: ReviewRow, index: number) => rows.length - index,
       },
       { title: "Địa điểm", dataIndex: "location_name" },
       { title: "User", dataIndex: "user_name" },
@@ -326,39 +278,29 @@ const ReviewManagement = () => {
       {
         title: "Hành động",
         render: (_: unknown, row: ReviewRow) => (
-          <Space>
-            <Popconfirm
-              title="Xóa đánh giá này?"
-              okText="Xóa"
-              cancelText="Hủy"
-              onConfirm={() => {
-                void handleDelete(row);
-              }}
-            >
-              <Button danger size="small">
-                Xóa
-              </Button>
-            </Popconfirm>
-            <Button
-              size="small"
-              onClick={() => {
-                openReportUser(row);
-              }}
-            >
-              Báo cáo user
+          <Popconfirm
+            title="Bạn có chắc muốn xóa đánh giá này?"
+            okText="Xóa"
+            cancelText="Hủy"
+            onConfirm={() => {
+              void handleDelete(row);
+            }}
+          >
+            <Button danger type="primary" ghost size="small" className="rounded-md">
+              Xóa
             </Button>
-          </Space>
+          </Popconfirm>
         ),
       },
     ],
-    [handleDelete, openReportUser],
+    [handleDelete, rows.length],
   );
 
   const ownerReplyColumns: ColumnsType<ReviewRow> = useMemo(
     () => [
       {
-        title: "Thứ tự",
-        render: (_: unknown, __: ReviewRow, index: number) => index + 1,
+        title: "STT",
+        render: (_: unknown, __: ReviewRow, index: number) => repliedRows.length - index,
       },
       { title: "Tên Owner", dataIndex: "owner_name" },
       { title: "Địa điểm", dataIndex: "location_name" },
@@ -425,32 +367,22 @@ const ReviewManagement = () => {
       {
         title: "Hành động",
         render: (_: unknown, row: ReviewRow) => (
-          <Space>
-            <Popconfirm
-              title="Xóa phản hồi owner này?"
-              okText="Xóa"
-              cancelText="Hủy"
-              onConfirm={() => {
-                void handleDeleteOwnerReply(row);
-              }}
-            >
-              <Button danger size="small">
-                Xóa
-              </Button>
-            </Popconfirm>
-            <Button
-              size="small"
-              onClick={() => {
-                openReportOwner(row);
-              }}
-            >
-              Báo cáo owner
+          <Popconfirm
+            title="Bạn có chắc muốn xóa phản hồi này?"
+            okText="Xóa"
+            cancelText="Hủy"
+            onConfirm={() => {
+              void handleDeleteOwnerReply(row);
+            }}
+          >
+            <Button danger type="primary" ghost size="small" className="rounded-md">
+              Xóa
             </Button>
-          </Space>
+          </Popconfirm>
         ),
       },
     ],
-    [handleDeleteOwnerReply, openReportOwner],
+    [handleDeleteOwnerReply, repliedRows.length],
   );
 
   return (
@@ -509,35 +441,13 @@ const ReviewManagement = () => {
             value={ratingFilter}
             onChange={(value) => setRatingFilter(Number(value) || 0)}
             options={[
-              { value: 1, label: "1 sao" },
-              { value: 2, label: "2 sao" },
-              { value: 3, label: "3 sao" },
-              { value: 4, label: "4 sao" },
-              { value: 5, label: "5 sao" },
               { value: 0, label: "Tất cả sao" },
+              { value: 5, label: "5 sao" },
+              { value: 4, label: "4 sao" },
+              { value: 3, label: "3 sao" },
+              { value: 2, label: "2 sao" },
+              { value: 1, label: "1 sao" },
             ]}
-          />
-
-          <Segmented
-            value={timeRange}
-            onChange={(value) => setTimeRange(value as any)}
-            options={[
-              { value: "today", label: "Hôm nay" },
-              { value: "week", label: "7 ngày" },
-              { value: "month", label: "1 tháng" },
-              { value: "year", label: "1 năm" },
-              { value: "all", label: "Tất cả" },
-            ]}
-          />
-
-          <DatePicker
-            allowClear
-            format="DD/MM/YYYY"
-            value={selectedDate ? dayjs(selectedDate, "YYYY-MM-DD") : null}
-            placeholder="Chọn ngày"
-            onChange={(value) => {
-              setSelectedDate(value ? value.format("YYYY-MM-DD") : null);
-            }}
           />
         </div>
 
@@ -547,47 +457,34 @@ const ReviewManagement = () => {
           </div>
         ) : null}
 
-        <div className="space-y-4">
-          <Card size="small" title="Đánh giá của users">
+        <div className="space-y-6">
+          <Card className="shadow-sm border-blue-50 overflow-hidden" styles={{ body: { padding: 0 } }} title={<span className="text-blue-700 font-semibold px-4 py-2 block border-b bg-blue-50/50">Đánh giá của users</span>}>
             <Table<ReviewRow>
-              rowKey={(row) => `user-review-${row.review_id}`}
+              rowKey={(row, idx) => `user-review-${row.review_id}-${idx}`}
               loading={loading}
               dataSource={rows}
               columns={userReviewColumns}
               size="small"
               pagination={false}
+              scroll={{ x: 'max-content' }}
+              className="px-2 pb-2 pt-1"
             />
           </Card>
 
-          <Card size="small" title="Phản hồi của owner tới users">
+          <Card className="shadow-sm border-emerald-50 overflow-hidden" styles={{ body: { padding: 0 } }} title={<span className="text-emerald-700 font-semibold px-4 py-2 block border-b bg-emerald-50/50">Phản hồi của owner tới users</span>}>
             <Table<ReviewRow>
-              rowKey={(row) => `owner-reply-${row.review_id}`}
+              rowKey={(row, idx) => `owner-reply-${row.review_id}-${idx}`}
               loading={loading}
               dataSource={repliedRows}
               columns={ownerReplyColumns}
               size="small"
               pagination={false}
+              scroll={{ x: 'max-content' }}
+              className="px-2 pb-2 pt-1"
             />
           </Card>
         </div>
       </Card>
-
-      <Modal
-        title={`${reportType === "owner" ? "Báo cáo owner" : "Báo cáo user"} từ review #${reportTarget?.review_id ?? ""}`}
-        open={reportOpen}
-        onCancel={() => setReportOpen(false)}
-        onOk={() => {
-          void submitReport();
-        }}
-        okText="Gửi báo cáo"
-      >
-        <Input.TextArea
-          rows={5}
-          value={reportReason}
-          onChange={(event) => setReportReason(event.target.value)}
-          placeholder="Mô tả lý do báo cáo"
-        />
-      </Modal>
     </MainLayout>
   );
 };

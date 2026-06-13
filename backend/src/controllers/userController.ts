@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
-import { saveUploadedImageToUploads } from "../utils/uploadImage";
+import { saveImageToDB, linkImageToEntity, removeEntityImages } from "../utils/uploadImage";
 import { messaging } from "../config/firebase";
 import { isWithinOpeningHours } from "../utils/openingHours";
 
@@ -831,12 +831,9 @@ export const createUserCheckinWithPhoto = async (
 
     const body = req.body as CreateCheckinBody;
 
-    // Save photo
-    const { urlPath } = await saveUploadedImageToUploads({
-      file,
-      folder: "checkins",
-      fileNamePrefix: `checkin-${userId}`,
-    });
+    // Save photo to database
+    const imgResult = await saveImageToDB(file, "checkin_photo", userId, "user");
+    const urlPath = imgResult.url;
 
     const latRaw = body?.checkin_latitude;
     const lngRaw = body?.checkin_longitude;
@@ -1192,13 +1189,9 @@ export const uploadUserReviewImage = async (
       return;
     }
 
-    const { urlPath } = await saveUploadedImageToUploads({
-      file,
-      folder: "reviews",
-      fileNamePrefix: `review-${userId}`,
-    });
+    const result = await saveImageToDB(file, "review_image", userId, "user");
 
-    res.json({ success: true, data: { image_url: urlPath } });
+    res.json({ success: true, data: { image_url: result.url } });
   } catch (error) {
     console.error("Lỗi upload ảnh review:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
@@ -2282,39 +2275,23 @@ export const uploadUserBackground = async (
       return;
     }
 
-    const backgroundPath = (
-      await saveUploadedImageToUploads({
-        file,
-        folder: "backgrounds",
-        fileNamePrefix: `user-bg-${userId}`,
-      })
-    ).urlPath;
+    const result = await saveImageToDB(file, "user_background", userId, "user");
 
-    try {
-      await pool.query(
-        `UPDATE users
-         SET background_path = ?,
-             background_source = 'upload',
-             background_url = NULL,
-             background_updated_at = NOW(),
-             updated_at = NOW()
-         WHERE user_id = ? AND role = 'user'`,
-        [backgroundPath, userId],
-      );
-    } catch (e) {
-      console.error("Lỗi update background user (missing columns?):", e);
-      res.status(500).json({
-        success: false,
-        message:
-          "Chưa hỗ trợ lưu ảnh nền trong database. Vui lòng chạy migration thêm cột background_* cho bảng users.",
-      });
-      return;
-    }
+    await removeEntityImages("user", userId, "background");
+    await linkImageToEntity(result.imageId, "user", userId, "background", 0, true);
+
+    await pool.query(
+      `UPDATE users
+       SET background_path = ?, background_source = 'upload', background_url = ?,
+           background_updated_at = NOW(), updated_at = NOW()
+       WHERE user_id = ? AND role = 'user'`,
+      [result.url, result.url, userId],
+    );
 
     res.json({
       success: true,
       message: "Đã cập nhật ảnh nền",
-      data: { background_url: backgroundPath },
+      data: { background_url: result.url },
     });
   } catch (error: unknown) {
     console.error("Lỗi upload background user:", error);
@@ -2342,25 +2319,22 @@ export const uploadUserAvatar = async (
       return;
     }
 
-    const avatarPath = (
-      await saveUploadedImageToUploads({
-        file,
-        folder: "avatars",
-        fileNamePrefix: `avatar-${userId}`,
-      })
-    ).urlPath;
+    const result = await saveImageToDB(file, "avatar_user", userId, "user");
+
+    await removeEntityImages("user", userId, "avatar");
+    await linkImageToEntity(result.imageId, "user", userId, "avatar", 0, true);
 
     await pool.query(
       `UPDATE users
-       SET avatar_path = ?, avatar_source = 'upload', avatar_url = NULL, avatar_updated_at = NOW(), updated_at = NOW()
+       SET avatar_path = ?, avatar_source = 'upload', avatar_url = ?, avatar_updated_at = NOW(), updated_at = NOW()
        WHERE user_id = ? AND role = 'user'`,
-      [avatarPath, userId],
+      [result.url, result.url, userId],
     );
 
     res.json({
       success: true,
       message: "Đã cập nhật ảnh đại diện",
-      data: { avatar_url: avatarPath },
+      data: { avatar_url: result.url },
     });
   } catch (error: unknown) {
     console.error("Lỗi upload avatar user:", error);
@@ -2627,6 +2601,8 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
          LEFT JOIN locations l ON l.location_id = v.location_id
          WHERE w.user_id = ?
            AND v.owner_deleted_at IS NULL
+           AND v.status = 'active'
+           AND v.end_date >= NOW()
            AND (
              v.max_uses_per_user IS NULL
              OR v.max_uses_per_user <= 0
@@ -2664,6 +2640,8 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
          LEFT JOIN locations l ON l.location_id = v.location_id
          WHERE w.user_id = ?
            AND v.owner_deleted_at IS NULL
+           AND v.status = 'active'
+           AND v.end_date >= NOW()
            AND (
              v.max_uses_per_user IS NULL
              OR v.max_uses_per_user <= 0

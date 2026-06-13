@@ -184,9 +184,7 @@ const LocationDetail = () => {
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [reportText, setReportText] = useState("");
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportMessage, setReportMessage] = useState<string | null>(null);
+
   const [reviewRating, setReviewRating] = useState<number>(0);
   const [reviewText, setReviewText] = useState("");
   const [reviewFiles, setReviewFiles] = useState<File[]>([]);
@@ -487,31 +485,7 @@ const LocationDetail = () => {
     );
   };
 
-  const handleReport = async () => {
-    if (!locationId || !reportText.trim()) {
-      setReportMessage("Vui lòng nhập mô tả vấn đề");
-      return;
-    }
 
-    try {
-      setReportLoading(true);
-      setReportMessage(null);
-      const response = await userApi.reportLocationIssue({
-        location_id: locationId,
-        description: reportText.trim(),
-      });
-      if (response.success) {
-        setReportText("");
-        setReportMessage("Đã gửi báo cáo. Cảm ơn bạn.");
-      } else {
-        setReportMessage(response.message || "Không thể gửi báo cáo");
-      }
-    } catch (reportError) {
-      setReportMessage(getErrorMessage(reportError, "Không thể gửi báo cáo"));
-    } finally {
-      setReportLoading(false);
-    }
-  };
 
   const handleReviewFileChange = (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -827,33 +801,7 @@ const LocationDetail = () => {
                       {bookingLabelByLocationType(location?.location_type)}
                     </button>
 
-                    <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="text-xl font-semibold text-slate-900">
-                          Báo sai thông tin
-                        </h2>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                          onClick={handleReport}
-                          disabled={reportLoading}
-                        >
-                          {reportLoading ? "Đang gửi..." : "Gửi báo cáo"}
-                        </button>
-                      </div>
-                      <textarea
-                        value={reportText}
-                        onChange={(event) => setReportText(event.target.value)}
-                        rows={4}
-                        className="mt-4 w-full rounded-[24px] border border-slate-200 px-4 py-3 text-sm focus:border-slate-400 focus:outline-none"
-                        placeholder="Mô tả vấn đề bạn thấy tại địa điểm này"
-                      />
-                      {reportMessage ? (
-                        <div className="mt-3 text-sm text-slate-500">
-                          {reportMessage}
-                        </div>
-                      ) : null}
-                    </div>
+
                   </>
                 ) : null}
 

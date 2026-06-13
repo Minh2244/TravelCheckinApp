@@ -98,6 +98,8 @@ import {
   uploadOwnerBackground,
   uploadOwnerServiceImage,
   verifyOwnerCheckin,
+  setLocationCoverImage,
+  setServiceCoverImage,
 } from "../controllers/ownerController";
 
 const router = express.Router();
@@ -154,11 +156,13 @@ router.put(
   updateOwnerLocation,
 );
 router.put("/locations/:id/status", updateOwnerLocationStatus);
+router.put("/locations/:locationId/cover-image", upload.none(), setLocationCoverImage);
 
 // Services
 router.get("/locations/:locationId/services", getServicesByLocation);
 router.post("/locations/:locationId/services", createServiceForLocation);
 router.put("/services/:id", updateService);
+router.put("/services/:serviceId/cover-image", upload.none(), setServiceCoverImage);
 router.delete("/services/:id", deleteService);
 
 // Service Categories

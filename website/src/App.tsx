@@ -24,7 +24,6 @@ const AdminUsers = lazy(() => import("./pages/Admin/Users"));
 const AdminOwners = lazy(() => import("./pages/Admin/Owners"));
 const AdminLocations = lazy(() => import("./pages/Admin/Locations"));
 const AdminCheckins = lazy(() => import("./pages/Admin/Checkins"));
-const AdminReports = lazy(() => import("./pages/Admin/Reports"));
 const AdminCommissions = lazy(() => import("./pages/Admin/Commissions"));
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
 const AdminVouchers = lazy(() => import("./pages/Admin/Vouchers"));
@@ -305,14 +304,7 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/admin/reports"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <AdminReports />
-              </ProtectedRoute>
-            }
-          />
+
           <Route
             path="/admin/payments"
             element={

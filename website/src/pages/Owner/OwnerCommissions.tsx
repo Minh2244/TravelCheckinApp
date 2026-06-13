@@ -101,11 +101,6 @@ const OwnerCommissions = () => {
         render: (v: unknown) => formatMoney(Number(v || 0)),
       },
       {
-        title: "VAT",
-        dataIndex: "vat_amount",
-        render: (v: unknown) => formatMoney(Number(v || 0)),
-      },
-      {
         title: "Tổng phải trả",
         dataIndex: "total_due",
         render: (v: unknown) => formatMoney(Number(v || 0)),
@@ -147,7 +142,7 @@ const OwnerCommissions = () => {
   }, [unpaidItems]);
 
   const pendingTotal = useMemo(() => {
-    return pendingItems.reduce((sum, x) => sum + Number(x.commission_amount || 0) + Number(x.vat_amount || 0), 0);
+    return pendingItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
   }, [pendingItems]);
 
   const earliestDueDate = useMemo(() => {
@@ -340,9 +335,12 @@ const OwnerCommissions = () => {
             {filteredPendingItems.length === 0 ? (
               <div className="py-8 text-center text-gray-400">Không có dữ liệu</div>
             ) : (
-              filteredPendingItems.map((item) => (
+              filteredPendingItems.map((item, index) => (
                 <div key={item.payment_id} className="bg-white mb-3 border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow mr-1">
                   <div className="flex flex-col md:flex-row w-full gap-4 items-center">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-semibold shrink-0">
+                      {filteredPendingItems.length - index}
+                    </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-semibold text-gray-800 text-base">{item.location_name}</span>
@@ -362,12 +360,6 @@ const OwnerCommissions = () => {
                         <div className="text-xs text-gray-400">Hoa hồng</div>
                         <div className="font-medium text-orange-600">
                           {formatMoney(Number(item.commission_amount || 0))}
-                        </div>
-                      </div>
-                      <div className="text-right border-l pl-4 border-gray-100">
-                        <div className="text-xs text-gray-400">VAT</div>
-                        <div className="font-medium text-blue-600">
-                          {formatMoney(Number(item.vat_amount || 0))}
                         </div>
                       </div>
                     </div>

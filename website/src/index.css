@@ -314,3 +314,72 @@ input:focus, textarea:focus, select:focus {
   scrollbar-color: rgba(13, 148, 136, 0.2) transparent;
 }
 
+/* --- Ant Design Table Zoom & Responsive Fix --- */
+.ant-table-wrapper {
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+
+/* Force table width to expand to its content width and not fit squished layouts */
+.ant-table-wrapper table {
+  width: max-content !important;
+  min-width: 100% !important;
+}
+
+/* Force minimum width on column cells (headers and data cells) to prevent columns from being squished too narrow when zoomed or on small screens */
+.ant-table-thead > tr > th:not(.ant-table-selection-column):not(.ant-table-row-expand-icon-cell),
+.ant-table-tbody > tr > td:not(.ant-table-selection-column):not(.ant-table-row-expand-icon-cell) {
+  min-width: 80px !important;
+}
+
+.ant-table-thead > tr > th {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+/* For table body cells, prevent letter-by-letter breaking, wrap on words normally */
+.ant-table-tbody > tr > td {
+  word-break: keep-all !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Action buttons, statuses, IDs, dates, numbers, tags, or badges should never wrap */
+.ant-table-tbody > tr > td button,
+.ant-table-tbody > tr > td a,
+.ant-table-tbody > tr > td span.ant-badge,
+.ant-table-tbody > tr > td .ant-tag,
+.ant-table-tbody > tr > td .actions,
+.ant-table-tbody > tr > td .ant-space,
+.ant-table-tbody > tr > td .ant-btn {
+  white-space: nowrap !important;
+}
+
+/* Modern Ant Design Table styling overrides for Admin & Owner */
+.ant-table {
+  background: #ffffff !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+.ant-table-thead > tr > th {
+  background: #f8fafc !important; /* Slate-50 background for headers */
+  color: #1e293b !important; /* Slate-800 color */
+  font-weight: 600 !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  font-size: 13px !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f1f5f9 !important;
+  color: #334155 !important; /* Slate-700 color */
+  transition: background 0.2s ease !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f8fafc !important; /* Light slate-50 hover */
+}
+
+
+
+
+

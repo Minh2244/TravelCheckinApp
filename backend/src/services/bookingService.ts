@@ -2026,7 +2026,7 @@ export const createBooking = async (
           settings.default_commission_rate ??
           2.5,
       );
-      const vatRate = Number(settings.vat_rate ?? 10);
+      const vatRate = Number(settings.vat_rate ?? 0);
 
       const amount = Number(finalAmount);
       const safeCommissionRate = Number.isFinite(commissionRate)

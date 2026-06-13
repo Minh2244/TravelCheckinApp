@@ -77,7 +77,7 @@ const OwnerVouchers = () => {
     total: 0,
   });
   const [statusFilter, setStatusFilter] = useState<VoucherStatus | undefined>(
-    "inactive",
+    undefined,
   );
   const [search, setSearch] = useState("");
 

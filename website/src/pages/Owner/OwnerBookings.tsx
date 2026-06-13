@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
   Card,
-  Descriptions,
   Drawer,
   Input,
   Modal,
@@ -13,6 +12,13 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import {
+  UserOutlined,
+  EnvironmentOutlined,
+  CalendarOutlined,
+  WalletOutlined,
+  FileTextOutlined,
+} from "@ant-design/icons";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
 import { formatMoney } from "../../utils/formatMoney";
@@ -22,7 +28,10 @@ type BookingStatus = "pending" | "confirmed" | "completed" | "cancelled";
 
 type BookingNextStatus = "confirmed" | "completed" | "cancelled";
 
-type TimeFilter = "next3" | "prev7" | "prev1m" | "prev1y" | "all";
+type OwnerLocationOption = {
+  location_id: number;
+  location_name: string;
+};
 
 type BookingDetailItem = {
   kind: "table" | "room" | "ticket" | "menu" | "service";
@@ -43,13 +52,17 @@ type BookingRow = {
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
+  location_id?: number | null;
   location_name?: string | null;
   location_type?: string | null;
   service_name?: string | null;
   service_type?: string | null;
   check_in_date?: string | null;
   check_out_date?: string | null;
+  total_amount?: number | string | null;
+  discount_amount?: number | string | null;
   final_amount?: number | string | null;
+  voucher_code?: string | null;
   total_completed_paid_amount?: number | string | null;
   status: BookingStatus | string;
   notes?: string | null;
@@ -87,36 +100,6 @@ const bookingStatusLabel = (value: string): string => {
   if (status === "completed") return "Hoàn tất";
   if (status === "cancelled") return "Đã hủy";
   return String(value || "-");
-};
-
-const paymentStatusLabel = (value: string): string => {
-  const status = String(value || "").toLowerCase();
-  if (!status) return "Chưa có";
-  if (status === "completed") return "Đã thanh toán";
-  if (status === "pending") return "Chờ thanh toán";
-  if (status === "failed") return "Thanh toán lỗi";
-  if (status === "cancelled") return "Đã hủy thanh toán";
-  return String(value || "-");
-};
-
-const parseBookingDate = (value: string | null | undefined): Date | null => {
-  if (!value) return null;
-  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
-  const dt = new Date(normalized);
-  if (Number.isNaN(dt.getTime())) return null;
-  return dt;
-};
-
-const startOfDay = (d: Date) =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-
-const endOfDay = (d: Date) =>
-  new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-
-const addDays = (d: Date, days: number) => {
-  const next = new Date(d);
-  next.setDate(next.getDate() + days);
-  return next;
 };
 
 const isTravelBooking = (row: BookingRow): boolean => {
@@ -300,18 +283,35 @@ const OwnerBookings = () => {
   const [statusFilter, setStatusFilter] = useState<
     "confirmed" | "cancelled" | "all" | undefined
   >("all");
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>("next3");
+  const [locations, setLocations] = useState<OwnerLocationOption[]>([]);
+  const [locationFilter, setLocationFilter] = useState<number | "all">("all");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await ownerApi.getBookings({});
+      const params: { location_id?: number } = {};
+      if (locationFilter !== "all") {
+        params.location_id = locationFilter;
+      }
+      const res = await ownerApi.getBookings(params);
       setItems((res?.data || []) as BookingRow[]);
     } catch (err: unknown) {
       message.error(getErrorMessage(err, "Lỗi tải bookings"));
     } finally {
       setLoading(false);
     }
+  }, [locationFilter]);
+
+  useEffect(() => {
+    const fetchLocations = async () => {
+      try {
+        const res = await ownerApi.getLocations();
+        setLocations((res?.data || []) as OwnerLocationOption[]);
+      } catch (err) {
+        console.error("Failed to load locations:", err);
+      }
+    };
+    void fetchLocations();
   }, []);
 
   useEffect(() => {
@@ -418,37 +418,44 @@ const OwnerBookings = () => {
 
   const columns: ColumnsType<BookingRow> = [
     {
-      title: "Thứ tự",
+      title: "Số thứ tự",
       width: 60,
       align: "center",
-      render: (_: unknown, __: BookingRow, index: number) => index + 1,
+      render: (_: unknown, __: BookingRow, index: number) => filteredItems.length - index,
     },
     {
-      title: "Khách",
-      dataIndex: "user_name",
-      width: 120,
-      ellipsis: true,
-    },
-    {
-      title: "Liên hệ",
+      title: "Khách hàng / Liên hệ",
       width: 220,
       render: (_: unknown, row: BookingRow) => {
+        const name = row.user_name || "-";
         const email = String(row.contact_email || row.user_email || "").trim();
         const phone = String(row.contact_phone || row.user_phone || "").trim();
-        if (!email && !phone) return "-";
-        if (email && phone) return `${email} - ${phone}`;
-        return email || phone;
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <span style={{ fontWeight: 600, color: "#1f2937" }}>{name}</span>
+            {phone && <span style={{ fontSize: "12px", color: "#4b5563" }}>{phone}</span>}
+            {email && (
+              <span
+                style={{ fontSize: "11px", color: "#9ca3af" }}
+                className="truncate block"
+                title={email}
+              >
+                {email}
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
       title: "Địa điểm",
       dataIndex: "location_name",
-      width: 150,
+      width: 130,
       ellipsis: true,
     },
     {
       title: "Dịch vụ",
-      width: 210,
+      width: 180,
       render: (_: unknown, row: BookingRow) => {
         const details = getDetailItemsForDisplay(row);
         const brief = details
@@ -457,9 +464,28 @@ const OwnerBookings = () => {
           .join(", ");
         const more = details.length > 2 ? ` +${details.length - 2}` : "";
         return (
-          <div>
-            <div style={{ fontWeight: 500 }}>{row.service_name || "-"}</div>
-            <div style={{ color: "#6b7280", fontSize: 12 }}>
+          <div style={{ maxWidth: 164 }}>
+            <div
+              style={{
+                fontWeight: 500,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={row.service_name || "-"}
+            >
+              {row.service_name || "-"}
+            </div>
+            <div
+              style={{
+                color: "#6b7280",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={brief + more}
+            >
               {brief || "-"}
               {more}
             </div>
@@ -469,95 +495,144 @@ const OwnerBookings = () => {
     },
     {
       title: "Thời gian",
-      width: 170,
+      width: 150,
       render: (_: unknown, row: BookingRow) => {
         const checkIn = formatDisplayDateTime(row.check_in_date || "");
         const checkOut = formatDisplayDateTime(row.check_out_date || "");
-        if (checkIn && checkOut) return `${checkIn} -> ${checkOut}`;
-        return checkIn || checkOut || "-";
+        if (checkIn && checkOut) {
+          return (
+            <div style={{ fontSize: "12px", lineHeight: "1.4" }}>
+              <div>{checkIn}</div>
+              <div style={{ color: "#9ca3af", fontSize: "11px" }}>đến {checkOut}</div>
+            </div>
+          );
+        }
+        return <div style={{ fontSize: "12px" }}>{checkIn || checkOut || "-"}</div>;
       },
     },
     {
-      title: "Số tiền",
-      dataIndex: "final_amount",
-      width: 100,
-      align: "right",
-      render: (v: unknown) => formatMoney(Number(v || 0)),
-    },
-    {
       title: "Thanh toán",
-      dataIndex: "latest_payment_status",
-      width: 110,
+      width: 140,
       render: (_: unknown, row: BookingRow) => {
+        const finalAmount = Number(row.final_amount || 0);
+        const paidAmount = Number(row.total_completed_paid_amount || 0);
+        const isPaid = paidAmount >= finalAmount && finalAmount > 0;
+
         const s = String(row.latest_payment_status || "");
-        if (!row.latest_payment_id) return <Tag>Chưa có</Tag>;
-        const color =
-          s === "completed" ? "green" : s === "pending" ? "orange" : "red";
-        return <Tag color={color}>{paymentStatusLabel(s)}</Tag>;
+        let tagColor = "default";
+        let tagText = "Chưa thanh toán";
+
+        if (row.latest_payment_id) {
+          if (s === "completed") {
+            tagColor = "green";
+            tagText = "Đã thanh toán";
+          } else if (s === "pending") {
+            tagColor = "orange";
+            tagText = "Chờ thanh toán";
+          } else {
+            tagColor = "red";
+            tagText = "Lỗi/Đã hủy";
+          }
+        }
+
+        if (isPaid) {
+          tagColor = "green";
+          tagText = "Đã thanh toán";
+        }
+
+        const hasDiscount = Number(row.discount_amount || 0) > 0;
+
+        return (
+          <div>
+            <div style={{ fontWeight: 600, color: "#1f2937" }}>
+              {formatMoney(finalAmount)}
+              {hasDiscount && (
+                <Tag color="magenta" style={{ fontSize: "10px", padding: "0 4px", marginLeft: 4, border: 0 }}>
+                  VC
+                </Tag>
+              )}
+            </div>
+            <div style={{ marginTop: 2 }}>
+              <Tag color={tagColor} style={{ fontSize: "11px", margin: 0 }}>
+                {tagText}
+              </Tag>
+            </div>
+          </div>
+        );
       },
     },
     {
       title: "Trạng thái",
       dataIndex: "status",
-      width: 90,
+      width: 100,
       align: "center",
       render: (s: string) => statusTag(s),
     },
     {
       title: "Hành động",
-      width: 170,
+      width: 180,
       align: "center",
-      render: (_: unknown, row: BookingRow) => (
-        <Space>
-          <Button size="small" onClick={() => setActiveBooking(row)}>
-            Chi tiết
-          </Button>
-          <Button
-            size="small"
-            onClick={() => setStatus(row.booking_id, "confirmed")}
-            disabled={!row.can_confirm || submitting}
-          >
-            Duyệt
-          </Button>
-          <Button
-            size="small"
-            danger
-            onClick={() => openCancelModal(row)}
-            disabled={!row.can_cancel || submitting}
-          >
-            Hủy
-          </Button>
-        </Space>
-      ),
+      render: (_: unknown, row: BookingRow) => {
+        const isConfirmEnabled = row.can_confirm && !submitting;
+        const isCancelEnabled = row.can_cancel && !submitting;
+        return (
+          <Space size="small">
+            <Button
+              size="small"
+              shape="round"
+              style={{
+                color: "#4f46e5",
+                borderColor: "#c7d2fe",
+                backgroundColor: "#f5f3ff",
+                fontWeight: 600,
+              }}
+              onClick={() => setActiveBooking(row)}
+            >
+              Chi tiết
+            </Button>
+            <Button
+              size="small"
+              shape="round"
+              style={
+                isConfirmEnabled
+                  ? {
+                      color: "#2563eb",
+                      borderColor: "#bfdbfe",
+                      backgroundColor: "#eff6ff",
+                      fontWeight: 600,
+                    }
+                  : { fontWeight: 600 }
+              }
+              onClick={() => setStatus(row.booking_id, "confirmed")}
+              disabled={!row.can_confirm || submitting}
+            >
+              Duyệt
+            </Button>
+            <Button
+              size="small"
+              shape="round"
+              style={
+                isCancelEnabled
+                  ? {
+                      color: "#dc2626",
+                      borderColor: "#fecaca",
+                      backgroundColor: "#fef2f2",
+                      fontWeight: 600,
+                    }
+                  : { fontWeight: 600 }
+              }
+              onClick={() => openCancelModal(row)}
+              disabled={!row.can_cancel || submitting}
+            >
+              Hủy
+            </Button>
+          </Space>
+        );
+      },
     },
   ];
 
   const filteredItems = useMemo(() => {
-    const now = new Date();
-
-    let start: Date | null = null;
-    let end: Date | null = null;
-
-    if (timeFilter === "next3") {
-      const today = startOfDay(now);
-      start = today;
-      end = endOfDay(addDays(today, 2));
-    } else if (timeFilter === "prev7") {
-      const today = endOfDay(now);
-      end = today;
-      start = startOfDay(addDays(today, -6));
-    } else if (timeFilter === "prev1m") {
-      end = endOfDay(now);
-      const s = new Date(now);
-      s.setMonth(s.getMonth() - 1);
-      start = startOfDay(s);
-    } else if (timeFilter === "prev1y") {
-      end = endOfDay(now);
-      const s = new Date(now);
-      s.setFullYear(s.getFullYear() - 1);
-      start = startOfDay(s);
-    }
-
     return items.filter((row) => {
       if (
         statusFilter &&
@@ -567,22 +642,26 @@ const OwnerBookings = () => {
         return false;
       }
 
-      if (timeFilter === "all") return true;
+      if (
+        locationFilter &&
+        locationFilter !== "all" &&
+        row.location_id !== locationFilter
+      ) {
+        return false;
+      }
 
-      const dt =
-        parseBookingDate(row.check_in_date) ||
-        parseBookingDate(row.check_out_date);
-      if (!dt || !start || !end) return false;
-      return dt >= start && dt <= end;
+      return true;
     });
-  }, [items, statusFilter, timeFilter]);
+  }, [items, statusFilter, locationFilter]);
 
   return (
     <MainLayout>
       <Card
         title={
-          <Space wrap size="middle">
-            <span>Quản lí đặt chỗ</span>
+          <Space wrap size="middle" align="center">
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-extrabold text-xl">
+              Quản lí đặt chỗ
+            </span>
             <Select
               allowClear={false}
               placeholder="Trạng thái"
@@ -596,96 +675,186 @@ const OwnerBookings = () => {
               ]}
             />
             <Select
-              placeholder="Thời gian"
+              placeholder="Chọn địa điểm"
               style={{ width: 220 }}
-              value={timeFilter}
-              onChange={(v) => setTimeFilter(v)}
+              value={locationFilter}
+              onChange={(v) => setLocationFilter(v)}
               options={[
-                { value: "next3", label: "3 ngày tiếp theo" },
-                { value: "prev7", label: "7 ngày trước" },
-                { value: "prev1m", label: "1 tháng trước" },
-                { value: "prev1y", label: "1 năm" },
-                { value: "all", label: "Tất cả" },
+                { value: "all", label: "Tất cả địa điểm" },
+                ...locations.map((loc) => ({
+                  value: loc.location_id,
+                  label: loc.location_name,
+                })),
               ]}
             />
           </Space>
         }
       >
-        <Table
-          rowKey="booking_id"
-          loading={loading}
-          dataSource={filteredItems}
-          columns={columns}
-          pagination={false}
-          size="small"
-          tableLayout="fixed"
-        />
+        <div style={{ overflowX: "auto", width: "100%" }}>
+          <Table
+            rowKey="booking_id"
+            loading={loading}
+            dataSource={filteredItems}
+            columns={columns}
+            pagination={false}
+            size="middle"
+            scroll={{ x: 1160 }}
+          />
+        </div>
       </Card>
 
       <Drawer
-        title={`Booking #${activeBooking?.booking_id || ""}`}
+        title={
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", paddingRight: 24 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#1f2937" }}>
+              Chi tiết Đặt chỗ #{activeBooking?.booking_id}
+            </span>
+            {activeBooking && statusTag(activeBooking.status)}
+          </div>
+        }
         open={Boolean(activeBooking)}
         onClose={() => setActiveBooking(null)}
-        size="large"
+        width={480}
       >
         {activeBooking && (
-          <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Descriptions size="small" bordered column={1}>
-              <Descriptions.Item label="Khách hàng">
-                {activeBooking.user_name || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Email">
-                {activeBooking.contact_email || activeBooking.user_email || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Số điện thoại">
-                {activeBooking.contact_phone || activeBooking.user_phone || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Địa điểm">
-                {activeBooking.location_name || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Dịch vụ">
-                {activeBooking.service_name || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Đặt gì">
-                {(() => {
-                  const groups = getGroupedDetailLines(
-                    activeBooking,
-                    foodItemsByBookingId[activeBooking.booking_id] || [],
-                  );
-                  if (groups.length === 0) return "-";
-                  return (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
-                      }}
-                    >
-                      {groups.map((group, index) => (
-                        <span key={`${group.label}-${index}`}>
-                          {group.label}: {group.value}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Card 1: Khách hàng */}
+            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
+                <UserOutlined style={{ color: "#3b82f6", fontSize: 15 }} />
+                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Khách hàng</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Họ tên:</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.user_name || "-"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Số điện thoại:</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b" }}>
+                    <a href={`tel:${activeBooking.contact_phone || activeBooking.user_phone || ""}`} style={{ color: "#3b82f6" }}>
+                      {activeBooking.contact_phone || activeBooking.user_phone || "-"}
+                    </a>
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Email:</span>
+                  <span style={{ fontWeight: 500, color: "#1e293b" }}>{activeBooking.contact_email || activeBooking.user_email || "-"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Dịch vụ */}
+            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
+                <EnvironmentOutlined style={{ color: "#10b981", fontSize: 15 }} />
+                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Dịch vụ đặt chỗ</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Địa điểm:</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.location_name || "-"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Tên dịch vụ:</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.service_name || "-"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <span style={{ color: "#64748b" }}>Chi tiết đặt:</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b", textAlign: "right" }}>
+                    {(() => {
+                      const groups = getGroupedDetailLines(
+                        activeBooking,
+                        foodItemsByBookingId[activeBooking.booking_id] || [],
+                      );
+                      if (groups.length === 0) return "-";
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {groups.map((group, index) => (
+                            <span key={`${group.label}-${index}`}>
+                              <Tag color="blue" style={{ margin: 0, fontWeight: 500 }}>
+                                {group.label}: {group.value}
+                              </Tag>
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Thời gian */}
+            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
+                <CalendarOutlined style={{ color: "#f59e0b", fontSize: 15 }} />
+                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Thời gian</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>Ngày nhận / Vào</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b", fontSize: 13 }}>{formatDisplayDateTime(activeBooking.check_in_date || "")}</span>
+                </div>
+                <div style={{ color: "#cbd5e1", fontSize: 16 }}>➜</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
+                  <span style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>Ngày trả / Ra</span>
+                  <span style={{ fontWeight: 600, color: "#1e293b", fontSize: 13 }}>{formatDisplayDateTime(activeBooking.check_out_date || "") || "-"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Thanh toán */}
+            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
+                <WalletOutlined style={{ color: "#8b5cf6", fontSize: 15 }} />
+                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Chi tiết thanh toán</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#64748b" }}>Tiền dịch vụ gốc:</span>
+                  <span style={{ fontWeight: 500, color: "#475569" }}>{formatMoney(Number(activeBooking.total_amount || 0))}</span>
+                </div>
+
+                {activeBooking.voucher_code && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: "#64748b" }}>Mã giảm giá (Voucher):</span>
+                    <div>
+                      <Tag color="magenta" style={{ margin: 0, fontWeight: 600 }}>{activeBooking.voucher_code}</Tag>
+                      {Number(activeBooking.discount_amount) > 0 && (
+                        <span style={{ color: "#dc2626", marginLeft: 8, fontWeight: 600 }}>
+                          -{formatMoney(Number(activeBooking.discount_amount))}
                         </span>
-                      ))}
+                      )}
                     </div>
-                  );
-                })()}
-              </Descriptions.Item>
-              <Descriptions.Item label="Ngày đặt">
-                {formatDisplayDateTime(activeBooking.check_in_date || "") ||
-                  "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Ngày nhận">
-                {formatDisplayDateTime(activeBooking.check_out_date || "") ||
-                  "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Tiền đã thanh toán">
-                {formatMoney(Number(activeBooking.final_amount || 0))}
-              </Descriptions.Item>
-              <Descriptions.Item label="Ghi chú">
+                  </div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px dashed #e2e8f0" }}>
+                  <span style={{ fontWeight: 600, color: "#1e293b" }}>Tổng tiền phải trả:</span>
+                  <span style={{ fontWeight: 700, color: "#2563eb", fontSize: 15 }}>{formatMoney(Number(activeBooking.final_amount || 0))}</span>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                  <span style={{ color: "#64748b" }}>Đã thanh toán thực tế:</span>
+                  <span style={{ fontWeight: 700, color: "#16a34a" }}>
+                    {formatMoney(Number(activeBooking.total_completed_paid_amount || 0))}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5: Ghi chú */}
+            <div style={{ backgroundColor: "#fef08a40", borderRadius: 8, padding: 12, border: "1px solid #fef08a", display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <FileTextOutlined style={{ color: "#ca8a04", fontSize: 13 }} />
+                <span style={{ fontWeight: 600, color: "#854d0e", fontSize: 12 }}>Ghi chú / Lưu ý</span>
+              </div>
+              <div style={{ color: "#713f12", fontSize: 12, fontStyle: "italic", lineHeight: "1.4" }}>
                 {normalizeOwnerBookingNotes(activeBooking)}
-              </Descriptions.Item>
-            </Descriptions>
-          </Space>
+              </div>
+            </div>
+          </div>
         )}
       </Drawer>
 

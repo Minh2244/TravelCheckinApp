@@ -289,13 +289,7 @@ const Commissions = () => {
       align: "right",
       render: (amount: number) => formatMoney(amount),
     },
-    {
-      title: "VAT",
-      dataIndex: "vat_amount",
-      key: "vat_amount",
-      align: "right",
-      render: (amount: number) => formatMoney(amount),
-    },
+
     {
       title: "Tổng phải trả",
       dataIndex: "total_due",
@@ -734,9 +728,7 @@ const Commissions = () => {
             <Descriptions.Item label="Hoa hồng">
               {formatMoney(selectedCommission.commission_amount)}
             </Descriptions.Item>
-            <Descriptions.Item label="VAT">
-              {formatMoney(selectedCommission.vat_amount)}
-            </Descriptions.Item>
+
             <Descriptions.Item label="Tổng phải trả">
               {formatMoney(selectedCommission.total_due)}
             </Descriptions.Item>
