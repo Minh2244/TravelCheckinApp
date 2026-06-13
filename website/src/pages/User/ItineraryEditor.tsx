@@ -404,7 +404,7 @@ const ItineraryEditor = () => {
                         </button>
                       )}
                       {/* Nút Bắt đầu dẫn đường */}
-                      {item.location_id && item.location_lat && item.location_lng && (
+                      {item.location_id && item.location_lat != null && item.location_lng != null && (
                         <button
                           onClick={() => handleStartNav(item)}
                           className="rounded-lg px-2 py-1 text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-all"

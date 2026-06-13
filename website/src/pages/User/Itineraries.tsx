@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import userApi from "../../api/userApi";
 import { getErrorMessage } from "../../utils/safe";
+import LocationPickerMap from "../../components/LocationPickerMap";
 
 interface ItinerarySummary {
   itinerary_id: number;
@@ -22,6 +23,13 @@ const Itineraries = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"all" | "upcoming" | "completed">("all");
+
+  // Detail modal
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [detailData, setDetailData] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [navMode, setNavMode] = useState(false);
+  const [navTarget, setNavTarget] = useState<any>(null);
 
   const load = async () => {
     try {
@@ -48,6 +56,62 @@ const Itineraries = () => {
     } catch (err) {
       alert(getErrorMessage(err, "Không thể xóa"));
     }
+  };
+
+  // Load chi tiết lịch trình
+  const loadDetail = async (id: number) => {
+    setDetailId(id);
+    setDetailLoading(true);
+    try {
+      const res = await userApi.getItineraryDetail(id);
+      if (res.success) setDetailData(res.data);
+    } catch (err) {
+      alert(getErrorMessage(err, "Không thể tải chi tiết"));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Đánh dấu đã đến
+  const handleToggleVisited = async (itineraryId: number, itemId: number) => {
+    try {
+      const res = await userApi.toggleItemVisited(itineraryId, itemId);
+      if (res.success && detailData) {
+        setDetailData({
+          ...detailData,
+          items: detailData.items.map((item: any) =>
+            item.item_id === itemId ? { ...item, visited_at: res.data.visited_at } : item
+          ),
+        });
+        // Cập nhật list
+        setItineraries((prev) =>
+          prev.map((it) => {
+            if (it.itinerary_id !== itineraryId) return it;
+            const visitedCount = detailData.items.filter((i: any) =>
+              i.item_id === itemId ? res.data.visited_at : i.visited_at
+            ).length;
+            return { ...it, visited_count: visitedCount };
+          })
+        );
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Không thể cập nhật");
+    }
+  };
+
+  // Bắt đầu dẫn đường
+  const handleStartNav = (item: any) => {
+    setNavTarget(item);
+    setNavMode(true);
+  };
+
+  // Tính khoảng cách
+  const haversineKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   };
 
   const formatDate = (d: string) => {
@@ -240,6 +304,15 @@ const Itineraries = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          void loadDetail(it.itinerary_id);
+                        }}
+                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 transition-colors"
+                      >
+                        📍 Xem
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           navigate(`/user/itineraries/${it.itinerary_id}`);
                         }}
                         className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
@@ -263,6 +336,143 @@ const Itineraries = () => {
           </div>
         )}
       </section>
+
+      {/* Detail Modal */}
+      {detailId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) { setDetailId(null); setDetailData(null); } }}>
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-auto rounded-2xl bg-white shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+              <div>
+                <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">CHI TIẾT</span>
+                <h3 className="text-lg font-black text-slate-800 font-heading">{detailData?.title || "Đang tải..."}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigate(`/user/itineraries/${detailId}`)}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  ✏️ Sửa
+                </button>
+                <button onClick={() => { setDetailId(null); setDetailData(null); }} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              {detailLoading ? (
+                <div className="text-center py-10">
+                  <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                </div>
+              ) : detailData ? (
+                <div className="space-y-4">
+                  {detailData.description && (
+                    <p className="text-sm text-slate-500">{detailData.description}</p>
+                  )}
+                  {Object.entries(
+                    (detailData.items || []).reduce((acc: any, item: any) => {
+                      const day = item.day_number;
+                      if (!acc[day]) acc[day] = [];
+                      acc[day].push(item);
+                      return acc;
+                    }, {})
+                  ).map(([day, items]: [string, any]) => (
+                    <div key={day}>
+                      <h4 className="text-sm font-bold text-slate-700 mb-2">📅 Ngày {day}</h4>
+                      <div className="space-y-2">
+                        {items.map((item: any, idx: number) => (
+                          <div key={item.item_id} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                            <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-bold shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm text-slate-800">
+                                {item.location_name || item.custom_name || "Chưa có tên"}
+                              </div>
+                              {item.custom_address && (
+                                <div className="text-xs text-slate-500">📍 {item.custom_address}</div>
+                              )}
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {item.time && <span className="text-xs text-slate-400">🕐 {item.time}</span>}
+                                {item.note && <span className="text-xs text-slate-400">📝 {item.note}</span>}
+                                {item.estimated_cost > 0 && <span className="text-xs text-amber-600">💰 {Number(item.estimated_cost).toLocaleString("vi-VN")}đ</span>}
+                              </div>
+                              {item.visited_at && (
+                                <div className="text-xs text-emerald-600 font-semibold mt-1">
+                                  ✅ Đã đến lúc {new Date(item.visited_at).toLocaleString("vi-VN")}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-1 shrink-0">
+                              {/* Nút Đã đến */}
+                              <button
+                                onClick={() => void handleToggleVisited(detailId, item.item_id)}
+                                className={`rounded-lg px-2 py-1 text-xs font-semibold transition-all ${
+                                  item.visited_at
+                                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                    : "bg-white text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600"
+                                }`}
+                              >
+                                {item.visited_at ? "✅ Đã đến" : "⬜ Đã đến"}
+                              </button>
+                              {/* Nút Bắt đầu */}
+                              {item.location_id && item.location_lat != null && item.location_lng != null && (
+                                <button
+                                  onClick={() => handleStartNav(item)}
+                                  className="rounded-lg px-2 py-1 text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-all"
+                                >
+                                  🚀 Bắt đầu
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Navigation Mode Overlay */}
+      {navMode && navTarget && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-white">
+            <button onClick={() => { setNavMode(false); setNavTarget(null); }} className="flex items-center gap-2 text-slate-600">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+              <span className="text-sm font-semibold">Quay lại</span>
+            </button>
+            <div className="text-sm font-bold text-slate-800">🎯 {navTarget.location_name || navTarget.custom_name}</div>
+            <div className="w-20" />
+          </div>
+          <div className="flex-1">
+            <LocationPickerMap onSelectLocation={() => {}} className="h-full" />
+          </div>
+          <div className="bg-white/95 backdrop-blur-sm border-t border-slate-200 p-4">
+            <div className="max-w-lg mx-auto flex items-center justify-between">
+              <div>
+                <div className="font-bold text-base text-slate-800">📍 {navTarget.location_name || navTarget.custom_name}</div>
+                {navTarget.custom_address && <div className="text-xs text-slate-500">{navTarget.custom_address}</div>}
+              </div>
+              <button
+                onClick={() => {
+                  void handleToggleVisited(detailId!, navTarget.item_id);
+                  setNavMode(false);
+                  setNavTarget(null);
+                }}
+                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg hover:bg-emerald-700"
+              >
+                ✅ Đã đến
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </UserLayout>
   );
 };
