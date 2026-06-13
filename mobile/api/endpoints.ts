@@ -394,6 +394,59 @@ export const userApi = {
     >('/user/leaderboard', { params });
     return data;
   },
+
+  // Itineraries (Lịch trình)
+  getItineraries: async () => {
+    const { data } = await axiosClient.get<ApiResponse<any[]>>('/user/itineraries');
+    return data;
+  },
+
+  getItineraryDetail: async (itineraryId: number) => {
+    const { data } = await axiosClient.get<ApiResponse<any>>(`/user/itineraries/${itineraryId}`);
+    return data;
+  },
+
+  createItinerary: async (payload: {
+    title: string;
+    description?: string;
+    start_date: string;
+    end_date: string;
+    items?: any[];
+  }) => {
+    const { data } = await axiosClient.post<ApiResponse<any>>('/user/itineraries', payload);
+    return data;
+  },
+
+  updateItinerary: async (
+    itineraryId: number,
+    payload: {
+      title: string;
+      description?: string;
+      start_date: string;
+      end_date: string;
+      items?: any[];
+    }
+  ) => {
+    const { data } = await axiosClient.put<ApiResponse<any>>(
+      `/user/itineraries/${itineraryId}`,
+      payload
+    );
+    return data;
+  },
+
+  deleteItinerary: async (itineraryId: number) => {
+    const { data } = await axiosClient.delete<ApiResponse<null>>(
+      `/user/itineraries/${itineraryId}`
+    );
+    return data;
+  },
+
+  toggleItemVisited: async (itineraryId: number, itemId: number) => {
+    const { data } = await axiosClient.patch<ApiResponse<{ item_id: number; visited_at: string | null }>>(
+      `/user/itineraries/${itineraryId}/items/${itemId}/visit`
+    );
+    return data;
+  },
 };
 
 // ============================================================

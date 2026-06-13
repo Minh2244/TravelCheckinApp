@@ -3,8 +3,6 @@ import express from "express";
 import { createServer } from "http";
 import cors from "cors";
 import dotenv from "dotenv";
-import fs from "fs";
-import path from "path";
 import jwt from "jsonwebtoken";
 import { Server as SocketIOServer } from "socket.io";
 import { checkDatabaseConnection, pool } from "./config/database";
@@ -25,6 +23,8 @@ import { initSocketHub } from "./utils/socketHub";
 import { ensureLocationChatSchema } from "./utils/locationChat";
 import locationChatRoutes from "./routes/locationChatRoutes";
 import { startCommissionCron } from "./cron/commissionJob";
+import imageRoutes from "./routes/imageRoutes";
+import itineraryRoutes from "./routes/itineraryRoutes";
 
 dotenv.config();
 
@@ -37,21 +37,6 @@ app.use(cors());
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
 
-// Serve uploaded files (avatars/backgrounds) from backend/uploads
-const uploadRoot = path.resolve(__dirname, "..", "uploads");
-for (const dir of [
-  uploadRoot,
-  path.join(uploadRoot, "avatars"),
-  path.join(uploadRoot, "backgrounds"),
-  path.join(uploadRoot, "locations"),
-  path.join(uploadRoot, "services"),
-  path.join(uploadRoot, "reviews"),
-  path.join(uploadRoot, "checkins"),
-]) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-app.use("/uploads", express.static(uploadRoot));
-
 app.use("/api/auth", authRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/admin", adminRoutes);
@@ -63,6 +48,8 @@ app.use("/api/chat", locationChatRoutes);
 app.use("/api/sos", sosRoutes);
 app.use("/api/owner", ownerRoutes);
 app.use("/api/geo", geoRoutes);
+app.use("/api/images", imageRoutes);
+app.use("/api/user/itineraries", itineraryRoutes);
 
 // Realtime events (SSE)
 // Note: EventSource can't send Authorization headers, so token is provided via query.

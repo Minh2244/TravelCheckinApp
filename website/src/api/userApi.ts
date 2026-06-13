@@ -314,6 +314,53 @@ const userApi = {
     return response.data;
   },
 
+  // Itineraries (Lịch trình)
+  getItineraries: async () => {
+    const response = await axiosClient.get<ApiResponse<any[]>>("/user/itineraries");
+    return response.data;
+  },
+  getItineraryDetail: async (itineraryId: number) => {
+    const response = await axiosClient.get<ApiResponse<any>>(`/user/itineraries/${itineraryId}`);
+    return response.data;
+  },
+  createItinerary: async (payload: {
+    title: string;
+    description?: string;
+    start_date: string;
+    end_date: string;
+    items?: any[];
+  }) => {
+    const response = await axiosClient.post<ApiResponse<any>>("/user/itineraries", payload);
+    return response.data;
+  },
+  updateItinerary: async (
+    itineraryId: number,
+    payload: {
+      title: string;
+      description?: string;
+      start_date: string;
+      end_date: string;
+      items?: any[];
+    },
+  ) => {
+    const response = await axiosClient.put<ApiResponse<any>>(
+      `/user/itineraries/${itineraryId}`,
+      payload,
+    );
+    return response.data;
+  },
+  deleteItinerary: async (itineraryId: number) => {
+    const response = await axiosClient.delete<ApiResponse<null>>(
+      `/user/itineraries/${itineraryId}`,
+    );
+    return response.data;
+  },
+  toggleItemVisited: async (itineraryId: number, itemId: number) => {
+    const response = await axiosClient.patch<ApiResponse<{ item_id: number; visited_at: string | null }>>(
+      `/user/itineraries/${itineraryId}/items/${itemId}/visit`,
+    );
+    return response.data;
+  },
 };
 
 export default userApi;
