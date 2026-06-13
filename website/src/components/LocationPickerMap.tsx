@@ -427,9 +427,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                         name: searchMarker.name,
                       });
                     }
-                    // Convert search marker to picked point (keep pin on map)
-                    setPickedPoint({ lat: searchMarker.lat, lng: searchMarker.lng });
-                    setSearchMarker(null);
+                    // Keep green pin on map (don't convert to yellow)
                   }}
                   className="w-full px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-semibold hover:bg-green-700 transition-colors"
                 >
