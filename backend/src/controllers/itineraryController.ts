@@ -83,14 +83,16 @@ export async function getUserItineraryDetail(req: AuthenticatedRequest, res: Res
         ii.location_id,
         ii.custom_name,
         ii.custom_address,
+        ii.custom_lat,
+        ii.custom_lng,
         ii.time,
         ii.note,
         ii.estimated_cost,
         ii.visited_at,
         l.location_name,
         l.address AS location_address,
-        l.latitude AS location_lat,
-        l.longitude AS location_lng,
+        COALESCE(l.latitude, ii.custom_lat) AS location_lat,
+        COALESCE(l.longitude, ii.custom_lng) AS location_lng,
         l.rating AS location_rating
       FROM itinerary_items ii
       LEFT JOIN locations l ON l.location_id = ii.location_id
@@ -160,8 +162,8 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
             return;
           }
           await conn.execute(
-            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, time, note, estimated_cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               itineraryId,
               item.day_number,
@@ -169,6 +171,8 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
               item.location_id || null,
               item.custom_name?.trim() || null,
               item.custom_address?.trim() || null,
+              item.custom_lat ?? null,
+              item.custom_lng ?? null,
               item.time?.trim() || null,
               item.note?.trim() || null,
               item.estimated_cost ?? null,
@@ -273,8 +277,8 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
             return;
           }
           await conn.execute(
-            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, time, note, estimated_cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               itineraryId,
               item.day_number,
@@ -282,6 +286,8 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
               item.location_id || null,
               item.custom_name?.trim() || null,
               item.custom_address?.trim() || null,
+              item.custom_lat ?? null,
+              item.custom_lng ?? null,
               item.time?.trim() || null,
               item.note?.trim() || null,
               item.estimated_cost ?? null,
