@@ -2430,7 +2430,7 @@ const UserMap = () => {
                       routeOnlyDestination.lat,
                       routeOnlyDestination.lng,
                     ]}
-                    icon={getPinIconByKind("ownerSelected")}
+                    icon={getPinIconByKind("search")}
                     zIndexOffset={1000}
                   >
                     <Popup autoPan={false}>
