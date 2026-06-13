@@ -256,11 +256,11 @@ export default function EditItineraryScreen() {
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Ngày bắt đầu *</Text>
-                <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" />
+                <TextInput style={styles.input} value={startDate} onChangeText={(v) => { setStartDate(v); if (endDate && v > endDate) setEndDate(v); }} placeholder="YYYY-MM-DD" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Ngày kết thúc *</Text>
-                <TextInput style={styles.input} value={endDate} onChangeText={setEndDate} placeholder="YYYY-MM-DD" />
+                <TextInput style={styles.input} value={endDate} onChangeText={(v) => { setEndDate(v); if (startDate && v < startDate) setStartDate(v); }} placeholder="YYYY-MM-DD" />
               </View>
             </View>
           </View>
