@@ -185,16 +185,23 @@ const ItineraryEditor = () => {
     }
   };
 
-  // Bắt đầu dẫn đường đến địa điểm
+  // Bắt đầu dẫn đường → chuyển sang bản đồ chính với focusRoute
   const handleStartNav = (item: ItineraryItemForm) => {
-    setNavTarget(item);
-    setNavMode(true);
-    // Lấy GPS hiện tại
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setMyPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    if (!item.location_lat || !item.location_lng) {
+      alert("Địa điểm này chưa có tọa độ để dẫn đường");
+      return;
+    }
+    navigate("/user/map", {
+      state: {
+        focusRoute: {
+          location_id: item.location_id || 0,
+          lat: Number(item.location_lat),
+          lng: Number(item.location_lng),
+          location_name: item.location_name || item.custom_name || "",
+          address: item.custom_address || "",
+        },
+      },
+    });
   };
 
   // Tính khoảng cách giữa 2 điểm (haversine)

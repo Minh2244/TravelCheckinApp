@@ -99,16 +99,23 @@ const Itineraries = () => {
     }
   };
 
-  // Bắt đầu dẫn đường
+  // Bắt đầu dẫn đường → chuyển sang bản đồ chính với focusRoute
   const handleStartNav = (item: any) => {
-    setNavTarget(item);
-    setNavMode(true);
-    // Lấy GPS hiện tại
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {},
-      () => {},
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    if (!item.location_lat || !item.location_lng) {
+      alert("Địa điểm này chưa có tọa độ để dẫn đường");
+      return;
+    }
+    navigate("/user/map", {
+      state: {
+        focusRoute: {
+          location_id: item.location_id || 0,
+          lat: Number(item.location_lat),
+          lng: Number(item.location_lng),
+          location_name: item.location_name || item.custom_name || "",
+          address: item.custom_address || "",
+        },
+      },
+    });
   };
 
   // Tính khoảng cách
