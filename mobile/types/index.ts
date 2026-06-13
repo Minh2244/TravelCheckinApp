@@ -369,6 +369,49 @@ export interface BookingReminder {
 }
 
 // ============================================================
+// ITINERARY (Lịch trình)
+// ============================================================
+
+export interface ItinerarySummary {
+  itinerary_id: number;
+  title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  total_items: number;
+  total_estimated_cost: number;
+  visited_count: number;
+  created_at: string;
+}
+
+export interface ItineraryItem {
+  item_id: number;
+  day_number: number;
+  sort_order: number;
+  location_id: number | null;
+  location_name: string | null;
+  location_image: string | null;
+  location_rating: number | null;
+  custom_name: string | null;
+  custom_address: string | null;
+  time: string | null;
+  note: string | null;
+  estimated_cost: number | null;
+  visited_at: string | null;
+}
+
+export interface ItineraryDetail {
+  itinerary_id: number;
+  title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  created_at: string;
+  updated_at: string;
+  items: ItineraryItem[];
+}
+
+// ============================================================
 // GEO
 // ============================================================
 

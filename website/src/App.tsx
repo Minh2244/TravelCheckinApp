@@ -58,6 +58,8 @@ const UserBookingReminders = lazy(
 const UserMyTickets = lazy(() => import("./pages/User/MyTickets"));
 const UserTablePass = lazy(() => import("./pages/User/TableBookingPass"));
 const UserRoomPass = lazy(() => import("./pages/User/RoomBookingPass"));
+const UserItineraries = lazy(() => import("./pages/User/Itineraries"));
+const UserItineraryEditor = lazy(() => import("./pages/User/ItineraryEditor"));
 
 const OwnerDashboard = lazy(() => import("./pages/Owner/OwnerDashboard"));
 const OwnerProfile = lazy(() => import("./pages/Owner/OwnerProfile"));
@@ -487,6 +489,30 @@ function App() {
             }
           />
 
+          <Route
+            path="/user/itineraries"
+            element={
+              <ProtectedRoute allowedRoles={["user"]}>
+                <UserItineraries />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/user/itineraries/create"
+            element={
+              <ProtectedRoute allowedRoles={["user"]}>
+                <UserItineraryEditor />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/user/itineraries/:id"
+            element={
+              <ProtectedRoute allowedRoles={["user"]}>
+                <UserItineraryEditor />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/user/history"
