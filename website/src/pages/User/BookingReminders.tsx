@@ -103,11 +103,7 @@ const BookingReminders = () => {
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#ccefe8]/80 via-[#e2f7f3] to-[#ccefe8]/70 border border-teal-100 p-6 mb-6">
           <div className="absolute top-0 right-0 h-32 w-32 bg-teal-200/20 rounded-full blur-2xl" />
           <div className="relative z-10 text-left">
-            <span className="text-[10px] font-extrabold tracking-widest text-teal-700 uppercase">TIỆN ÍCH HÀNH TRÌNH</span>
-            <h2 className="text-2xl font-black text-slate-800 mt-1 font-heading">
-              Nhắc Lịch Trình
-            </h2>
-            <p className="text-xs text-slate-600 mt-2 font-medium max-w-xl leading-relaxed">
+            <p className="text-xs text-slate-600 font-medium max-w-xl leading-relaxed">
               Chào mừng bạn đến với trung tâm giám sát hành trình. Hệ thống tự động theo dõi thời gian check-in/check-out và phát tín hiệu cảnh báo lịch đặt trước cho mọi loại hình dịch vụ.
             </p>
           </div>

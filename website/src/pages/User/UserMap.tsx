@@ -952,25 +952,6 @@ const UserMap = () => {
   const [selectedServicesError, setSelectedServicesError] = useState<
     string | null
   >(null);
-  const [nearbyRadius, setNearbyRadius] = useState<number>(() => {
-    const saved = sessionStorage.getItem("userMapNearbyRadius");
-    return saved ? Number(saved) : 1000;
-  });
-  // Gia tri input ban dau: lay tu sessionStorage neu co
-  const [customRadiusInput, setCustomRadiusInput] = useState<string>(() => {
-    const saved = sessionStorage.getItem("userMapCustomRadiusInput");
-    return saved ?? "";
-  });
-
-  // Luu nearbyRadius + customRadiusInput vao sessionStorage de giu khi reload
-  useEffect(() => {
-    sessionStorage.setItem("userMapNearbyRadius", String(nearbyRadius));
-  }, [nearbyRadius]);
-
-  useEffect(() => {
-    sessionStorage.setItem("userMapCustomRadiusInput", customRadiusInput);
-  }, [customRadiusInput]);
-
   const [nearbyCategory, setNearbyCategory] = useState<
     "all" | "food" | "tourist" | "hotel" | "mine"
   >("all");
@@ -1174,9 +1155,9 @@ const UserMap = () => {
     [nearbyCategory, favoriteLocationIds],
   );
 
-  // Danh sach da gop: loc theo ban kinh + loai, sap xep theo khoang cach
+  // Danh sach da gop: loc theo loai, sap xep theo ten
   const filteredLocations = useMemo(() => {
-    const filtered = locationMarkers
+    return locationMarkers
       .filter((entry) => matchesNearbyCategory(entry.item))
       .map((entry) => {
         const distance = myPosition
@@ -1184,20 +1165,12 @@ const UserMap = () => {
           : null;
         return { ...entry, distance };
       })
-      .filter((entry) => {
-        if (!myPosition) return true;
-        // nearbyRadius === 0: ban kinh 0km, khong hien dia diem nao
-        if (nearbyRadius === 0) return false;
-        return entry.distance != null && entry.distance <= nearbyRadius;
-      })
       .sort((a, b) => {
-        if (a.distance != null && b.distance != null) return a.distance - b.distance;
-        if (a.distance != null) return -1;
-        if (b.distance != null) return 1;
-        return 0;
+        const nameA = a.item.location_name || "";
+        const nameB = b.item.location_name || "";
+        return nameA.localeCompare(nameB, "vi");
       });
-    return filtered;
-  }, [locationMarkers, matchesNearbyCategory, myPosition, nearbyRadius]);
+  }, [locationMarkers, matchesNearbyCategory, myPosition]);
 
   const mapViewRef = useRef<MapView>({
     center: DEFAULT_CENTER,
@@ -1632,22 +1605,7 @@ const UserMap = () => {
     }
   }, [routeEnabled, routeTarget, routeMode]);
 
-  const isFirstSelectionRenderRef = useRef(true);
-
-  // Lưu selected location vào sessionStorage để persist khi reload
-  useEffect(() => {
-    if (isFirstSelectionRenderRef.current) {
-      isFirstSelectionRenderRef.current = false;
-      return;
-    }
-    if (selected) {
-      sessionStorage.setItem("userMapSelected", JSON.stringify(selected));
-    } else {
-      sessionStorage.removeItem("userMapSelected");
-    }
-  }, [selected]);
-
-  // Khôi phục route và selected từ sessionStorage khi mount
+  // Khôi phục route từ sessionStorage khi mount
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("userMapRoute");
@@ -1665,18 +1623,6 @@ const UserMap = () => {
       }
     } catch {
       sessionStorage.removeItem("userMapRoute");
-    }
-
-    try {
-      const savedSel = sessionStorage.getItem("userMapSelected");
-      if (savedSel) {
-        const loc = JSON.parse(savedSel) as Location;
-        setSelected(loc);
-        setPanelOpen(true);
-        setSidebarTab("detail");
-      }
-    } catch {
-      sessionStorage.removeItem("userMapSelected");
     }
   }, []);
 
@@ -2373,7 +2319,6 @@ const UserMap = () => {
   return (
     <UserLayout
       title="Bản đồ"
-      subtitle="Bản đồ"
       activeKey="/user/map"
       showSearch
       onSearch={setKeyword}
@@ -3107,7 +3052,7 @@ const UserMap = () => {
                 </svg>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-amber-700">Cần bật định vị</p>
-                  <p className="text-[10px] text-amber-600">Bán kính, chỉ đường và check-in cần GPS.</p>
+                  <p className="text-[10px] text-amber-600">Chỉ đường và check-in cần GPS.</p>
                 </div>
                 <button
                   type="button"
@@ -3192,53 +3137,6 @@ const UserMap = () => {
                   </button>
                 </div>
 
-                {/* Filter bán kính */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-400">Bán kính:</span>
-                  {[1000, 5000].map((radius) => (
-                    <button
-                      key={radius}
-                      type="button"
-                      disabled={!myPosition}
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        !myPosition
-                          ? "border border-gray-100 text-gray-300 cursor-not-allowed"
-                          : nearbyRadius === radius
-                          ? "bg-teal-600 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
-                      onClick={() => { setNearbyRadius(radius); setCustomRadiusInput(""); }}
-                    >
-                      {radius / 1000}km
-                    </button>
-                  ))}
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={0.1}
-                      max={100}
-                      step={0.1}
-                      placeholder="Tự chọn"
-                      value={customRadiusInput}
-                      onChange={(e) => setCustomRadiusInput(e.target.value)}
-                      className="w-20 rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 focus:outline-none"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          const val = Number(customRadiusInput);
-                          if (customRadiusInput === "" || val <= 0) {
-                            // Khong cho nhap 0 hoac am
-                            setNearbyRadius(0);
-                            setCustomRadiusInput("");
-                          } else if (val >= 0.1) {
-                            setNearbyRadius(Math.round(val * 1000));
-                          }
-                        }
-                      }}
-                    />
-                    <span className="text-[11px] text-gray-400">km</span>
-                  </div>
-                </div>
-
                 {/* Filter loại địa điểm */}
                 <div className="flex flex-wrap gap-2">
                   {(
@@ -3284,9 +3182,7 @@ const UserMap = () => {
                     <p className="text-xs text-red-500">{error}</p>
                   ) : filteredLocations.length === 0 ? (
                     <p className="text-xs text-gray-400">
-                      {nearbyRadius === 0 && myPosition
-                        ? "Không có địa điểm nào trong phạm vi tìm kiếm."
-                        : "Không có địa điểm phù hợp."}
+                      Không có địa điểm phù hợp.
                     </p>
                   ) : (
                     <div className="flex flex-col gap-2 max-h-[400px] overflow-auto pr-1">
@@ -3963,7 +3859,7 @@ const UserMap = () => {
                 </svg>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-amber-700">Cần bật định vị</p>
-                  <p className="text-[10px] text-amber-600">Bán kính, chỉ đường và check-in cần GPS.</p>
+                  <p className="text-[10px] text-amber-600">Chỉ đường và check-in cần GPS.</p>
                 </div>
                 <button
                   type="button"

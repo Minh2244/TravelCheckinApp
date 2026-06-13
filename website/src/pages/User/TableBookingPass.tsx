@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import bookingApi from "../../api/bookingApi";
-import LocationChatBubble from "../../components/LocationChatBubble";
 import { formatMoney } from "../../utils/formatMoney";
 import type { TableReservationItem } from "../../types/booking.types";
 import { Modal, message } from "antd";
@@ -73,7 +72,6 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
   const [error, setError] = useState<string | null>(null);
   const [passes, setPasses] = useState<TableReservationItem[]>([]);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
-  const [chatLocation, setChatLocation] = useState<{ id: number; name: string; image: string | null } | null>(null);
 
   const loadPasses = useCallback(async () => {
     try {
@@ -219,9 +217,6 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
               <span className="flex h-2 w-2 rounded-full bg-amber-500" />
               Vé Đặt Bàn Ẩm Thực
             </div>
-            <h2 className="mt-3 text-2xl font-extrabold text-gray-900 font-heading tracking-tight sm:text-3xl">
-              Vỏ Vé Ăn Uống của tôi
-            </h2>
             <p className="mt-1.5 text-xs sm:text-sm text-gray-500">
               Xuất trình mã QR tại nhà hàng/quán cafe để check-in dùng bàn và các dịch vụ đi kèm.
             </p>
@@ -328,19 +323,7 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                             </button>
                           )}
 
-                          {pass.locationId && (
-                            <button
-                              type="button"
-                              onClick={() => setChatLocation({
-                                id: Number(pass.locationId),
-                                name: pass.locationName || "Địa điểm ăn uống",
-                                image: null
-                              })}
-                              className="inline-flex items-center rounded-md border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-600 text-xs font-bold px-4 py-2 shadow-sm transition-all"
-                            >
-                              💬 Nhắn tin cho quán
-                            </button>
-                          )}
+
                         </div>
                       </div>
 
@@ -413,15 +396,7 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
             </div>
           </div>
         )}
-        {chatLocation && (
-          <LocationChatBubble
-            locationId={chatLocation.id}
-            userRole="user"
-            locationName={chatLocation.name}
-            locationImage={chatLocation.image}
-            initialOpen={true}
-          />
-        )}
+
       </section>
     );
 
