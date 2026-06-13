@@ -45,7 +45,7 @@ const AiChat = () => {
     <UserLayout title="Chat AI" activeKey="/user/ai-chat">
       <section className="user-section p-6 sm:p-8">
         <p className="text-sm text-gray-500">
-          Lịch sử chat được lấy từ backend, AI sẽ phản hồi khi dịch vụ sẵn sàng.
+          Trò chuyện với AI để được gợi ý địa điểm, lập kế hoạch du lịch và tư vấn chuyến đi.
         </p>
 
         <div className="mt-6 space-y-3">

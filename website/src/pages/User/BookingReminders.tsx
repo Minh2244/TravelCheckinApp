@@ -96,7 +96,7 @@ const BookingReminders = () => {
   };
 
   return (
-    <UserLayout title="Nhắc lịch trình" activeKey="/user/booking-reminders">
+    <UserLayout title="Nhắc lịch" activeKey="/user/booking-reminders">
       <section className="user-section p-4 sm:p-6 lg:p-8">
         
         {/* Banner tiêu đề nâng cấp với màu nền Ngọc Bích Sáng Nhã Nhặn */}
@@ -104,7 +104,7 @@ const BookingReminders = () => {
           <div className="absolute top-0 right-0 h-32 w-32 bg-teal-200/20 rounded-full blur-2xl" />
           <div className="relative z-10 text-left">
             <p className="text-xs text-slate-600 font-medium max-w-xl leading-relaxed">
-              Chào mừng bạn đến với trung tâm giám sát hành trình. Hệ thống tự động theo dõi thời gian check-in/check-out và phát tín hiệu cảnh báo lịch đặt trước cho mọi loại hình dịch vụ.
+              Theo dõi thời gian check-in/check-out và nhận thông báo nhắc nhở trước giờ đặt chỗ.
             </p>
           </div>
         </div>

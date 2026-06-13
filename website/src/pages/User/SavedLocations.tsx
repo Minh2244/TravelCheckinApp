@@ -70,7 +70,7 @@ const SavedLocations = () => {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-sm text-slate-500">
-              Những địa điểm bạn lưu để xem lại nhanh hoặc đặt trước sau.
+              Các địa điểm bạn đã lưu để xem lại nhanh hoặc đặt chỗ sau.
             </p>
           </div>
           <div className="rounded-full bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700">
