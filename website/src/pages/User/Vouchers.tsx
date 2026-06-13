@@ -6,7 +6,7 @@ const Vouchers = () => {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
+  const [filter, setFilter] = useState<"all" | "ticket" | "food" | "room">("all");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -25,11 +25,12 @@ const Vouchers = () => {
   }, []);
 
   const now = new Date();
-  const filtered = items.filter((v) => {
-    if (filter === "active") return new Date(v.end_date) >= now;
-    if (filter === "expired") return new Date(v.end_date) < now;
-    return true;
-  });
+  const filtered = items
+    .filter((v) => new Date(v.end_date) >= now)
+    .filter((v) => {
+      if (filter === "all") return true;
+      return v.apply_to_service_type === "all" || v.apply_to_service_type === filter;
+    });
 
   return (
     <UserLayout title="Voucher" activeKey="/user/vouchers">
@@ -42,7 +43,7 @@ const Vouchers = () => {
         </p>
 
         <div className="mt-4 flex gap-2">
-          {(["all", "active", "expired"] as const).map((key) => (
+          {(["all", "ticket", "food", "room"] as const).map((key) => (
             <button
               key={key}
               type="button"
@@ -53,7 +54,13 @@ const Vouchers = () => {
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              {key === "all" ? "Tất cả" : key === "active" ? "Còn hiệu lực" : "Hết hạn"}
+              {key === "all"
+                ? "Tất cả"
+                : key === "ticket"
+                ? "Du lịch"
+                : key === "food"
+                ? "Ăn uống"
+                : "Khách sạn"}
             </button>
           ))}
         </div>

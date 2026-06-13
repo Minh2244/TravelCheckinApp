@@ -184,11 +184,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       label: "Ngân hàng Admin",
     },
     {
-      key: "/admin/reports",
-      icon: <DashboardOutlined />,
-      label: "Báo cáo vi phạm",
-    },
-    {
       key: "/admin/analytics",
       icon: <BarChartOutlined />,
       label: "Analytics check-in",
@@ -399,14 +394,14 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   })();
 
   return (
-    <div className="min-h-screen">
-      <Layout className="min-h-screen" style={{ background: "#f5f5f5" }}>
+    <div className="h-screen overflow-hidden">
+      <Layout className="h-screen" style={{ background: "#f5f5f5" }}>
         <Sider
           trigger={null}
           collapsible
           collapsed={collapsed}
           theme="light"
-          className="shadow-md"
+          className="shadow-md h-full overflow-y-auto"
           width={250}
           style={{ backgroundColor: "#fff" }}
         >
@@ -434,7 +429,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           />
         </Sider>
 
-        <Layout style={{ background: "transparent" }}>
+        <Layout className="h-full overflow-hidden" style={{ background: "transparent" }}>
           <Header
             className="p-0 shadow-sm flex justify-between items-center px-4"
             style={{ backgroundColor: "#fff" }}

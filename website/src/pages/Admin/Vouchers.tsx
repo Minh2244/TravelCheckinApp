@@ -173,7 +173,7 @@ const AdminVouchers = () => {
   });
   const [ownStatusFilter, setOwnStatusFilter] = useState<
     VoucherStatus | undefined
-  >("inactive");
+  >(undefined);
   const [ownSearch, setOwnSearch] = useState("");
   const [sysStats, setSysStats] = useState<any>(null);
   const [ownStats, setOwnStats] = useState<any>(null);

@@ -63,9 +63,7 @@ const OwnerReviews = () => {
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [replyRow, setReplyRow] = useState<ReviewRow | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState("");
-  const [reportRow, setReportRow] = useState<ReviewRow | null>(null);
+
   const [locations, setLocations] = useState<
     Array<{ location_id: number; location_name: string }>
   >([]);
@@ -165,23 +163,7 @@ const OwnerReviews = () => {
     [load],
   );
 
-  const openReport = useCallback((row: ReviewRow) => {
-    setReportRow(row);
-    setReportReason("");
-    setReportOpen(true);
-  }, []);
 
-  const submitReport = useCallback(async () => {
-    if (!reportRow) return;
-    try {
-      await ownerApi.reportReviewUser(reportRow.review_id, reportReason);
-      message.success("Đã báo cáo tài khoản user tới admin");
-      setReportOpen(false);
-      setReportReason("");
-    } catch (err: unknown) {
-      message.error(getErrorMessage(err, "Lỗi gửi báo cáo"));
-    }
-  }, [reportReason, reportRow]);
 
   const filteredItems = useMemo(() => {
     if (!ratingFilter) return items;
@@ -275,14 +257,11 @@ const OwnerReviews = () => {
                 Xóa
               </Button>
             </Popconfirm>
-            <Button size="small" onClick={() => openReport(row)}>
-              Báo cáo user
-            </Button>
           </Space>
         ),
       },
     ],
-    [deleteReview, openReply, openReport, toggleHide],
+    [deleteReview, openReply, toggleHide],
   );
 
   return (
@@ -338,22 +317,7 @@ const OwnerReviews = () => {
         />
       </Modal>
 
-      <Modal
-        title={`Báo cáo user từ review #${reportRow?.review_id ?? ""}`}
-        open={reportOpen}
-        onCancel={() => setReportOpen(false)}
-        onOk={() => {
-          void submitReport();
-        }}
-        okText="Gửi báo cáo"
-      >
-        <Input.TextArea
-          rows={5}
-          value={reportReason}
-          onChange={(e) => setReportReason(e.target.value)}
-          placeholder="Mô tả lý do báo cáo (ngôn từ thô tục, xúc phạm, spam...)"
-        />
-      </Modal>
+
     </MainLayout>
   );
 };

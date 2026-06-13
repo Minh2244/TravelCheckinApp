@@ -364,188 +364,9 @@ const OwnerVouchers = () => {
     }
   };
 
-  const columns: ColumnsType<OwnerVoucherRow> = useMemo(
-    () => [
-      { title: "#", dataIndex: "voucher_id", width: 70 },
-      { title: "Code", dataIndex: "code", width: 120 },
-      {
-        title: "Tên voucher",
-        dataIndex: "campaign_name",
-        width: 220,
-        render: (v: string, row) => (
-          <div>
-            <div className="font-semibold text-slate-800">{v}</div>
-            {row.campaign_description && (
-              <div className="text-xs text-slate-500">{row.campaign_description}</div>
-            )}
-          </div>
-        )
-      },
-      {
-        title: "Phạm vi",
-        width: 120,
-        render: (_: unknown, row) =>
-          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
-      },
-      {
-        title: "Địa điểm",
-        dataIndex: "location_name",
-        width: 150,
-        render: (v: unknown, row) => {
-          if (typeof v === "string" && v.trim()) return v;
-          return row.location_id != null ? "" : "Tất cả";
-        },
-      },
-      {
-        title: "Giảm",
-        width: 120,
-        render: (_: unknown, row) => {
-          if (row.discount_type === "percent") return `${row.discount_value}%`;
-          return `${Number(row.discount_value || 0).toLocaleString("vi-VN")}₫`;
-        },
-      },
-      {
-        title: "Đã dùng",
-        width: 110,
-        render: (_: unknown, row) =>
-          `${Number(row.used_count || 0)}/${Number(row.usage_limit || 0)}`,
-      },
-      {
-        title: "Trạng thái",
-        dataIndex: "computed_status",
-        width: 130,
-        render: (s: string) => {
-          const statusText = s === "active" ? "ĐANG HOẠT ĐỘNG" : s === "inactive" ? "TẠM TẮT" : "HẾT HẠN";
-          return (
-            <Tag
-              color={
-                s === "active" ? "green" : s === "inactive" ? "orange" : "red"
-              }
-            >
-              {statusText}
-            </Tag>
-          );
-        },
-      },
-      {
-        title: "Hiệu lực",
-        width: 180,
-        render: (_: unknown, row) => (
-          <div className="text-xs text-gray-600">
-            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
-            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
-          </div>
-        ),
-      },
-      {
-        title: "Hành động",
-        width: 180,
-        render: (_: unknown, row) => (
-          <Space>
-            <Button size="small" onClick={() => onEdit(row)}>
-              Sửa
-            </Button>
-            <Button size="small" onClick={() => loadUsageHistory(row.voucher_id)}>
-              Lịch sử
-            </Button>
-            <Popconfirm
-              title="Xóa voucher?"
-              description="Owner sẽ không còn thấy voucher này."
-              okText="Xóa"
-              cancelText="Hủy"
-              onConfirm={() => onDelete(row)}
-            >
-              <Button size="small" danger>
-                Xóa
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
-      },
-    ],
-    [onDelete, onEdit],
-  );
-
-  const adminColumns: ColumnsType<any> = useMemo(
-    () => [
-      { title: "#", dataIndex: "voucher_id", width: 70 },
-      { title: "Code", dataIndex: "code", width: 120 },
-      {
-        title: "Tên voucher",
-        dataIndex: "campaign_name",
-        width: 220,
-        render: (v: string, row) => (
-          <div>
-            <div className="font-semibold text-slate-800">{v}</div>
-            {row.campaign_description && (
-              <div className="text-xs text-slate-500">{row.campaign_description}</div>
-            )}
-          </div>
-        )
-      },
-      {
-        title: "Phạm vi",
-        width: 120,
-        render: (_: unknown, row) =>
-          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
-      },
-      {
-        title: "Địa điểm",
-        dataIndex: "location_name",
-        width: 150,
-        render: (v: unknown) => {
-          if (typeof v === "string" && v.trim()) return v;
-          return "Tất cả";
-        },
-      },
-      {
-        title: "Giảm",
-        width: 120,
-        render: (_: unknown, row) => {
-          if (row.discount_type === "percent") return `${row.discount_value}%`;
-          return `${Number(row.discount_value || 0).toLocaleString("vi-VN")}₫`;
-        },
-      },
-      {
-        title: "Đã dùng",
-        width: 110,
-        render: (_: unknown, row) =>
-          `${Number(row.used_count || 0)}/${Number(row.usage_limit || 0)}`,
-      },
-      {
-        title: "Trạng thái",
-        dataIndex: "computed_status",
-        width: 130,
-        render: (s: string) => {
-          const statusText = s === "active" ? "ĐANG HOẠT ĐỘNG" : s === "inactive" ? "TẠM TẮT" : "HẾT HẠN";
-          return (
-            <Tag
-              color={
-                s === "active" ? "green" : s === "inactive" ? "orange" : "red"
-              }
-            >
-              {statusText}
-            </Tag>
-          );
-        },
-      },
-      {
-        title: "Hiệu lực",
-        width: 180,
-        render: (_: unknown, row) => (
-          <div className="text-xs text-gray-600">
-            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
-            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
-          </div>
-        ),
-      },
-    ],
-    [],
-  );
-
   const filteredItems = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
-    return (items || [])
+    const result = (items || [])
       .filter((row) => {
         if (statusFilter === "all") return true;
         const s = String(row.computed_status || row.status || "inactive");
@@ -567,11 +388,12 @@ const OwnerVouchers = () => {
           .toLowerCase();
         return hay.includes(normalizedSearch);
       });
+    return [...result].sort((a, b) => b.voucher_id - a.voucher_id);
   }, [items, search, statusFilter]);
 
   const filteredAdminItems = useMemo(() => {
     const normalizedSearch = searchAdmin.trim().toLowerCase();
-    return (adminVouchers || [])
+    const result = (adminVouchers || [])
       .filter((row) => {
         if (!normalizedSearch) return true;
         const hay = [
@@ -585,21 +407,324 @@ const OwnerVouchers = () => {
           .toLowerCase();
         return hay.includes(normalizedSearch);
       });
+    return [...result].sort((a, b) => b.voucher_id - a.voucher_id);
   }, [adminVouchers, searchAdmin]);
+
+  const columns: ColumnsType<OwnerVoucherRow> = useMemo(
+    () => [
+      {
+        title: "Số thứ tự",
+        width: 90,
+        align: "center",
+        render: (_: any, __: any, index: number) => filteredItems.length - index,
+      },
+      {
+        title: "Mã voucher",
+        dataIndex: "code",
+        width: 110,
+        render: (code: string) => (
+          <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
+            {code}
+          </span>
+        ),
+      },
+      {
+        title: "Tên voucher",
+        dataIndex: "campaign_name",
+        width: 200,
+        render: (v: string, row) => (
+          <div>
+            <div className="font-semibold text-slate-800">{v}</div>
+            {row.campaign_description && (
+              <div className="text-xs text-slate-500">{row.campaign_description}</div>
+            )}
+          </div>
+        )
+      },
+      {
+        title: "Phạm vi",
+        width: 90,
+        align: "center",
+        render: (_: unknown, row) =>
+          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
+      },
+      {
+        title: "Địa điểm",
+        dataIndex: "location_name",
+        width: 130,
+        render: (v: unknown, row) => {
+          if (typeof v === "string" && v.trim()) return v;
+          return row.location_id != null ? "" : "Tất cả";
+        },
+      },
+      {
+        title: "Giảm",
+        width: 100,
+        align: "center",
+        render: (_: unknown, row) => {
+          const val = Number(row.discount_value || 0);
+          if (row.discount_type === "percent" && val <= 100) {
+            return (
+              <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+                {val}%
+              </span>
+            );
+          }
+          return (
+            <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+              {val.toLocaleString("vi-VN")}₫
+            </span>
+          );
+        },
+      },
+      {
+        title: "Đã dùng",
+        width: 100,
+        align: "center",
+        render: (_: unknown, row) => {
+          const used = Number(row.used_count || 0);
+          const limit = Number(row.usage_limit || 0);
+          const percent = limit > 0 ? (used / limit) * 100 : 0;
+          return (
+            <div className="flex flex-col items-center justify-center w-full">
+              <span className="font-semibold text-slate-700 text-xs">{used}/{limit}</span>
+              <div className="w-16 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+                <div
+                  className="bg-sky-500 h-full rounded-full"
+                  style={{ width: `${Math.min(percent, 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        title: "Trạng thái",
+        dataIndex: "computed_status",
+        width: 100,
+        align: "center",
+        render: (s: string) => {
+          const statusText = s === "active" ? "Còn hạn" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
+          return (
+            <Tag
+              color={
+                s === "active" ? "success" : s === "inactive" ? "warning" : "error"
+              }
+              className="rounded-full px-2.5 font-semibold text-xs border-0"
+            >
+              {statusText}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: "Hiệu lực",
+        width: 150,
+        align: "center",
+        render: (_: unknown, row) => (
+          <div className="text-xs text-gray-600">
+            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
+            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
+          </div>
+        ),
+      },
+      {
+        title: "Hành động",
+        width: 190,
+        align: "center",
+        render: (_: unknown, row) => (
+          <Space>
+            <Button
+              size="small"
+              shape="round"
+              style={{
+                color: "#2563eb",
+                borderColor: "#bfdbfe",
+                backgroundColor: "#eff6ff",
+                fontWeight: 600,
+              }}
+              onClick={() => onEdit(row)}
+            >
+              Sửa
+            </Button>
+            <Button
+              size="small"
+              shape="round"
+              style={{
+                color: "#4f46e5",
+                borderColor: "#c7d2fe",
+                backgroundColor: "#f5f3ff",
+                fontWeight: 600,
+              }}
+              onClick={() => loadUsageHistory(row.voucher_id)}
+            >
+              Lịch sử
+            </Button>
+            <Popconfirm
+              title="Xóa voucher?"
+              description="Owner sẽ không còn thấy voucher này."
+              okText="Xóa"
+              cancelText="Hủy"
+              onConfirm={() => onDelete(row)}
+            >
+              <Button
+                size="small"
+                shape="round"
+                style={{
+                  color: "#dc2626",
+                  borderColor: "#fecaca",
+                  backgroundColor: "#fef2f2",
+                  fontWeight: 600,
+                }}
+              >
+                Xóa
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
+    ],
+    [onDelete, onEdit, filteredItems],
+  );
+
+  const adminColumns: ColumnsType<any> = useMemo(
+    () => [
+      {
+        title: "Số thứ tự",
+        width: 90,
+        align: "center",
+        render: (_: any, __: any, index: number) => filteredAdminItems.length - index,
+      },
+      {
+        title: "Mã voucher",
+        dataIndex: "code",
+        width: 110,
+        render: (code: string) => (
+          <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
+            {code}
+          </span>
+        ),
+      },
+      {
+        title: "Tên voucher",
+        dataIndex: "campaign_name",
+        width: 200,
+        render: (v: string, row: any) => (
+          <div>
+            <div className="font-semibold text-slate-800">{v}</div>
+            {row.campaign_description && (
+              <div className="text-xs text-slate-500">{row.campaign_description}</div>
+            )}
+          </div>
+        )
+      },
+      {
+        title: "Phạm vi",
+        width: 90,
+        align: "center",
+        render: (_: unknown, row: any) =>
+          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
+      },
+      {
+        title: "Địa điểm",
+        dataIndex: "location_name",
+        width: 130,
+        render: (v: unknown) => {
+          if (typeof v === "string" && v.trim()) return v;
+          return "Tất cả";
+        },
+      },
+      {
+        title: "Giảm",
+        width: 100,
+        align: "center",
+        render: (_: unknown, row: any) => {
+          const val = Number(row.discount_value || 0);
+          if (row.discount_type === "percent" && val <= 100) {
+            return (
+              <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+                {val}%
+              </span>
+            );
+          }
+          return (
+            <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+              {val.toLocaleString("vi-VN")}₫
+            </span>
+          );
+        },
+      },
+      {
+        title: "Đã dùng",
+        width: 100,
+        align: "center",
+        render: (_: unknown, row: any) => {
+          const used = Number(row.used_count || 0);
+          const limit = Number(row.usage_limit || 0);
+          const percent = limit > 0 ? (used / limit) * 100 : 0;
+          return (
+            <div className="flex flex-col items-center justify-center w-full">
+              <span className="font-semibold text-slate-700 text-xs">{used}/{limit}</span>
+              <div className="w-16 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+                <div
+                  className="bg-sky-500 h-full rounded-full"
+                  style={{ width: `${Math.min(percent, 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        title: "Trạng thái",
+        dataIndex: "computed_status",
+        width: 100,
+        align: "center",
+        render: (s: string) => {
+          const statusText = s === "active" ? "Còn hạn" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
+          return (
+            <Tag
+              color={
+                s === "active" ? "success" : s === "inactive" ? "warning" : "error"
+              }
+              className="rounded-full px-2.5 font-semibold text-xs border-0"
+            >
+              {statusText}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: "Hiệu lực",
+        width: 150,
+        align: "center",
+        render: (_: unknown, row: any) => (
+          <div className="text-xs text-gray-600">
+            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
+            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
+          </div>
+        ),
+      },
+    ],
+    [filteredAdminItems],
+  );
 
   const historyColumns = [
     {
       title: "Mã Booking",
       dataIndex: "booking_id",
       key: "booking_id",
+      width: 110,
+      align: "center" as const,
       render: (id: number) => `#${id}`,
     },
     {
       title: "Khách hàng",
       key: "user",
+      width: 200,
       render: (_: any, record: any) => (
         <div>
-          <div className="font-semibold">{record.user_full_name}</div>
+          <div className="font-semibold text-slate-800">{record.user_full_name}</div>
           <div className="text-xs text-slate-500">{record.user_email}</div>
         </div>
       ),
@@ -608,18 +733,24 @@ const OwnerVouchers = () => {
       title: "Thời gian sử dụng",
       dataIndex: "used_at",
       key: "used_at",
+      width: 160,
+      align: "center" as const,
       render: (v: string) => formatDateTimeVi(v),
     },
     {
       title: "Tổng tiền đơn",
       dataIndex: "total_amount",
       key: "total_amount",
+      width: 130,
+      align: "center" as const,
       render: (v: number) => `${Number(v || 0).toLocaleString("vi-VN")}₫`,
     },
     {
       title: "Tiền giảm giá",
       dataIndex: "discount_amount",
       key: "discount_amount",
+      width: 130,
+      align: "center" as const,
       render: (v: number) => (
         <span className="font-bold text-emerald-600">
           -{Number(v || 0).toLocaleString("vi-VN")}₫
@@ -630,6 +761,8 @@ const OwnerVouchers = () => {
       title: "Thực thanh toán",
       dataIndex: "final_amount",
       key: "final_amount",
+      width: 140,
+      align: "center" as const,
       render: (v: number) => `${Number(v || 0).toLocaleString("vi-VN")}₫`,
     },
   ];
@@ -637,7 +770,11 @@ const OwnerVouchers = () => {
   return (
     <MainLayout>
       <Card
-        title="Voucher của tôi"
+        title={
+          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-extrabold text-xl">
+            Voucher của tôi
+          </span>
+        }
         loading={loading}
         extra={
           <Space>
@@ -649,18 +786,18 @@ const OwnerVouchers = () => {
         }
       >
         {stats && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-6">
-            <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium">Tổng số voucher</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">{Number(stats.total || 0)}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+            <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-blue-100 font-semibold uppercase tracking-wider">Tổng số voucher</div>
+              <div className="mt-2 text-3xl font-extrabold">{Number(stats.total || 0)}</div>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50 p-4 shadow-sm">
-              <div className="text-xs text-emerald-600 font-semibold">Đang hoạt động</div>
-              <div className="mt-1 text-2xl font-bold text-emerald-700">{Number(stats.active_count || 0)}</div>
+            <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-emerald-100 font-semibold uppercase tracking-wider">Đang hoạt động</div>
+              <div className="mt-2 text-3xl font-extrabold">{Number(stats.active_count || 0)}</div>
             </div>
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-4 shadow-sm">
-              <div className="text-xs text-blue-600 font-semibold">Đã sử dụng</div>
-              <div className="mt-1 text-2xl font-bold text-blue-700">{Number(stats.total_uses || 0)} lượt</div>
+            <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-violet-100 font-semibold uppercase tracking-wider">Đã sử dụng</div>
+              <div className="mt-2 text-3xl font-extrabold">{Number(stats.total_uses || 0)} lượt</div>
             </div>
           </div>
         )}
@@ -677,14 +814,10 @@ const OwnerVouchers = () => {
             <Select
               value={statusFilter}
               onChange={(v) => setStatusFilter(v)}
-              style={{ width: 220 }}
+              style={{ width: 160 }}
               options={[
-                { value: "all", label: "Tất cả trạng thái" },
-                {
-                  value: "computed_inactive",
-                  label: "Ngừng hoạt động",
-                },
-                { value: "computed_active", label: "Đang hoạt động" },
+                { value: "all", label: "Tất cả" },
+                { value: "computed_active", label: "Còn hạn" },
                 { value: "computed_expired", label: "Hết hạn" },
               ]}
             />
@@ -692,17 +825,22 @@ const OwnerVouchers = () => {
         </div>
 
         <Table
+          size="middle"
           loading={loading}
           rowKey="voucher_id"
           dataSource={filteredItems}
           columns={columns}
           pagination={false}
-          scroll={{ x: 1200, y: 480 }}
+          scroll={{ x: "max-content", y: 480 }}
         />
       </Card>
 
       <Card
-        title="Voucher nổi bật từ hệ thống"
+        title={
+          <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-xl">
+            Voucher nổi bật từ hệ thống
+          </span>
+        }
         className="mt-6 shadow-sm border-slate-100"
         loading={loading}
       >
@@ -719,12 +857,13 @@ const OwnerVouchers = () => {
         </div>
 
         <Table
+          size="middle"
           loading={loading}
           rowKey="voucher_id"
           dataSource={filteredAdminItems}
           columns={adminColumns}
           pagination={false}
-          scroll={{ x: 1200, y: 480 }}
+          scroll={{ x: "max-content", y: 480 }}
         />
       </Card>
 
@@ -1175,11 +1314,13 @@ const OwnerVouchers = () => {
         centered
       >
         <Table
+          size="middle"
           loading={historyLoading}
           dataSource={historyData}
           columns={historyColumns}
           rowKey="usage_id"
           pagination={{ pageSize: 5 }}
+          scroll={{ x: "max-content" }}
           className="mt-4"
         />
       </Modal>

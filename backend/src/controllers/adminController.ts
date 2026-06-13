@@ -9,7 +9,7 @@ import { ResultSetHeader, RowDataPacket } from "mysql2";
 import { sendPushNotification } from "../services/adminService";
 import crypto from "crypto";
 import { sendOwnerTermsEmail } from "../utils/emailService";
-import { saveUploadedImageToUploads } from "../utils/uploadImage";
+import { saveImageToDB, linkImageToEntity, removeEntityImages } from "../utils/uploadImage";
 import { publishToUser } from "../utils/realtime";
 
 const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ỹ]+(?:\s+[A-Za-zÀ-ỹ]+)*$/u;
@@ -70,432 +70,128 @@ export const getDashboardStats = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const rangeRaw = req.query.range;
-    const dateRaw = req.query.date ?? req.query.revenue_date;
-    const date =
-      typeof dateRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw)
-        ? dateRaw
-        : null;
+    // 1. KPIs
+    // Active locations
+    const [locRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) as count FROM locations WHERE status = 'active'"
+    );
+    const activeLocations = locRows[0]?.count || 0;
 
-    const allowedRanges = ["today", "week", "month", "year", "all"] as const;
-    type RangePreset = (typeof allowedRanges)[number];
-    const isAllowedRange = (v: unknown): v is RangePreset => {
-      return (
-        typeof v === "string" &&
-        (allowedRanges as readonly string[]).includes(v)
-      );
-    };
-    const range: RangePreset = isAllowedRange(rangeRaw) ? rangeRaw : "all";
-    const mode: "date" | RangePreset = date ? "date" : range;
-
-    const periodFilter = (
-      column: string,
-    ): { sql: string; params: unknown[] } => {
-      if (mode === "date") {
-        return { sql: ` AND DATE(${column}) = ?`, params: [date] };
-      }
-      if (mode === "today") {
-        return { sql: ` AND DATE(${column}) = CURDATE()`, params: [] };
-      }
-      if (mode === "week") {
-        return {
-          sql: ` AND ${column} >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`,
-          params: [],
-        };
-      }
-      if (mode === "month") {
-        return {
-          sql: ` AND ${column} >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)`,
-          params: [],
-        };
-      }
-      if (mode === "year") {
-        return {
-          sql: ` AND ${column} >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)`,
-          params: [],
-        };
-      }
-      return { sql: "", params: [] };
-    };
-
-    // Tổng số User (chỉ tính tài khoản đăng ký thực sự, không tính khách đặt chỗ)
+    // Users (role = user)
     const [userRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as count
-       FROM users u
-       WHERE u.role = 'user'
-         AND u.deleted_at IS NULL
-         AND (
-           u.email IS NOT NULL
-           OR u.password_hash IS NOT NULL
-           OR u.google_id IS NOT NULL
-           OR u.facebook_id IS NOT NULL
-         )`,
+      `SELECT COUNT(*) as count FROM users WHERE role = 'user' AND deleted_at IS NULL`
     );
     const totalUsers = userRows[0]?.count || 0;
 
-    // Tổng số Owner
-    const [ownerRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'owner'",
-    );
-    const totalOwners = ownerRows[0]?.count || 0;
-
-    // Tổng số Employee
-    const [employeeRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM users WHERE role = 'employee'",
-    );
-    const totalEmployees = employeeRows[0]?.count || 0;
-
-    // Tổng số địa điểm đang hoạt động
-    const [locationRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM locations WHERE status = 'active'",
-    );
-    const totalLocations = locationRows[0]?.count || 0;
-
-    // Số lịch trình được tạo (Đã gỡ bỏ tính năng này)
-    const totalItineraries = 0;
-
-    // Số lượt check-in theo kỳ
-    const checkinFilter = periodFilter("checkin_time");
-    const [checkinRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as count
-       FROM checkins
-       WHERE 1=1${checkinFilter.sql}`,
-      checkinFilter.params,
-    );
-    const todayCheckins = checkinRows[0]?.count || 0;
-
-    // Số báo cáo vi phạm cần xử lý
-    const [reportRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM reports WHERE status = 'pending'",
-    );
-    const pendingReports = reportRows[0]?.count || 0;
-
-    // Tổng doanh thu theo kỳ (payments completed)
-    const paymentFilter = periodFilter("payment_time");
-    const [revenueRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COALESCE(SUM(amount), 0) as total
-       FROM payments
-       WHERE status = 'completed'${paymentFilter.sql}`,
-      paymentFilter.params,
-    );
-    const totalRevenue = Number(revenueRows[0]?.total || 0);
-
-    // Tổng hoa hồng thu được theo kỳ (paid commissions)
-    const commissionFilter = periodFilter("paid_at");
-    const [commissionRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COALESCE(SUM(commission_amount), 0) as total
-       FROM commissions
-       WHERE status = 'paid'${commissionFilter.sql}`,
-      commissionFilter.params,
-    );
-    const totalCommissions = Number(commissionRows[0]?.total || 0);
-
-    // Tỷ lệ hoa hồng / tổng doanh thu
-    const commissionRate =
-      totalRevenue > 0
-        ? ((totalCommissions / totalRevenue) * 100).toFixed(2)
-        : "0.00";
-
-    // Hoa hồng theo kỳ & kỳ trước để tính % tăng trưởng (dựa trên paid_at)
-    let commissionGrowthQuery = "";
-    let commissionGrowthParams: unknown[] = [];
-    if (mode === "date") {
-      commissionGrowthQuery = `SELECT
-        COALESCE(SUM(CASE WHEN DATE(paid_at) = ? THEN commission_amount END), 0) as current_total,
-        COALESCE(SUM(CASE WHEN DATE(paid_at) = DATE_SUB(?, INTERVAL 1 DAY) THEN commission_amount END), 0) as prev_total
-       FROM commissions
-       WHERE status = 'paid'`;
-      commissionGrowthParams = [date, date];
-    } else if (mode === "today") {
-      commissionGrowthQuery = `SELECT
-        COALESCE(SUM(CASE WHEN DATE(paid_at) = CURDATE() THEN commission_amount END), 0) as current_total,
-        COALESCE(SUM(CASE WHEN DATE(paid_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY) THEN commission_amount END), 0) as prev_total
-       FROM commissions
-       WHERE status = 'paid'`;
-    } else if (mode === "week") {
-      commissionGrowthQuery = `SELECT
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN commission_amount END), 0) as current_total,
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND paid_at < DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN commission_amount END), 0) as prev_total
-       FROM commissions
-       WHERE status = 'paid'`;
-    } else if (mode === "month") {
-      commissionGrowthQuery = `SELECT
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN commission_amount END), 0) as current_total,
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND paid_at < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN commission_amount END), 0) as prev_total
-       FROM commissions
-       WHERE status = 'paid'`;
-    } else if (mode === "year") {
-      commissionGrowthQuery = `SELECT
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR) THEN commission_amount END), 0) as current_total,
-        COALESCE(SUM(CASE WHEN paid_at >= DATE_SUB(CURDATE(), INTERVAL 2 YEAR) AND paid_at < DATE_SUB(CURDATE(), INTERVAL 1 YEAR) THEN commission_amount END), 0) as prev_total
-       FROM commissions
-       WHERE status = 'paid'`;
-    }
-
-    let currentPeriodCommission = totalCommissions;
-    let prevPeriodCommission = 0;
-    if (commissionGrowthQuery) {
-      const [growthRows] = await pool.query<RowDataPacket[]>(
-        commissionGrowthQuery,
-        commissionGrowthParams,
-      );
-      currentPeriodCommission = Number(growthRows[0]?.current_total || 0);
-      prevPeriodCommission = Number(growthRows[0]?.prev_total || 0);
-    }
-
-    const monthCommissionGrowth =
-      prevPeriodCommission > 0
-        ? (
-            ((currentPeriodCommission - prevPeriodCommission) /
-              prevPeriodCommission) *
-            100
-          ).toFixed(2)
-        : "0.00";
-
-    // Số user mới theo kỳ (chỉ tính tài khoản đăng ký thực sự)
-    const userCreatedFilter = periodFilter("created_at");
-    const [newUsersTodayRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as count
-       FROM users u
-       WHERE u.role = 'user'
-         AND u.deleted_at IS NULL
-         AND (
-           u.email IS NOT NULL
-           OR u.password_hash IS NOT NULL
-           OR u.google_id IS NOT NULL
-           OR u.facebook_id IS NOT NULL
-         )${userCreatedFilter.sql}`,
-      userCreatedFilter.params,
-    );
-    const newUsersToday = newUsersTodayRows[0]?.count || 0;
-
-    // Thống kê trạng thái địa điểm
-    const [locationStatusRows] = await pool.query<RowDataPacket[]>(
-      `SELECT status, COUNT(*) as count
-       FROM locations
-       GROUP BY status`,
-    );
-    let activeLocations = 0;
-    let inactiveLocations = 0;
-    let pendingLocationsCount = 0;
-    locationStatusRows.forEach((row) => {
-      if (row.status === "active") activeLocations = row.count;
-      if (row.status === "inactive") inactiveLocations = row.count;
-      if (row.status === "pending") pendingLocationsCount = row.count;
-    });
-
-    // Số lượt bình luận tổng
+    // Active reviews
     const [reviewRows] = await pool.query<RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM reviews WHERE status = 'active'",
+      "SELECT COUNT(*) as count FROM reviews WHERE status = 'active'"
     );
     const totalReviews = reviewRows[0]?.count || 0;
 
-    // Thống kê theo khu vực (từ locations)
-    const [regionRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        CASE 
-          WHEN latitude >= 23.0 THEN 'Miền Bắc'
-          WHEN latitude >= 16.0 THEN 'Miền Trung'
-          ELSE 'Miền Nam'
-        END as region,
-        COUNT(*) as count
-       FROM locations 
-       WHERE status = 'active' AND latitude IS NOT NULL
-       GROUP BY region`,
+    // Active vouchers (status = 'active', end_date >= CURDATE())
+    const [voucherRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) as count FROM vouchers WHERE status = 'active' AND end_date >= CURDATE()"
     );
+    const activeVouchers = voucherRows[0]?.count || 0;
 
-    // Vì sao: cần thống kê theo tỉnh để Admin nắm vùng tập trung hoạt động
-    const [provinceRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COALESCE(province, 'Khác') as province, COUNT(*) as count
-       FROM locations
-       GROUP BY COALESCE(province, 'Khác')
-       ORDER BY count DESC`,
-    );
-
-    // Danh sách rút gọn địa điểm đang chờ duyệt
-    const [pendingLocationRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-         l.location_id,
-         l.location_name,
-         l.location_type,
-         l.address,
-         l.created_at,
-         l.latitude,
-         l.longitude,
-         l.first_image,
-         u.user_id as owner_id,
-         u.full_name as owner_name,
-         u.email as owner_email
-       FROM locations l
-       JOIN users u ON l.owner_id = u.user_id
-       WHERE l.status = 'pending'
-       ORDER BY l.created_at DESC
-       LIMIT 5`,
-    );
-
-    // Danh sách rút gọn commission quá hạn
-    const [overdueCommissionRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-         c.commission_id,
-         c.owner_id,
-         c.total_due,
-         c.due_date,
-         c.status,
-         u.full_name as owner_name,
-         u.email as owner_email
-       FROM commissions c
-       JOIN users u ON c.owner_id = u.user_id
-       WHERE c.status = 'overdue'
-       ORDER BY c.due_date ASC
-       LIMIT 5`,
-    );
-
-    // Biểu đồ: doanh thu 6 tháng gần nhất
-    const [revenueTrendRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-         DATE_FORMAT(payment_time, '%Y-%m') as month,
-         SUM(amount) as total
-       FROM payments
-       WHERE status = 'completed'
-         AND payment_time >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-       GROUP BY DATE_FORMAT(payment_time, '%Y-%m')
-       ORDER BY month ASC`,
-    );
-
-    // Biểu đồ: cơ cấu loại hình dịch vụ
-    const [serviceTypeRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-         service_type,
-         COUNT(*) as count
-       FROM services
-       GROUP BY service_type`,
-    );
-
-    // search_history/location_views đã được loại bỏ trong DB rút gọn
-    const searchCountRows = [{ total: 0, today: 0 }];
-    const viewCountRows = [{ total: 0, today: 0 }];
-
-    // Vì sao: biểu đồ theo ngày/tháng/năm để theo dõi xu hướng check-in
-    const [dailyCheckinRows] = await pool.query<RowDataPacket[]>(
-      `SELECT DATE(checkin_time) as label, COUNT(*) as total
-       FROM checkins
-       WHERE checkin_time >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
-       GROUP BY DATE(checkin_time)
-       ORDER BY label ASC`,
-    );
-    const [monthlyCheckinRows] = await pool.query<RowDataPacket[]>(
-      `SELECT DATE_FORMAT(checkin_time, '%Y-%m') as label, COUNT(*) as total
-       FROM checkins
-       WHERE checkin_time >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-       GROUP BY DATE_FORMAT(checkin_time, '%Y-%m')
-       ORDER BY label ASC`,
-    );
-    const [yearlyCheckinRows] = await pool.query<RowDataPacket[]>(
-      `SELECT YEAR(checkin_time) as label, COUNT(*) as total
-       FROM checkins
-       GROUP BY YEAR(checkin_time)
-       ORDER BY label ASC`,
-    );
-
-    // Vì sao: Top user/owner hoạt động để Admin ưu tiên chăm sóc/kiểm soát
-    const checkinJoinFilter = periodFilter("c.checkin_time");
-    const paymentJoinFilterForUsers = periodFilter("p.payment_time");
-    const paymentJoinFilterForOwners = periodFilter("p.payment_time");
-    const topUserParams = [
-      ...checkinJoinFilter.params,
-      ...paymentJoinFilterForUsers.params,
-    ];
-    const topOwnerParams = [...paymentJoinFilterForOwners.params];
-
+    // 2. Top 3 Users by total spent
     const [topUsersRows] = await pool.query<RowDataPacket[]>(
       `SELECT
          u.user_id,
          u.full_name,
          u.email,
-         COUNT(c.checkin_id) as total_checkins,
+         u.avatar_url,
          COALESCE(SUM(p.amount), 0) as total_spent
        FROM users u
-       LEFT JOIN checkins c ON c.user_id = u.user_id${checkinJoinFilter.sql}
-       LEFT JOIN payments p ON p.user_id = u.user_id AND p.status = 'completed'${paymentJoinFilterForUsers.sql}
-       WHERE u.role = 'user'
-         AND u.deleted_at IS NULL
-         AND (
-           u.email IS NOT NULL
-           OR u.password_hash IS NOT NULL
-           OR u.google_id IS NOT NULL
-           OR u.facebook_id IS NOT NULL
-         )
+       JOIN payments p ON p.user_id = u.user_id AND p.status = 'completed'
+       WHERE u.role = 'user' AND u.deleted_at IS NULL
        GROUP BY u.user_id
-       ORDER BY total_checkins DESC, total_spent DESC
-       LIMIT 5`,
-      topUserParams,
+       ORDER BY total_spent DESC
+       LIMIT 3`
     );
+
+    // 3. Top 3 Owners by total revenue
     const [topOwnersRows] = await pool.query<RowDataPacket[]>(
       `SELECT
          u.user_id,
          u.full_name,
          u.email,
-         COUNT(l.location_id) as total_locations,
+         u.avatar_url,
          COALESCE(SUM(p.amount), 0) as total_revenue
        FROM users u
-       LEFT JOIN locations l ON l.owner_id = u.user_id
-       LEFT JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'${paymentJoinFilterForOwners.sql}
+       JOIN locations l ON l.owner_id = u.user_id
+       JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'
        WHERE u.role = 'owner' AND u.deleted_at IS NULL
        GROUP BY u.user_id
-       ORDER BY total_revenue DESC, total_locations DESC
-       LIMIT 5`,
-      topOwnerParams,
+       ORDER BY total_revenue DESC
+       LIMIT 3`
+    );
+
+    // 4. Service Trends by Revenue
+    const [serviceTrendRows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         CASE 
+           WHEN l.location_type IN ('restaurant', 'cafe') THEN 'restaurant'
+           WHEN l.location_type IN ('hotel', 'resort') THEN 'hotel'
+           WHEN l.location_type = 'tourist' THEN 'tourist'
+           ELSE 'other'
+         END as category,
+         COALESCE(SUM(p.amount), 0) as total_revenue
+       FROM locations l
+       JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'
+       GROUP BY category`
+    );
+
+    let restaurantRev = 0;
+    let hotelRev = 0;
+    let touristRev = 0;
+    
+    serviceTrendRows.forEach(row => {
+      if (row.category === 'restaurant') restaurantRev += Number(row.total_revenue);
+      if (row.category === 'hotel') hotelRev += Number(row.total_revenue);
+      if (row.category === 'tourist') touristRev += Number(row.total_revenue);
+    });
+
+    const totalServiceRev = restaurantRev + hotelRev + touristRev;
+    let restaurant = 0, hotel = 0, tourist = 0;
+    if (totalServiceRev > 0) {
+      restaurant = Math.round((restaurantRev / totalServiceRev) * 100);
+      hotel = Math.round((hotelRev / totalServiceRev) * 100);
+      tourist = 100 - restaurant - hotel;
+    }
+
+    const serviceTrends = { restaurant, hotel, tourist };
+
+    // 5. Line Chart: Revenue Trend (6 months)
+    const [revenueTrendRows] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+         DATE_FORMAT(payment_time, '%m/%Y') as month,
+         SUM(amount) as total
+       FROM payments
+       WHERE status = 'completed'
+         AND payment_time >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+       GROUP BY DATE_FORMAT(payment_time, '%m/%Y'), DATE_FORMAT(payment_time, '%Y-%m')
+       ORDER BY DATE_FORMAT(payment_time, '%Y-%m') ASC`
     );
 
     res.json({
       success: true,
       data: {
-        totalUsers,
-        totalOwners,
-        totalEmployees,
-        totalLocations: activeLocations,
-        totalItineraries,
-        todayCheckins,
-        pendingReports,
-        totalRevenue,
-        totalCommissions,
-        commissionRate,
-        totalReviews,
-        regions: regionRows,
-        provinces: provinceRows,
-        searches: {
-          total: Number(searchCountRows[0]?.total || 0),
-          today: Number(searchCountRows[0]?.today || 0),
-        },
-        visits: {
-          total: Number(viewCountRows[0]?.total || 0),
-          today: Number(viewCountRows[0]?.today || 0),
-        },
         kpis: {
-          monthCommission: currentPeriodCommission,
-          monthCommissionGrowth,
-          newUsersToday,
           activeLocations,
-          inactiveLocations,
-          pendingLocations: pendingLocationsCount,
-        },
-        actionable: {
-          pendingLocations: pendingLocationRows,
-          overdueCommissions: overdueCommissionRows,
-        },
-        charts: {
-          revenueTrend: revenueTrendRows,
-          serviceTypeDistribution: serviceTypeRows,
-          checkinTrends: {
-            daily: dailyCheckinRows,
-            monthly: monthlyCheckinRows,
-            yearly: yearlyCheckinRows,
-          },
+          totalUsers,
+          totalReviews,
+          activeVouchers,
         },
         top: {
           users: topUsersRows,
           owners: topOwnersRows,
         },
+        serviceTrends,
+        charts: {
+          revenueTrend: revenueTrendRows
+        }
       },
     });
   } catch (error: unknown) {
@@ -751,12 +447,12 @@ export const updateAdminProfile = async (
       }
 
       const isHttp = /^https?:\/\//i.test(normalizedAvatarUrl);
-      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/");
+      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/") || normalizedAvatarUrl.startsWith("/api/images/");
       if (!isHttp && !isLocalUpload) {
         res.status(400).json({
           success: false,
           message:
-            "Avatar URL phải bắt đầu bằng http://, https:// hoặc /uploads/...",
+            "Avatar URL phải bắt đầu bằng http://, https:// hoặc /api/images/...",
         });
         return;
       }
@@ -766,8 +462,8 @@ export const updateAdminProfile = async (
     // If avatar_url is provided (URL), set avatar_source='url' and clear avatar_path
     // If avatar_url is null/empty, check if we should clear avatar entirely
     if (normalizedAvatarUrl && normalizedAvatarUrl.length) {
-      // Check if it's a local upload path (starts with /uploads/)
-      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/");
+      // Check if it's a local upload path (starts with /uploads/ or /api/images/)
+      const isLocalUpload = normalizedAvatarUrl.startsWith("/uploads/") || normalizedAvatarUrl.startsWith("/api/images/");
       if (isLocalUpload) {
         // This is a path from upload, set as upload source
         await pool.query(
@@ -843,17 +539,15 @@ export const uploadAdminAvatar = async (
       return;
     }
 
-    const avatarPath = (
-      await saveUploadedImageToUploads({
-        file,
-        folder: "avatars",
-        fileNamePrefix: `avatar-${adminId}`,
-      })
-    ).urlPath;
-    // Update both avatar_path and avatar_source='upload', clear avatar_url
+    const result = await saveImageToDB(file, "avatar_admin", adminId, "admin");
+
+    await removeEntityImages("admin", adminId, "avatar");
+    await linkImageToEntity(result.imageId, "admin", adminId, "avatar", 0, true);
+
     await pool.query(
-      `UPDATE users SET avatar_path = ?, avatar_source = 'upload', avatar_url = NULL, updated_at = NOW() WHERE user_id = ? AND role = 'admin'`,
-      [avatarPath, adminId],
+      `UPDATE users SET avatar_path = ?, avatar_source = 'upload', avatar_url = ?, updated_at = NOW()
+       WHERE user_id = ? AND role = 'admin'`,
+      [result.url, result.url, adminId],
     );
 
     await pool.query(
@@ -864,7 +558,7 @@ export const uploadAdminAvatar = async (
         JSON.stringify({
           mimetype: file.mimetype,
           size: file.size,
-          avatar_path: avatarPath,
+          image_id: result.imageId,
           timestamp: new Date(),
         }),
       ],
@@ -873,7 +567,7 @@ export const uploadAdminAvatar = async (
     res.json({
       success: true,
       message: "Đã cập nhật ảnh đại diện",
-      data: { avatar_url: avatarPath },
+      data: { avatar_url: result.url },
     });
   } catch (error: unknown) {
     console.error("Lỗi upload avatar admin:", error);
@@ -904,23 +598,17 @@ export const uploadAdminBackground = async (
       return;
     }
 
-    const backgroundPath = (
-      await saveUploadedImageToUploads({
-        file,
-        folder: "backgrounds",
-        fileNamePrefix: `admin-bg-${adminId}`,
-      })
-    ).urlPath;
+    const result = await saveImageToDB(file, "admin_background", adminId, "admin");
+
+    await removeEntityImages("admin", adminId, "background");
+    await linkImageToEntity(result.imageId, "admin", adminId, "background", 0, true);
 
     await pool.query(
       `UPDATE users
-       SET background_path = ?,
-           background_source = 'upload',
-           background_url = NULL,
-           background_updated_at = NOW(),
-           updated_at = NOW()
+       SET background_path = ?, background_source = 'upload', background_url = ?,
+           background_updated_at = NOW(), updated_at = NOW()
        WHERE user_id = ? AND role = 'admin'`,
-      [backgroundPath, adminId],
+      [result.url, result.url, adminId],
     );
 
     await pool.query(
@@ -931,7 +619,7 @@ export const uploadAdminBackground = async (
         JSON.stringify({
           mimetype: file.mimetype,
           size: file.size,
-          background_path: backgroundPath,
+          image_id: result.imageId,
           timestamp: new Date(),
         }),
       ],
@@ -940,7 +628,7 @@ export const uploadAdminBackground = async (
     res.json({
       success: true,
       message: "Đã cập nhật ảnh nền admin",
-      data: { background_url: backgroundPath },
+      data: { background_url: result.url },
     });
   } catch (error: unknown) {
     console.error("Lỗi upload background admin:", error);
@@ -1822,7 +1510,7 @@ export const createBackgroundSchedule = async (
     }
 
     const normalizedImageUrl = image_url.trim();
-    const imagePath = normalizedImageUrl.startsWith("/uploads/")
+    const imagePath = (normalizedImageUrl.startsWith("/uploads/") || normalizedImageUrl.startsWith("/api/images/"))
       ? normalizedImageUrl
       : null;
 
@@ -1903,7 +1591,7 @@ export const updateBackgroundSchedule = async (
 
     const normalizedImageUrl = image_url ? image_url.trim() : null;
     const imagePath =
-      normalizedImageUrl && normalizedImageUrl.startsWith("/uploads/")
+      normalizedImageUrl && (normalizedImageUrl.startsWith("/uploads/") || normalizedImageUrl.startsWith("/api/images/"))
         ? normalizedImageUrl
         : null;
 
@@ -1993,13 +1681,10 @@ export const uploadBackgroundImage = async (
       return;
     }
 
-    const imageUrl = (
-      await saveUploadedImageToUploads({
-        file,
-        folder: "backgrounds",
-        fileNamePrefix: `bg-${type}`,
-      })
-    ).urlPath;
+    const result = await saveImageToDB(file, "system_setting", adminId, "admin");
+
+    await linkImageToEntity(result.imageId, "system_setting", 0, "setting", 0, true);
+
     const key = type === "app" ? "app_background_url" : "login_background_url";
 
     const applySetting =
@@ -2009,19 +1694,18 @@ export const uploadBackgroundImage = async (
           String(body.apply).toLowerCase() !== "false";
 
     if (applySetting) {
-      // Update system_settings with file path and type='image'
       await pool.query(
         `INSERT INTO system_settings (setting_key, setting_value, setting_value_file, setting_type)
          VALUES (?, ?, ?, 'image')
          ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), setting_value_file = VALUES(setting_value_file), setting_type = 'image'`,
-        [key, imageUrl, imageUrl],
+        [key, result.url, result.url],
       );
     }
 
     res.json({
       success: true,
       message: "Đã upload ảnh nền",
-      data: { image_url: imageUrl },
+      data: { image_url: result.url },
     });
   } catch (error: unknown) {
     console.error("Lỗi upload nền:", error);
@@ -5095,7 +4779,7 @@ export const getAdminLocations = async (
         l.updated_at
       FROM locations l
       JOIN users u ON l.owner_id = u.user_id
-      WHERE 1=1
+      WHERE u.role != 'user'
     `;
     const params: Array<string | number> = [];
 
@@ -5130,7 +4814,7 @@ export const getAdminLocations = async (
       SELECT COUNT(*) as total
       FROM locations l
       JOIN users u ON l.owner_id = u.user_id
-      WHERE 1=1
+      WHERE u.role != 'user'
     `;
     const countParams: Array<string | number> = [];
 
@@ -8453,7 +8137,7 @@ export const updateSystemSettings = async (
       if (imageKeys.has(key)) {
         if (normalized && normalized.trim().length) {
           const trimmed = normalized.trim();
-          const isLocalUpload = trimmed.startsWith("/uploads/");
+          const isLocalUpload = trimmed.startsWith("/uploads/") || trimmed.startsWith("/api/images/");
           const settingValue = isLocalUpload ? null : trimmed;
           const settingValueFile = isLocalUpload ? trimmed : null;
           const imageSource = isLocalUpload ? "upload" : "url";
