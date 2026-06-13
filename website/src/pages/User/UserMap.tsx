@@ -2406,7 +2406,7 @@ const UserMap = () => {
                 <MapResizeObserver />
                 <MapClickHandler onPick={handleMapPick} />
 
-                {myPosition && !routeOnlyMode ? (
+                {myPosition && !routeOnlyMode && !routeEnabled ? (
                   <Marker
                     position={[myPosition.lat, myPosition.lng]}
                     icon={myPositionIcon}
