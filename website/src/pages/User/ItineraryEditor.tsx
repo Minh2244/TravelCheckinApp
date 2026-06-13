@@ -14,6 +14,8 @@ interface ItineraryItemForm {
   location_id: number | null;
   custom_name: string;
   custom_address: string;
+  custom_lat?: number | null;
+  custom_lng?: number | null;
   time: string;
   note: string;
   estimated_cost: string;
@@ -93,6 +95,8 @@ const ItineraryEditor = () => {
               location_id: item.location_id,
               custom_name: item.custom_name || "",
               custom_address: item.custom_address || "",
+              custom_lat: item.custom_lat != null ? Number(item.custom_lat) : null,
+              custom_lng: item.custom_lng != null ? Number(item.custom_lng) : null,
               time: item.time || "",
               note: item.note || "",
               estimated_cost: item.estimated_cost != null ? String(item.estimated_cost) : "",
@@ -126,14 +130,18 @@ const ItineraryEditor = () => {
     }
   }, [searchQuery]);
 
+  // Tọa độ từ map click (lưu tạm)
+  const [pickedLat, setPickedLat] = useState<number | null>(null);
+  const [pickedLng, setPickedLng] = useState<number | null>(null);
+
   const addFromSystem = (loc: LocationOption) => {
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
+    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", custom_lat: null, custom_lng: null, time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
     closeModal();
   };
 
   const addCustom = () => {
     if (!customName.trim()) return;
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: null, custom_name: customName.trim(), custom_address: customAddress.trim(), time: addTime, note: addNote, estimated_cost: addCost }]);
+    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: null, custom_name: customName.trim(), custom_address: customAddress.trim(), custom_lat: pickedLat, custom_lng: pickedLng, time: addTime, note: addNote, estimated_cost: addCost }]);
     closeModal();
   };
 
@@ -146,6 +154,8 @@ const ItineraryEditor = () => {
     setAddTime("");
     setAddNote("");
     setAddCost("");
+    setPickedLat(null);
+    setPickedLng(null);
   };
 
   const removeItem = (tempId: string) => setItems((prev) => prev.filter((i) => i.tempId !== tempId));
@@ -159,7 +169,7 @@ const ItineraryEditor = () => {
     if (new Date(startDate) > new Date(endDate)) { alert("Ngày kết thúc phải sau ngày bắt đầu"); return; }
     try {
       setSaving(true);
-      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: items.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined })) };
+      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: items.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, custom_lat: item.custom_lat ?? undefined, custom_lng: item.custom_lng ?? undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined })) };
       if (isEdit) await userApi.updateItinerary(Number(id), payload);
       else await userApi.createItinerary(payload);
       navigate("/user/itineraries");
@@ -477,6 +487,8 @@ const ItineraryEditor = () => {
                   onPickLocation={(data) => {
                     setCustomName(data.name || `Vị trí (${data.lat.toFixed(4)}, ${data.lng.toFixed(4)})`);
                     setCustomAddress(data.address || "");
+                    setPickedLat(data.lat);
+                    setPickedLng(data.lng);
                   }}
                   className="h-full"
                 />
