@@ -119,8 +119,12 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
   // Picked point (click on map)
   const [pickedPoint, setPickedPoint] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Search result marker (Nominatim)
+  const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; name: string } | null>(null);
+
   const myPositionIcon = useMemo(() => getPinIconByKind("myPosition"), []);
   const pickedIcon = useMemo(() => getPinIconByKind("picked"), []);
+  const searchIcon = useMemo(() => getPinIconByKind("search"), []);
 
   // ---- GPS ----
   useEffect(() => {
@@ -226,6 +230,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
       if (!isNaN(lat) && !isNaN(lng)) {
         setRecenterTarget({ lat, lng });
         setRecenterSignal((s) => s + 1);
+        setSearchMarker({ lat, lng, name: result.display_name || "" });
       }
       setSearchQuery("");
       setSearchResults([]);
@@ -337,6 +342,33 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
         {myPosition && (
           <Marker position={[myPosition.lat, myPosition.lng]} icon={myPositionIcon}>
             <Popup><div className="text-sm font-semibold">📍 Vị trí của bạn</div></Popup>
+          </Marker>
+        )}
+
+        {/* Search result marker */}
+        {searchMarker && (
+          <Marker position={[searchMarker.lat, searchMarker.lng]} icon={searchIcon}>
+            <Popup>
+              <div className="min-w-[180px]">
+                <div className="text-xs text-gray-500 mb-1">🔍 Kết quả tìm kiếm</div>
+                <div className="font-bold text-sm mb-2">{searchMarker.name}</div>
+                <button
+                  onClick={() => {
+                    if (onPickLocation) onPickLocation({ lat: searchMarker.lat, lng: searchMarker.lng });
+                    setSearchMarker(null);
+                  }}
+                  className="w-full px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                >
+                  📍 Chọn vị trí này
+                </button>
+                <button
+                  onClick={() => setSearchMarker(null)}
+                  className="w-full mt-1 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Bỏ ghim
+                </button>
+              </div>
+            </Popup>
           </Marker>
         )}
 
