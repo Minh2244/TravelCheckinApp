@@ -33,8 +33,17 @@ const MapResizeObserver = () => {
   return null;
 };
 
+const MapClickHandler = ({ onPick }: { onPick: (coords: { lat: number; lng: number }) => void }) => {
+  useMapEvents({
+    click: (e) => {
+      onPick({ lat: e.latlng.lat, lng: e.latlng.lng });
+    },
+  });
+  return null;
+};
+
 // ============================================================
-// Circle image icon (same as UserMap)
+// Circle image icon
 // ============================================================
 
 const circleIconCache = new Map<string, L.DivIcon>();
@@ -84,6 +93,7 @@ const getCircleImageIcon = (imageUrl: string | null | undefined, isSelected: boo
 
 interface LocationPickerMapProps {
   onSelectLocation: (location: Location) => void;
+  onPickLocation?: (coords: { lat: number; lng: number }) => void;
   className?: string;
 }
 
@@ -91,7 +101,7 @@ interface LocationPickerMapProps {
 // Main Component
 // ============================================================
 
-const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerMapProps) => {
+const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }: LocationPickerMapProps) => {
   const { locations, loading: locationsLoading } = useLocations();
 
   // GPS
@@ -106,11 +116,11 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // User-created locations (from checkins/favorites)
-  const [userLocations, setUserLocations] = useState<any[]>([]);
+  // Picked point (click on map)
+  const [pickedPoint, setPickedPoint] = useState<{ lat: number; lng: number } | null>(null);
 
   const myPositionIcon = useMemo(() => getPinIconByKind("myPosition"), []);
-  const searchIcon = useMemo(() => getPinIconByKind("search"), []);
+  const pickedIcon = useMemo(() => getPinIconByKind("picked"), []);
 
   // ---- GPS ----
   useEffect(() => {
@@ -158,7 +168,6 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
     searchTimerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        // System locations first
         const q = searchQuery.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
         const systemResults = locations
           .filter((loc) => {
@@ -176,7 +185,6 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
             _location: loc,
           }));
 
-        // Nominatim if fewer than 5 system results
         let nomResults: any[] = [];
         if (systemResults.length < 5) {
           const data = await geoApi.search(searchQuery, 8);
@@ -213,7 +221,6 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
         setSearchResults([]);
         return;
       }
-      // Nominatim result - fly to
       const lat = Number(result.lat);
       const lng = Number(result.lon);
       if (!isNaN(lat) && !isNaN(lng)) {
@@ -224,6 +231,15 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
       setSearchResults([]);
     },
     [onSelectLocation],
+  );
+
+  // ---- Handle map click (pick point) ----
+  const handleMapClick = useCallback(
+    (coords: { lat: number; lng: number }) => {
+      setPickedPoint(coords);
+      if (onPickLocation) onPickLocation(coords);
+    },
+    [onPickLocation],
   );
 
   // ---- Recenter to my position ----
@@ -245,7 +261,6 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
     }
   }, [myPosition]);
 
-  // Location type label
   const typeLabel = (t: string) => {
     if (t === "restaurant" || t === "cafe") return "Ăn uống";
     if (t === "hotel" || t === "resort" || t === "homestay") return "Lưu trú";
@@ -255,51 +270,51 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
 
   return (
     <div className={`relative ${className}`}>
-      {/* Search bar */}
-      <div className="absolute top-3 left-3 right-3 z-[1000]">
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm địa điểm..."
-              className="w-full rounded-xl border border-white/50 bg-white/95 backdrop-blur-sm px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 shadow-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-            />
-            {searching && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-              </div>
-            )}
-            {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-100 max-h-48 overflow-y-auto">
-                {searchResults.map((r) => (
-                  <button
-                    key={r.place_id}
-                    onClick={() => handleSearchSelect(r)}
-                    className="w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-indigo-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      {r.isSystem && (
-                        <span className="shrink-0 h-2 w-2 rounded-full bg-indigo-500" />
-                      )}
-                      <span className="text-sm text-slate-700 truncate">{r.display_name}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleRecenter}
-            className="shrink-0 rounded-xl bg-white/95 backdrop-blur-sm border border-white/50 p-2.5 shadow-lg hover:bg-white transition-colors"
-            title="Vị trí của tôi"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#14b8a6" strokeWidth="2.5" strokeLinecap="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-            </svg>
-          </button>
+      {/* Search bar - nằm trong map, không tràn ra ngoài */}
+      <div className="absolute top-3 left-3 z-[1000]" style={{ width: "calc(100% - 54px)" }}>
+        <div className="relative">
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm địa điểm..."
+            className="w-full rounded-xl border border-white/50 bg-white/95 backdrop-blur-sm px-4 py-2.5 pr-10 text-sm text-slate-800 placeholder:text-slate-400 shadow-lg outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+          />
+          {searching && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+            </div>
+          )}
+          {searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-100 max-h-48 overflow-y-auto">
+              {searchResults.map((r) => (
+                <button
+                  key={r.place_id}
+                  onClick={() => handleSearchSelect(r)}
+                  className="w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-indigo-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    {r.isSystem && <span className="shrink-0 h-2 w-2 rounded-full bg-indigo-500" />}
+                    <span className="text-sm text-slate-700 truncate">{r.display_name}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Nút vị trí tôi - góc phải trên */}
+      <div className="absolute top-3 right-3 z-[1000]">
+        <button
+          onClick={handleRecenter}
+          className="rounded-xl bg-white/95 backdrop-blur-sm border border-white/50 p-2.5 shadow-lg hover:bg-white transition-colors"
+          title="Vị trí của tôi"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#14b8a6" strokeWidth="2.5" strokeLinecap="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          </svg>
+        </button>
       </div>
 
       {/* Map */}
@@ -315,11 +330,40 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
         />
         <MapResizeObserver />
         <MapRecenter target={recenterTarget} trigger={recenterSignal} />
+        <MapClickHandler onPick={handleMapClick} />
 
         {/* My position */}
         {myPosition && (
           <Marker position={[myPosition.lat, myPosition.lng]} icon={myPositionIcon}>
-            <Popup><div className="text-sm font-semibold">Vị trí của bạn</div></Popup>
+            <Popup><div className="text-sm font-semibold">📍 Vị trí của bạn</div></Popup>
+          </Marker>
+        )}
+
+        {/* Picked point (click on map) */}
+        {pickedPoint && (
+          <Marker position={[pickedPoint.lat, pickedPoint.lng]} icon={pickedIcon}>
+            <Popup>
+              <div className="min-w-[160px]">
+                <div className="text-xs text-gray-500 mb-2">
+                  📌 {pickedPoint.lat.toFixed(5)}, {pickedPoint.lng.toFixed(5)}
+                </div>
+                <button
+                  onClick={() => {
+                    if (onPickLocation) onPickLocation(pickedPoint);
+                    setPickedPoint(null);
+                  }}
+                  className="w-full px-3 py-1.5 bg-amber-500 text-white text-xs rounded-lg font-semibold hover:bg-amber-600 transition-colors"
+                >
+                  📍 Chọn vị trí này
+                </button>
+                <button
+                  onClick={() => setPickedPoint(null)}
+                  className="w-full mt-1 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Bỏ ghim
+                </button>
+              </div>
+            </Popup>
           </Marker>
         )}
 
@@ -327,10 +371,7 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
         {locations
           .filter((loc) => loc.latitude && loc.longitude)
           .map((loc) => {
-            const imageUrl = resolveBackendUrl(
-              (loc as any).first_image ??
-                (Array.isArray((loc as any).images) ? (loc as any).images[0] : null),
-            );
+            const imageUrl = resolveBackendUrl(loc.first_image ?? (Array.isArray(loc.images) ? loc.images[0] : null));
             const icon = getCircleImageIcon(imageUrl, false, 48);
             return (
               <Marker
@@ -368,6 +409,11 @@ const LocationPickerMap = ({ onSelectLocation, className = "" }: LocationPickerM
           <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
         </div>
       )}
+
+      {/* Hint */}
+      <div className="absolute bottom-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-600 shadow-sm border border-slate-200">
+        🗺️ Nhấn vào bản đồ để ghim vị trí · Nhấn vào marker để thêm địa điểm
+      </div>
     </div>
   );
 };
