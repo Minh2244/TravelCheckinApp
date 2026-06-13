@@ -110,6 +110,11 @@ axiosClient.interceptors.response.use(
         processQueue(refreshError, null);
         await AsyncStorage.removeItem('accessToken');
         await AsyncStorage.removeItem('refreshToken');
+        // Reset auth state trong Zustand store
+        try {
+          const { useAuthStore } = require('../store/useAuthStore');
+          useAuthStore.getState().clearAuth();
+        } catch {}
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

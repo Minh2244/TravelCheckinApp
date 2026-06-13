@@ -133,7 +133,7 @@ export default function EditItineraryScreen() {
         time: addTime,
         note: addNote,
         estimated_cost: addCost,
-        location_name: loc.name,
+        location_name: loc.location_name,
       },
     ]);
     closeModal();
@@ -345,8 +345,8 @@ export default function EditItineraryScreen() {
                   <View style={styles.searchResults}>
                     {searchResults.slice(0, 5).map((loc: any) => (
                       <TouchableOpacity key={loc.location_id} style={styles.searchResultItem} onPress={() => addFromSystem(loc)}>
-                        <Text style={styles.searchResultName}>{loc.name}</Text>
-                        <Text style={styles.searchResultAddr}>{loc.address} · {loc.type}</Text>
+                        <Text style={styles.searchResultName}>{loc.location_name}</Text>
+                        <Text style={styles.searchResultAddr}>{loc.address} · {loc.location_type}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
