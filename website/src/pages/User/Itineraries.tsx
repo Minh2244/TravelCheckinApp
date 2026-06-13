@@ -167,17 +167,7 @@ const Itineraries = () => {
           <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/30 px-4 py-16 text-center">
             <div className="text-5xl mb-4">🗺️</div>
             <p className="text-base font-bold text-slate-700 mb-1">Chưa có lịch trình nào</p>
-            <p className="text-xs text-slate-500 mb-5">Bắt đầu tạo kế hoạch cho chuyến đi sắp tới của bạn!</p>
-            <button
-              onClick={() => navigate("/user/itineraries/create")}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all"
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Tạo lịch trình đầu tiên
-            </button>
+            <p className="text-xs text-slate-500">Bắt đầu tạo kế hoạch cho chuyến đi sắp tới của bạn!</p>
           </div>
         )}
 
