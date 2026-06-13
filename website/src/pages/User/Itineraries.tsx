@@ -418,7 +418,7 @@ const Itineraries = () => {
                                 {item.visited_at ? "✅ Đã đến" : "⬜ Đã đến"}
                               </button>
                               {/* Nút Bắt đầu */}
-                              {item.location_id && item.location_lat != null && item.location_lng != null && (
+                              {item.location_id && (
                                 <button
                                   onClick={() => handleStartNav(item)}
                                   className="rounded-lg px-2 py-1 text-xs font-semibold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 transition-all"
