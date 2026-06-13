@@ -167,15 +167,9 @@ const ItineraryEditor = () => {
       <section className="user-section p-4 sm:p-6 lg:p-8 max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/user/itineraries")} className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 transition-colors">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-            </button>
-            <div>
-              <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">{isEdit ? "CHỈNH SỬA" : "TẠO MỚI"}</span>
-              <h2 className="text-xl font-black text-slate-800 font-heading">{isEdit ? "Sửa lịch trình" : "Tạo lịch trình mới"}</h2>
-            </div>
-          </div>
+          <button onClick={() => navigate("/user/itineraries")} className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50 transition-colors">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+          </button>
           <button
             onClick={handleSave}
             disabled={saving}
