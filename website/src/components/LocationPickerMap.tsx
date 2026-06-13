@@ -17,7 +17,7 @@ const MapRecenter = ({ target, trigger }: { target: { lat: number; lng: number }
   useEffect(() => {
     if (!target || trigger === lastTrigger.current) return;
     lastTrigger.current = trigger;
-    map.setView([target.lat, target.lng], map.getZoom(), { animate: true });
+    map.setView([target.lat, target.lng], 16, { animate: true });
   }, [map, target, trigger]);
   return null;
 };
@@ -33,6 +33,7 @@ const MapResizeObserver = () => {
   return null;
 };
 
+// Single click handler (UserMap uses dblclick, but for itinerary we use single click to pick)
 const MapClickHandler = ({ onPick }: { onPick: (coords: { lat: number; lng: number }) => void }) => {
   useMapEvents({
     click: (e) => {
@@ -43,7 +44,7 @@ const MapClickHandler = ({ onPick }: { onPick: (coords: { lat: number; lng: numb
 };
 
 // ============================================================
-// Circle image icon
+// Circle image icon (same as UserMap)
 // ============================================================
 
 const circleIconCache = new Map<string, L.DivIcon>();
@@ -116,11 +117,14 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Picked point (click on map)
+  // Search result marker (Nominatim) - persists until dismissed
+  const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; name: string } | null>(null);
+
+  // Picked point (click on map) - persists until dismissed
   const [pickedPoint, setPickedPoint] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Search result marker (Nominatim)
-  const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  // Selected location (for highlighting)
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
 
   const myPositionIcon = useMemo(() => getPinIconByKind("myPosition"), []);
   const pickedIcon = useMemo(() => getPinIconByKind("picked"), []);
@@ -219,12 +223,23 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
   // ---- Handle search select ----
   const handleSearchSelect = useCallback(
     (result: any) => {
+      // System result → select location directly, clear search marker
       if (result.isSystem && result._location) {
-        onSelectLocation(result._location);
+        const loc = result._location;
+        const lat = Number(loc.latitude);
+        const lng = Number(loc.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          setRecenterTarget({ lat, lng });
+          setRecenterSignal((s) => s + 1);
+        }
+        setSelectedLocationId(loc.location_id);
+        setSearchMarker(null); // clear search marker for system results
         setSearchQuery("");
         setSearchResults([]);
         return;
       }
+
+      // Nominatim result → place search marker that PERSISTS
       const lat = Number(result.lat);
       const lng = Number(result.lon);
       if (!isNaN(lat) && !isNaN(lng)) {
@@ -232,19 +247,42 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
         setRecenterSignal((s) => s + 1);
         setSearchMarker({ lat, lng, name: result.display_name || "" });
       }
-      setSearchQuery("");
+      setSearchQuery(result.display_name || "");
       setSearchResults([]);
     },
-    [onSelectLocation],
+    [],
   );
 
-  // ---- Handle map click (pick point) ----
+  // ---- Handle map click → place picked pin ----
   const handleMapClick = useCallback(
     (coords: { lat: number; lng: number }) => {
       setPickedPoint(coords);
       if (onPickLocation) onPickLocation(coords);
     },
     [onPickLocation],
+  );
+
+  // ---- Handle location marker click → select and open popup ----
+  const handleLocationClick = useCallback(
+    (loc: Location) => {
+      setSelectedLocationId(loc.location_id);
+      const lat = Number(loc.latitude);
+      const lng = Number(loc.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setRecenterTarget({ lat, lng });
+        setRecenterSignal((s) => s + 1);
+      }
+    },
+    [],
+  );
+
+  // ---- Handle "Thêm vào lịch trình" from popup ----
+  const handleAddFromPopup = useCallback(
+    (loc: Location) => {
+      onSelectLocation(loc);
+      setSelectedLocationId(null);
+    },
+    [onSelectLocation],
   );
 
   // ---- Recenter to my position ----
@@ -275,7 +313,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
 
   return (
     <div className={`relative ${className}`}>
-      {/* Search bar - nằm trong map, không tràn ra ngoài */}
+      {/* Search bar */}
       <div className="absolute top-3 left-3 z-[1000]" style={{ width: "calc(100% - 54px)" }}>
         <div className="relative">
           <input
@@ -308,7 +346,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
         </div>
       </div>
 
-      {/* Nút vị trí tôi - góc phải trên */}
+      {/* Nút vị trí tôi */}
       <div className="absolute top-3 right-3 z-[1000]">
         <button
           onClick={handleRecenter}
@@ -327,6 +365,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
         center={[16.0471, 108.2068]}
         zoom={6}
         zoomControl={false}
+        doubleClickZoom={false}
         style={{ height: "100%", width: "100%" }}
         className="rounded-xl"
       >
@@ -341,20 +380,23 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
         {/* My position */}
         {myPosition && (
           <Marker position={[myPosition.lat, myPosition.lng]} icon={myPositionIcon}>
-            <Popup><div className="text-sm font-semibold">📍 Vị trí của bạn</div></Popup>
+            <Popup autoPan={false}><div className="text-sm font-semibold">📍 Vị trí của bạn</div></Popup>
           </Marker>
         )}
 
-        {/* Search result marker */}
+        {/* Search result marker (Nominatim) - PERSISTS until dismissed */}
         {searchMarker && (
           <Marker position={[searchMarker.lat, searchMarker.lng]} icon={searchIcon}>
-            <Popup>
+            <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
               <div className="min-w-[180px]">
-                <div className="text-xs text-gray-500 mb-1">🔍 Kết quả tìm kiếm</div>
-                <div className="font-bold text-sm mb-2">{searchMarker.name}</div>
+                <div className="font-bold text-sm mb-1">🔍 {searchMarker.name}</div>
+                <div className="text-xs text-gray-500 mb-2">
+                  {searchMarker.lat.toFixed(5)}, {searchMarker.lng.toFixed(5)}
+                </div>
                 <button
                   onClick={() => {
                     if (onPickLocation) onPickLocation({ lat: searchMarker.lat, lng: searchMarker.lng });
+                    setPickedPoint({ lat: searchMarker.lat, lng: searchMarker.lng });
                     setSearchMarker(null);
                   }}
                   className="w-full px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-semibold hover:bg-green-700 transition-colors"
@@ -365,17 +407,17 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                   onClick={() => setSearchMarker(null)}
                   className="w-full mt-1 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Bỏ ghim
+                  ✕ Bỏ ghim
                 </button>
               </div>
             </Popup>
           </Marker>
         )}
 
-        {/* Picked point (click on map) */}
+        {/* Picked point (click on map) - PERSISTS until dismissed */}
         {pickedPoint && (
           <Marker position={[pickedPoint.lat, pickedPoint.lng]} icon={pickedIcon}>
-            <Popup>
+            <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
               <div className="min-w-[160px]">
                 <div className="text-xs text-gray-500 mb-2">
                   📌 {pickedPoint.lat.toFixed(5)}, {pickedPoint.lng.toFixed(5)}
@@ -383,7 +425,6 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                 <button
                   onClick={() => {
                     if (onPickLocation) onPickLocation(pickedPoint);
-                    setPickedPoint(null);
                   }}
                   className="w-full px-3 py-1.5 bg-amber-500 text-white text-xs rounded-lg font-semibold hover:bg-amber-600 transition-colors"
                 >
@@ -393,7 +434,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                   onClick={() => setPickedPoint(null)}
                   className="w-full mt-1 px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Bỏ ghim
+                  ✕ Bỏ ghim
                 </button>
               </div>
             </Popup>
@@ -405,17 +446,18 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
           .filter((loc) => loc.latitude && loc.longitude)
           .map((loc) => {
             const imageUrl = resolveBackendUrl(loc.first_image ?? (Array.isArray(loc.images) ? loc.images[0] : null));
-            const icon = getCircleImageIcon(imageUrl, false, 48);
+            const isSelected = selectedLocationId === loc.location_id;
+            const icon = getCircleImageIcon(imageUrl, isSelected, 48);
             return (
               <Marker
                 key={`loc-${loc.location_id}`}
                 position={[Number(loc.latitude), Number(loc.longitude)]}
                 icon={icon}
                 eventHandlers={{
-                  click: () => onSelectLocation(loc),
+                  click: () => handleLocationClick(loc),
                 }}
               >
-                <Popup>
+                <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
                   <div className="min-w-[180px]">
                     <div className="font-bold text-sm mb-1">{loc.location_name}</div>
                     <div className="text-xs text-gray-500 mb-1">{loc.address}</div>
@@ -424,7 +466,10 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                       {Number(loc.rating) > 0 && <span>⭐ {Number(loc.rating).toFixed(1)}</span>}
                     </div>
                     <button
-                      onClick={() => onSelectLocation(loc)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAddFromPopup(loc);
+                      }}
                       className="w-full px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
                     >
                       + Thêm vào lịch trình
@@ -445,7 +490,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
 
       {/* Hint */}
       <div className="absolute bottom-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-600 shadow-sm border border-slate-200">
-        🗺️ Nhấn vào bản đồ để ghim vị trí · Nhấn vào marker để thêm địa điểm
+        🗺️ Nhấn vào bản đồ để ghim · Nhấn marker để xem thông tin
       </div>
     </div>
   );
