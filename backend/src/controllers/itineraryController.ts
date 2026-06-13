@@ -87,14 +87,11 @@ export async function getUserItineraryDetail(req: AuthenticatedRequest, res: Res
         ii.note,
         ii.estimated_cost,
         ii.visited_at,
-        l.name AS location_name,
+        l.location_name,
         l.address AS location_address,
         l.latitude AS location_lat,
         l.longitude AS location_lng,
-        l.avg_rating AS location_rating,
-        (SELECT ei.image_id FROM entity_images ei
-         WHERE ei.entity_type = 'location' AND ei.entity_id = l.location_id AND ei.is_primary = 1
-         LIMIT 1) AS location_image_id
+        l.rating AS location_rating
       FROM itinerary_items ii
       LEFT JOIN locations l ON l.location_id = ii.location_id
       WHERE ii.itinerary_id = ?
@@ -102,11 +99,7 @@ export async function getUserItineraryDetail(req: AuthenticatedRequest, res: Res
       [itineraryId]
     );
 
-    // Format image URL
-    const items = itemRows.map((item: any) => ({
-      ...item,
-      location_image: item.location_image_id ? `/api/images/${item.location_image_id}` : null,
-    }));
+    const items = itemRows;
 
     const itinerary = {
       ...itineraryRows[0],
@@ -194,10 +187,8 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
       const [itemRows] = await pool.execute<RowDataPacket[]>(
         `SELECT
           ii.*,
-          l.name AS location_name,
-          (SELECT ei.image_id FROM entity_images ei
-           WHERE ei.entity_type = 'location' AND ei.entity_id = l.location_id AND ei.is_primary = 1
-           LIMIT 1) AS location_image_id
+          l.location_name,
+          l.address AS location_address
         FROM itinerary_items ii
         LEFT JOIN locations l ON l.location_id = ii.location_id
         WHERE ii.itinerary_id = ?
@@ -209,10 +200,7 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
         success: true,
         data: {
           ...itineraryRows[0],
-          items: itemRows.map((item: any) => ({
-            ...item,
-            location_image: item.location_image_id ? `/api/images/${item.location_image_id}` : null,
-          })),
+          items: itemRows,
         },
       });
     } catch (err) {
@@ -312,10 +300,8 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
       const [itemRows] = await pool.execute<RowDataPacket[]>(
         `SELECT
           ii.*,
-          l.name AS location_name,
-          (SELECT ei.image_id FROM entity_images ei
-           WHERE ei.entity_type = 'location' AND ei.entity_id = l.location_id AND ei.is_primary = 1
-           LIMIT 1) AS location_image_id
+          l.location_name,
+          l.address AS location_address
         FROM itinerary_items ii
         LEFT JOIN locations l ON l.location_id = ii.location_id
         WHERE ii.itinerary_id = ?
@@ -327,10 +313,7 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
         success: true,
         data: {
           ...itineraryRows[0],
-          items: itemRows.map((item: any) => ({
-            ...item,
-            location_image: item.location_image_id ? `/api/images/${item.location_image_id}` : null,
-          })),
+          items: itemRows,
         },
       });
     } catch (err) {
