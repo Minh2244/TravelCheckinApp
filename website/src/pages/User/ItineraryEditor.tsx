@@ -1,8 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import L from "leaflet";
 import UserLayout from "../../layouts/UserLayout";
 import userApi from "../../api/userApi";
 import locationApi from "../../api/locationApi";
+import { useLocations } from "../../hooks/useLocations";
+import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getErrorMessage } from "../../utils/safe";
 
 interface ItineraryItemForm {
@@ -32,6 +36,7 @@ const ItineraryEditor = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
+  const { locations: allLocations } = useLocations();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -349,8 +354,9 @@ const ItineraryEditor = () => {
       {/* Modal thêm địa điểm */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
-          <div className="w-full max-w-lg max-h-[85vh] overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-auto rounded-2xl bg-white shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">THÊM ĐỊA ĐIỂM</span>
                 <h3 className="text-lg font-black text-slate-800 font-heading">Ngày {activeDay}</h3>
@@ -360,85 +366,141 @@ const ItineraryEditor = () => {
               </button>
             </div>
 
-            {/* Tìm kiếm hệ thống */}
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Tìm từ hệ thống</label>
-              <div className="flex gap-2">
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void handleSearch(); }}
-                  placeholder="Nhập tên địa điểm..."
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 outline-none"
-                />
-                <button
-                  onClick={() => void handleSearch()}
-                  disabled={searching}
-                  className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
+            <div className="flex flex-col md:flex-row">
+              {/* Bản đồ bên trái */}
+              <div className="w-full md:w-1/2 h-[400px] md:h-[500px] relative">
+                <MapContainer
+                  center={[16.0471, 108.2068]}
+                  zoom={6}
+                  style={{ height: "100%", width: "100%" }}
+                  className="rounded-bl-2xl"
                 >
-                  {searching ? "..." : "Tìm"}
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  />
+                  {allLocations
+                    .filter((loc) => loc.latitude && loc.longitude)
+                    .map((loc) => (
+                      <Marker
+                        key={loc.location_id}
+                        position={[Number(loc.latitude), Number(loc.longitude)]}
+                        eventHandlers={{
+                          click: () => {
+                            addFromSystem({
+                              location_id: loc.location_id,
+                              name: loc.name,
+                              address: loc.address || "",
+                              type: loc.type,
+                            });
+                          },
+                        }}
+                      >
+                        <Popup>
+                          <div className="text-center min-w-[150px]">
+                            <div className="font-bold text-sm mb-1">{loc.name}</div>
+                            <div className="text-xs text-gray-500 mb-2">{loc.address}</div>
+                            <button
+                              onClick={() => {
+                                addFromSystem({
+                                  location_id: loc.location_id,
+                                  name: loc.name,
+                                  address: loc.address || "",
+                                  type: loc.type,
+                                });
+                              }}
+                              className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-lg font-semibold hover:bg-indigo-700"
+                            >
+                              + Thêm vào lịch trình
+                            </button>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ))}
+                </MapContainer>
+                <div className="absolute bottom-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-600 shadow-sm border border-slate-200">
+                  📍 Nhấn vào marker trên bản đồ để thêm địa điểm
+                </div>
+              </div>
+
+              {/* Form bên phải */}
+              <div className="w-full md:w-1/2 p-6 overflow-auto max-h-[500px]">
+                {/* Tìm kiếm */}
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">🔍 Tìm địa điểm</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") void handleSearch(); }}
+                      placeholder="Nhập tên địa điểm..."
+                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none"
+                    />
+                    <button
+                      onClick={() => void handleSearch()}
+                      disabled={searching}
+                      className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
+                    >
+                      {searching ? "..." : "Tìm"}
+                    </button>
+                  </div>
+                  {searchResults.length > 0 && (
+                    <div className="mt-2 rounded-xl border border-slate-100 overflow-hidden max-h-32 overflow-y-auto">
+                      {searchResults.map((loc) => (
+                        <button
+                          key={loc.location_id}
+                          onClick={() => addFromSystem(loc)}
+                          className="w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-indigo-50 transition-colors"
+                        >
+                          <div className="text-sm font-semibold text-slate-800">{loc.name}</div>
+                          <div className="text-xs text-slate-500">{loc.address} · {loc.type}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 my-4">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">hoặc nhập tự do</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+
+                {/* Nhập tự do */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Tên địa điểm *</label>
+                    <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Ví dụ: Nhà hàng ABC" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Địa chỉ</label>
+                    <input value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} placeholder="Ví dụ: 123 Đường XYZ, Đà Lạt" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Giờ</label>
+                      <input type="time" value={addTime} onChange={(e) => setAddTime(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 focus:border-indigo-300 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Chi phí (VND)</label>
+                      <input type="number" value={addCost} onChange={(e) => setAddCost(e.target.value)} placeholder="0" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Ghi chú</label>
+                    <input value={addNote} onChange={(e) => setAddNote(e.target.value)} placeholder="Ghi chú (tùy chọn)" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
+                  </div>
+                </div>
+
+                <button
+                  onClick={addCustom}
+                  disabled={!customName.trim()}
+                  className="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  Thêm địa điểm tự do
                 </button>
               </div>
-              {searchResults.length > 0 && (
-                <div className="mt-2 rounded-xl border border-slate-100 overflow-hidden">
-                  {searchResults.map((loc) => (
-                    <button
-                      key={loc.location_id}
-                      onClick={() => addFromSystem(loc)}
-                      className="w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-indigo-50 transition-colors"
-                    >
-                      <div className="text-sm font-semibold text-slate-800">{loc.name}</div>
-                      <div className="text-xs text-slate-500">{loc.address} · {loc.type}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-slate-100" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">hoặc nhập tự do</span>
-              <div className="flex-1 h-px bg-slate-100" />
-            </div>
-
-            {/* Nhập tự do */}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Tên địa điểm *</label>
-                <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Ví dụ: Nhà hàng ABC" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Địa chỉ</label>
-                <input value={customAddress} onChange={(e) => setCustomAddress(e.target.value)} placeholder="Ví dụ: 123 Đường XYZ, Đà Lạt" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Giờ</label>
-                  <input type="time" value={addTime} onChange={(e) => setAddTime(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 focus:border-indigo-300 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Chi phí dự kiến (VND)</label>
-                  <input type="number" value={addCost} onChange={(e) => setAddCost(e.target.value)} placeholder="0" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Ghi chú</label>
-                <input value={addNote} onChange={(e) => setAddNote(e.target.value)} placeholder="Ghi chú (tùy chọn)" className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none" />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-5">
-              <button onClick={closeModal} className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-                Hủy
-              </button>
-              <button
-                onClick={addCustom}
-                disabled={!customName.trim()}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                Thêm địa điểm
-              </button>
             </div>
           </div>
         </div>
