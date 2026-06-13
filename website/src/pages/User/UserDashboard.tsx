@@ -340,7 +340,7 @@ const UserDashboard = () => {
       ),
     },
     {
-      label: "Lịch trình",
+      label: "Tạo Lịch trình",
       path: "/user/itineraries",
       color: "bg-indigo-50 text-indigo-600 border-indigo-200/60",
       icon: (
