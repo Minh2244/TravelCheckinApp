@@ -1,12 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
-import L from "leaflet";
 import UserLayout from "../../layouts/UserLayout";
+import LocationPickerMap from "../../components/LocationPickerMap";
 import userApi from "../../api/userApi";
 import locationApi from "../../api/locationApi";
-import { useLocations } from "../../hooks/useLocations";
-import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getErrorMessage } from "../../utils/safe";
 
 interface ItineraryItemForm {
@@ -24,9 +21,11 @@ interface ItineraryItemForm {
 
 interface LocationOption {
   location_id: number;
-  name: string;
+  name?: string;
+  location_name?: string;
   address: string;
-  type: string;
+  type?: string;
+  location_type?: string;
 }
 
 let tempCounter = 0;
@@ -36,7 +35,6 @@ const ItineraryEditor = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
-  const { locations: allLocations } = useLocations();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -116,7 +114,7 @@ const ItineraryEditor = () => {
   }, [searchQuery]);
 
   const addFromSystem = (loc: LocationOption) => {
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: "", time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name }]);
+    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: "", time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
     closeModal();
   };
 
@@ -367,102 +365,26 @@ const ItineraryEditor = () => {
             </div>
 
             <div className="flex flex-col md:flex-row">
-              {/* Bản đồ bên trái */}
-              <div className="w-full md:w-1/2 h-[400px] md:h-[500px] relative">
-                <MapContainer
-                  center={[16.0471, 108.2068]}
-                  zoom={6}
-                  style={{ height: "100%", width: "100%" }}
-                  className="rounded-bl-2xl"
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  />
-                  {allLocations
-                    .filter((loc) => loc.latitude && loc.longitude)
-                    .map((loc) => (
-                      <Marker
-                        key={loc.location_id}
-                        position={[Number(loc.latitude), Number(loc.longitude)]}
-                        eventHandlers={{
-                          click: () => {
-                            addFromSystem({
-                              location_id: loc.location_id,
-                              name: loc.name,
-                              address: loc.address || "",
-                              type: loc.type,
-                            });
-                          },
-                        }}
-                      >
-                        <Popup>
-                          <div className="text-center min-w-[150px]">
-                            <div className="font-bold text-sm mb-1">{loc.name}</div>
-                            <div className="text-xs text-gray-500 mb-2">{loc.address}</div>
-                            <button
-                              onClick={() => {
-                                addFromSystem({
-                                  location_id: loc.location_id,
-                                  name: loc.name,
-                                  address: loc.address || "",
-                                  type: loc.type,
-                                });
-                              }}
-                              className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-lg font-semibold hover:bg-indigo-700"
-                            >
-                              + Thêm vào lịch trình
-                            </button>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
-                </MapContainer>
-                <div className="absolute bottom-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-slate-600 shadow-sm border border-slate-200">
-                  📍 Nhấn vào marker trên bản đồ để thêm địa điểm
-                </div>
+              {/* Bản đồ bên trái - dùng LocationPickerMap */}
+              <div className="w-full md:w-1/2 h-[400px] md:h-[500px]">
+                <LocationPickerMap
+                  onSelectLocation={(loc) => {
+                    addFromSystem({
+                      location_id: loc.location_id,
+                      name: loc.location_name,
+                      address: loc.address || "",
+                      type: loc.location_type,
+                    });
+                  }}
+                  className="h-full"
+                />
               </div>
 
               {/* Form bên phải */}
               <div className="w-full md:w-1/2 p-6 overflow-auto max-h-[500px]">
-                {/* Tìm kiếm */}
-                <div className="mb-4">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">🔍 Tìm địa điểm</label>
-                  <div className="flex gap-2">
-                    <input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") void handleSearch(); }}
-                      placeholder="Nhập tên địa điểm..."
-                      className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-300 outline-none"
-                    />
-                    <button
-                      onClick={() => void handleSearch()}
-                      disabled={searching}
-                      className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all"
-                    >
-                      {searching ? "..." : "Tìm"}
-                    </button>
-                  </div>
-                  {searchResults.length > 0 && (
-                    <div className="mt-2 rounded-xl border border-slate-100 overflow-hidden max-h-32 overflow-y-auto">
-                      {searchResults.map((loc) => (
-                        <button
-                          key={loc.location_id}
-                          onClick={() => addFromSystem(loc)}
-                          className="w-full text-left px-4 py-2.5 border-b border-slate-50 last:border-0 hover:bg-indigo-50 transition-colors"
-                        >
-                          <div className="text-sm font-semibold text-slate-800">{loc.name}</div>
-                          <div className="text-xs text-slate-500">{loc.address} · {loc.type}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-3 my-4">
+                <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1 h-px bg-slate-100" />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">hoặc nhập tự do</span>
+                  <span className="text-xs font-bold text-slate-500">📍 Chọn trên bản đồ hoặc nhập tay</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
