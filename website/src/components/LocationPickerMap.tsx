@@ -321,6 +321,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
       <MapContainer
         center={[16.0471, 108.2068]}
         zoom={6}
+        zoomControl={false}
         style={{ height: "100%", width: "100%" }}
         className="rounded-xl"
       >
