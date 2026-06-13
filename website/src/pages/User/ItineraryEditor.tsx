@@ -386,6 +386,11 @@ const ItineraryEditor = () => {
                       type: loc.location_type,
                     });
                   }}
+                  onPickLocation={(coords) => {
+                    setCustomName(`Vị trí (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
+                    setCustomAddress("");
+                  }}
+                  }}
                   className="h-full"
                 />
               </div>
