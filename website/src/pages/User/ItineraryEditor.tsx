@@ -227,6 +227,7 @@ const ItineraryEditor = () => {
                 <input
                   type="date"
                   value={startDate}
+                  min={new Date().toISOString().split("T")[0]}
                   max={endDate || undefined}
                   onChange={(e) => {
                     const v = e.target.value;
