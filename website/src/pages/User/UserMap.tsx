@@ -2430,10 +2430,8 @@ const UserMap = () => {
                       routeOnlyDestination.lat,
                       routeOnlyDestination.lng,
                     ]}
-                    icon={getCircleImageIcon(
-                      getDestinationImageUrl(routeOnlyDestination, selected),
-                      true,
-                    )}
+                    icon={getPinIconByKind("ownerSelected")}
+                    zIndexOffset={1000}
                   >
                     <Popup autoPan={false}>
                       <div className="space-y-2">
