@@ -227,7 +227,12 @@ const ItineraryEditor = () => {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  max={endDate || undefined}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setStartDate(v);
+                    if (endDate && v > endDate) setEndDate(v);
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
                 />
               </div>
@@ -236,7 +241,12 @@ const ItineraryEditor = () => {
                 <input
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  min={startDate || undefined}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEndDate(v);
+                    if (startDate && v < startDate) setStartDate(v);
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm text-slate-800 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
                 />
               </div>

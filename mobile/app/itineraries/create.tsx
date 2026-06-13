@@ -218,7 +218,10 @@ export default function CreateItineraryScreen() {
                 <TextInput
                   style={styles.input}
                   value={startDate}
-                  onChangeText={setStartDate}
+                  onChangeText={(v) => {
+                    setStartDate(v);
+                    if (endDate && v > endDate) setEndDate(v);
+                  }}
                   placeholder="YYYY-MM-DD"
                 />
               </View>
@@ -227,7 +230,10 @@ export default function CreateItineraryScreen() {
                 <TextInput
                   style={styles.input}
                   value={endDate}
-                  onChangeText={setEndDate}
+                  onChangeText={(v) => {
+                    setEndDate(v);
+                    if (startDate && v < startDate) setStartDate(v);
+                  }}
                   placeholder="YYYY-MM-DD"
                 />
               </View>
