@@ -387,9 +387,9 @@ const ItineraryEditor = () => {
                       type: loc.location_type,
                     });
                   }}
-                  onPickLocation={(coords) => {
-                    setCustomName(`Vị trí (${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)})`);
-                    setCustomAddress("");
+                  onPickLocation={(data) => {
+                    setCustomName(data.name || `Vị trí (${data.lat.toFixed(4)}, ${data.lng.toFixed(4)})`);
+                    setCustomAddress(data.address || "");
                   }}
                   className="h-full"
                 />

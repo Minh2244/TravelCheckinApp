@@ -92,9 +92,16 @@ const getCircleImageIcon = (imageUrl: string | null | undefined, isSelected: boo
 // Types
 // ============================================================
 
+interface PickedLocationData {
+  lat: number;
+  lng: number;
+  name?: string;
+  address?: string;
+}
+
 interface LocationPickerMapProps {
   onSelectLocation: (location: Location) => void;
-  onPickLocation?: (coords: { lat: number; lng: number }) => void;
+  onPickLocation?: (data: PickedLocationData) => void;
   className?: string;
 }
 
@@ -253,11 +260,29 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
     [],
   );
 
-  // ---- Handle map click → place picked pin ----
+  // ---- Handle map click → only place picked pin (don't call onPickLocation yet) ----
   const handleMapClick = useCallback(
     (coords: { lat: number; lng: number }) => {
       setPickedPoint(coords);
-      if (onPickLocation) onPickLocation(coords);
+      setSearchMarker(null); // clear search marker when clicking map
+    },
+    [],
+  );
+
+  // ---- Confirm picked location → reverse geocode + call onPickLocation ----
+  const handleConfirmPicked = useCallback(
+    async (coords: { lat: number; lng: number }) => {
+      if (!onPickLocation) return;
+      try {
+        const result = await geoApi.reverse(coords.lat, coords.lng);
+        const name = result.display_name || "";
+        const addr = result.address
+          ? [result.address.road, result.address.suburb, result.address.city || result.address.town || result.address.village, result.address.state].filter(Boolean).join(", ")
+          : "";
+        onPickLocation({ lat: coords.lat, lng: coords.lng, name: name || undefined, address: addr || undefined });
+      } catch {
+        onPickLocation({ lat: coords.lat, lng: coords.lng });
+      }
     },
     [onPickLocation],
   );
@@ -395,7 +420,14 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                 </div>
                 <button
                   onClick={() => {
-                    if (onPickLocation) onPickLocation({ lat: searchMarker.lat, lng: searchMarker.lng });
+                    if (onPickLocation) {
+                      onPickLocation({
+                        lat: searchMarker.lat,
+                        lng: searchMarker.lng,
+                        name: searchMarker.name,
+                      });
+                    }
+                    // Convert search marker to picked point (keep pin on map)
                     setPickedPoint({ lat: searchMarker.lat, lng: searchMarker.lng });
                     setSearchMarker(null);
                   }}
@@ -423,9 +455,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                   📌 {pickedPoint.lat.toFixed(5)}, {pickedPoint.lng.toFixed(5)}
                 </div>
                 <button
-                  onClick={() => {
-                    if (onPickLocation) onPickLocation(pickedPoint);
-                  }}
+                  onClick={() => void handleConfirmPicked(pickedPoint)}
                   className="w-full px-3 py-1.5 bg-amber-500 text-white text-xs rounded-lg font-semibold hover:bg-amber-600 transition-colors"
                 >
                   📍 Chọn vị trí này
