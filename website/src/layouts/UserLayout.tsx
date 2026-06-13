@@ -10,9 +10,9 @@ import type { AiChatHistoryItem } from "../types/user.types";
 // Dùng để định nghĩa input cho layout user, giúp tái sử dụng UI thống nhất
 interface UserLayoutProps {
   children: React.ReactNode;
-  title: string;
+  title?: string;
   subtitle?: string;
-  activeKey: string;
+  activeKey?: string;
   showSearch?: boolean;
   onSearch?: (value: string) => void;
   searchPlaceholder?: string;
@@ -57,9 +57,9 @@ type MenuSection = {
 
 const UserLayout = ({
   children,
-  title,
+  title = "Travel Check-in",
   subtitle,
-  activeKey,
+  activeKey = "",
   showSearch = false,
   onSearch,
   searchPlaceholder,
@@ -203,6 +203,18 @@ const UserLayout = ({
               </svg>
             ),
           },
+          {
+            label: "Lịch trình",
+            path: "/user/itineraries",
+            icon: (
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            ),
+          },
         ],
       },
       {
@@ -271,7 +283,7 @@ const UserLayout = ({
     return current?.label ?? "Trang chủ";
   }, [activeKey, location.pathname, menuItems, subtitle]);
 
-  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedTitle = (title || "Travel Check-in").trim().toLowerCase();
   const normalizedSubtitle = (computedSubtitle || "").trim().toLowerCase();
   const showSubtitle =
     Boolean(computedSubtitle) && normalizedSubtitle !== normalizedTitle;
@@ -407,7 +419,7 @@ const UserLayout = ({
     <div className="min-h-screen user-theme user-bg">
       <div className="flex min-h-screen">
         {/* Sidebar dark (desktop) */}
-        <aside className="hidden lg:flex lg:w-80 lg:flex-col bg-gradient-to-b from-slate-900 to-slate-950">
+        <aside className="hidden lg:flex lg:w-80 lg:flex-col bg-gradient-to-b from-slate-900 to-slate-950 sticky top-0 h-screen">
           <div className="h-16 flex items-center border-b border-white/10 px-5">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-500 text-white flex items-center justify-center text-sm font-bold font-heading">
