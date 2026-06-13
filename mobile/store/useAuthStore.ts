@@ -32,6 +32,7 @@ interface AuthState {
   logout: () => Promise<void>;
   loadSession: () => Promise<void>;
   clearError: () => void;
+  clearAuth: () => void;
 }
 
 const useAuthStore = create<AuthState>((set) => ({
@@ -200,6 +201,15 @@ const useAuthStore = create<AuthState>((set) => ({
     await AsyncStorage.removeItem('accessToken');
     await AsyncStorage.removeItem('refreshToken');
 
+    set({
+      user: null,
+      isAuthenticated: false,
+      error: null,
+    });
+  },
+
+  // Xóa auth state (không gọi API) - dùng khi refresh token thất bại
+  clearAuth: () => {
     set({
       user: null,
       isAuthenticated: false,

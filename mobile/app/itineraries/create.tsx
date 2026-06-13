@@ -89,7 +89,7 @@ export default function CreateItineraryScreen() {
         time: addTime,
         note: addNote,
         estimated_cost: addCost,
-        location_name: loc.name,
+        location_name: loc.location_name,
       },
     ]);
     closeModal();
@@ -333,8 +333,8 @@ export default function CreateItineraryScreen() {
                         style={styles.searchResultItem}
                         onPress={() => addFromSystem(loc)}
                       >
-                        <Text style={styles.searchResultName}>{loc.name}</Text>
-                        <Text style={styles.searchResultAddr}>{loc.address} · {loc.type}</Text>
+                        <Text style={styles.searchResultName}>{loc.location_name}</Text>
+                        <Text style={styles.searchResultAddr}>{loc.address} · {loc.location_type}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
