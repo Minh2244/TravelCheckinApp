@@ -395,13 +395,10 @@ const Checkins = () => {
   };
 
   return (
-    <UserLayout title="Điểm đã ghé thăm" activeKey="/user/checkins">
+    <UserLayout title="Nhật ký hành trình" activeKey="/user/checkins">
       <section className="user-section p-4 sm:p-6 lg:p-8 font-sans">
-        <h2 className="text-2xl font-black text-slate-800 font-heading tracking-tight text-left">
-          Nhật ký hành trình của tôi
-        </h2>
-        <p className="text-xs text-slate-500 mt-2 text-left">
-          Dòng thời gian lưu lại các bước chân và kỷ niệm của bạn. Viết nhật ký, ghi nhận cảm xúc dưới mỗi điểm đã ghé thăm.
+        <p className="text-xs text-slate-500 text-left">
+          Lưu lại các bước chân và kỷ niệm. Viết nhật ký, ghi nhận cảm xúc dưới mỗi điểm đã ghé thăm.
         </p>
 
         {loading ? (
