@@ -88,13 +88,7 @@ const Itineraries = () => {
           <div className="absolute bottom-0 left-0 h-24 w-24 bg-purple-200/15 rounded-full blur-2xl" />
           <div className="relative z-10 flex items-center justify-between">
             <div>
-              <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">
-                KẾ HOẠCH DU LỊCH
-              </span>
-              <h2 className="text-2xl font-black text-slate-800 mt-1 font-heading">
-                Lịch trình của tôi
-              </h2>
-              <p className="text-xs text-slate-600 mt-2 font-medium max-w-md leading-relaxed">
+              <p className="text-xs text-slate-600 font-medium max-w-md leading-relaxed">
                 Tạo kế hoạch cho chuyến đi, thêm địa điểm theo ngày, ghi chú và theo dõi những nơi đã ghé thăm.
               </p>
             </div>
