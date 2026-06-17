@@ -1,22 +1,45 @@
-# TravelCheckinApp
+# Multi-role Travel Management and Experience System with AI Integration
 
-**Smart Travel & POS Ecosystem**
+### Hệ thống quản lý và trải nghiệm du lịch đa vai trò tích hợp trí tuệ nhân tạo
 
-A full-stack platform connecting tourists with service providers through integrated POS (Point of Sale), PMS (Property Management System), and Smart Check-in mechanisms.
+[![Copyright](https://img.shields.io/badge/Copyright-©%202026%20Mai%20Nhut%20Minh-blue)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-v20+-339933)](https://nodejs.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-v8.0+-4479A1)](https://mysql.com/)
+[![React Native](https://img.shields.io/badge/React%20Native-Expo%20SDK%2054-61DAFB)](https://reactnative.dev/)
+[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
+
+A comprehensive full-stack travel ecosystem connecting tourists with service providers through integrated POS (Point of Sale), PMS (Property Management System), Smart Check-in, and AI-powered features. Built as a graduation thesis at Tay Do University.
+
+---
+
+## Table of Contents
+
+- [I. Project Overview](#i-project-overview)
+- [II. Key Features](#ii-key-features)
+- [III. System Architecture](#iii-system-architecture)
+- [IV. Roles and Access Control](#iv-roles-and-access-control)
+- [V. Tech Stack](#v-tech-stack)
+- [VI. Project Structure](#vi-project-structure)
+- [VII. Database Schema (56 Tables)](#vii-database-schema-56-tables)
+- [VIII. Getting Started](#viii-getting-started)
+- [IX. API Documentation](#ix-api-documentation)
+- [X. Development Progress](#x-development-progress)
+- [XI. Author](#xi-author)
+- [XII. Copyright and License](#xii-copyright-and-license)
 
 ---
 
 ## I. Project Overview
 
-TravelCheckinApp is a comprehensive travel ecosystem consisting of three main components:
+This project is a full-stack travel ecosystem consisting of three main components:
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
-| Backend API | RESTful server with real-time capabilities | Node.js, Express 5, TypeScript |
-| Mobile App | Consumer-facing app for travelers | React Native, Expo SDK 54, TypeScript |
-| Web Dashboard | Admin, Owner, and User management panels | React 19, Vite 7, Ant Design, TypeScript |
+| **Backend API** | RESTful server with real-time capabilities | Node.js, Express 5, TypeScript |
+| **Mobile App** | Consumer-facing app for travelers | React Native, Expo SDK 54, TypeScript |
+| **Web Dashboard** | Admin, Owner, and User management panels | React 19, Vite 7, Ant Design, TypeScript |
 
-The platform enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations.
+The system enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, plan itineraries, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations. The platform integrates Google Gemini AI for intelligent chatbot assistance and personalized recommendations.
 
 ---
 
@@ -25,17 +48,19 @@ The platform enables tourists to discover locations, book services (hotel rooms,
 ### A. For Travelers (Mobile App)
 
 1. **Smart Check-in** — GPS-based check-in with geofencing and photo capture
-2. **Interactive Map** — Browse locations with OpenStreetMap tiles, markers, and routing
+2. **Interactive Map** — Browse locations with OpenStreetMap tiles, markers, and routing (OSRM)
 3. **Multi-service Booking** — Reserve hotel rooms, restaurant tables, and tourist tickets in one flow
 4. **QR Ticket Wallet** — Digital tickets with unique QR codes for instant verification
 5. **Travel Diary** — Document trips with mood tracking and photo entries
-6. **Voucher Wallet** — Claim and redeem discount vouchers from the platform and locations
-7. **Leaderboard** — Gamified ranking based on check-in activity and travel engagement
-8. **SOS Emergency** — Real-time GPS alert system for emergencies with admin monitoring
-9. **AI Chat Assistant** — Google Gemini-powered chatbot for travel planning *(under development)*
-10. **Location Chat** — Group chat per location for real-time communication with staff and other travelers
-11. **Booking Reminders** — Automated notifications 6 hours before check-in and 3 hours before check-out
-12. **Social Login** — Google and Facebook OAuth integration
+6. **Itinerary Planning** — Create day-by-day travel plans with location search and navigation
+7. **Voucher Wallet** — Claim and redeem discount vouchers from the platform and locations
+8. **Leaderboard** — Gamified ranking based on check-in activity and travel engagement
+9. **SOS Emergency** — Real-time GPS alert system for emergencies with admin monitoring
+10. **AI Chat Assistant** — Google Gemini-powered chatbot for travel planning
+11. **Location Chat** — Real-time chat with location owners via Socket.IO
+12. **Booking Reminders** — Automated notifications for upcoming bookings
+13. **Social Login** — Google and Facebook OAuth integration
+14. **Personalized Recommendations** — AI-driven location suggestions based on travel history
 
 ### B. For Business Owners (Web Dashboard)
 
@@ -108,7 +133,7 @@ The platform enables tourists to discover locations, book services (hotel rooms,
                       +-----------+  +-----------+  +-----------+
                       |   MySQL   |  |  Firebase |  |  Google   |
                       | Database  |  |  Cloud    |  |  Gemini   |
-                      | 53 tables |  | Messaging |  |    AI     |
+                      | 56 tables |  | Messaging |  |    AI     |
                       +-----------+  +-----------+  +-----------+
 
                       Real-time: Socket.IO (WebSocket) + SSE
@@ -118,21 +143,21 @@ The platform enables tourists to discover locations, book services (hotel rooms,
 
 ## IV. Roles and Access Control
 
-The platform implements **4 distinct roles** with JWT-based authentication:
+The system implements **4 distinct roles** with JWT-based authentication:
 
 | Role | Scope | Key Capabilities |
 |------|-------|------------------|
-| Admin | Platform-wide | Full control: user/owner management, location moderation, commission, analytics, vouchers, AI settings, SOS monitoring, push notifications |
-| Owner | Business-level | Location CRUD, service/booking/payment management, hotel PMS, restaurant POS, tourist POS, employee management, vouchers, reviews |
-| Employee | Location-level | Subset of owner: front-office POS, hotel PMS, ticket scanning; permissions assigned by owner via JSON config |
-| User | Consumer | Booking, check-in, favorites, vouchers, reviews, travel diary, SOS, leaderboard, AI chat |
+| **Admin** | Platform-wide | Full control: user/owner management, location moderation, commission, analytics, vouchers, AI settings, SOS monitoring, push notifications |
+| **Owner** | Business-level | Location CRUD, service/booking/payment management, hotel PMS, restaurant POS, tourist POS, employee management, vouchers, reviews |
+| **Employee** | Location-level | Subset of owner: front-office POS, hotel PMS, ticket scanning; permissions assigned by owner via JSON config |
+| **User** | Consumer | Booking, check-in, favorites, vouchers, reviews, travel diary, itinerary, SOS, leaderboard, AI chat |
 
 **Access Rules:**
 
-A. Owner accounts require admin approval before accessing owner features.
-B. Locked accounts are blocked at the middleware level.
-C. Single active session per user — new login revokes previous sessions.
-D. Token refresh with separate access and refresh tokens (JWT).
+- Owner accounts require admin approval before accessing owner features.
+- Locked accounts are blocked at the middleware level.
+- Single active session per user — new login revokes previous sessions.
+- Token refresh with separate access and refresh tokens (JWT).
 
 ---
 
@@ -149,7 +174,8 @@ D. Token refresh with separate access and refresh tokens (JWT).
 | Real-time | Socket.IO, Server-Sent Events (SSE) |
 | Push Notifications | Firebase Cloud Messaging (firebase-admin) |
 | AI | Google Gemini (@google/generative-ai) |
-| File Uploads | Multer (memory storage) |
+| Image Processing | Sharp (resize, compress) |
+| File Storage | MySQL LONGBLOB (images table) |
 | Email | Nodemailer (Gmail SMTP) |
 | Validation | Zod v4 |
 | Security | Helmet, CORS, Compression |
@@ -158,12 +184,15 @@ D. Token refresh with separate access and refresh tokens (JWT).
 
 | Category | Technology |
 |----------|------------|
-| Framework | React Native 0.85.3 + Expo SDK 54 |
+| Framework | React Native + Expo SDK 54 |
 | Routing | expo-router (file-based) |
-| State Management | Zustand |
-| HTTP Client | Axios |
-| Maps | react-native-maps |
+| State Management | Zustand + AsyncStorage |
+| HTTP Client | Axios (auto token refresh) |
+| Maps | react-native-maps + OpenStreetMap tiles |
 | QR Codes | react-native-qrcode-svg |
+| Real-time | Socket.IO (chat), SSE (booking updates) |
+| Push Notifications | expo-notifications |
+| OAuth | expo-auth-session + expo-web-browser |
 | Date Handling | date-fns |
 | Animations | react-native-reanimated |
 | Gestures | react-native-gesture-handler |
@@ -178,11 +207,11 @@ D. Token refresh with separate access and refresh tokens (JWT).
 | UI Library | Ant Design v6 |
 | State Management | Zustand |
 | Styling | Tailwind CSS 3 |
-| Maps | react-leaflet, @react-google-maps/api |
+| Maps | react-leaflet (OpenStreetMap) |
 | QR/Barcode | qrcode.react, @zxing/browser |
 | Forms | react-hook-form + Zod |
 | OAuth | @react-oauth/google, @greatsumini/react-facebook-login |
-| Real-time | socket.io-client |
+| Real-time | socket.io-client, EventSource (SSE) |
 
 ---
 
@@ -202,45 +231,46 @@ TravelCheckinApp/
 |   |   |   +-- bookingController.ts
 |   |   |   +-- locationController.ts
 |   |   |   +-- sosController.ts
-|   |   |   +-- chatController.ts
+|   |   |   +-- locationChatController.ts
 |   |   |   +-- aiController.ts
 |   |   |   +-- geoController.ts
 |   |   |   +-- pushController.ts
+|   |   |   +-- imageController.ts
+|   |   |   +-- itineraryController.ts
 |   |   +-- middleware/              # Auth, role-based access control
 |   |   +-- routes/                  # 11 API route groups
 |   |   +-- services/                # Business logic layer
-|   |   +-- utils/                   # Helpers (email, OTP, geocoding, AI)
+|   |   +-- utils/                   # Helpers (email, OTP, geocoding, AI, socketHub)
 |   |   +-- server.ts                # Entry point
 |   +-- .env.example                 # Environment variables template
 |   +-- package.json
 |
 +-- mobile/                          # React Native (Expo) Mobile App
-|   +-- app/                         # File-based routing (15+ screens)
-|   |   +-- (tabs)/                  # Tab navigation
+|   +-- app/                         # File-based routing (28 screens)
+|   |   +-- (tabs)/                  # Tab navigation (5 tabs)
 |   |   |   +-- index.tsx            #   Home
 |   |   |   +-- map.tsx              #   Map
-|   |   |   +-- history.tsx          #   History
 |   |   |   +-- tickets.tsx          #   Tickets
 |   |   |   +-- profile.tsx          #   Profile
-|   |   +-- booking/[serviceId].tsx  # Dynamic booking
+|   |   |   +-- history.tsx          #   History
+|   |   +-- auth/                    # Auth screens
+|   |   +-- booking/                 # Booking flows
 |   |   +-- location/[id].tsx        # Location detail
-|   |   +-- checkin.tsx              # Check-in
-|   |   +-- diary.tsx                # Travel diary
-|   |   +-- leaderboard.tsx          # Leaderboard
-|   |   +-- vouchers.tsx             # Voucher wallet
-|   |   +-- notifications.tsx        # Notifications
+|   |   +-- chat/[locationId].tsx    # Real-time chat
+|   |   +-- checkins.tsx             # Check-ins & Diary
 |   |   +-- saved-locations.tsx      # Favorites
-|   |   +-- sos/                     # SOS emergency
-|   |   +-- login.tsx                # Auth screens
-|   |   +-- register.tsx
-|   |   +-- forgot-password.tsx
-|   +-- api/                         # Axios client and endpoints
+|   |   +-- vouchers.tsx             # Voucher wallet
+|   |   +-- itineraries/             # Itinerary management
+|   |   +-- sos.tsx                  # SOS emergency
+|   |   +-- notifications.tsx        # Notifications
+|   |   +-- leaderboard.tsx          # Leaderboard
+|   +-- api/                         # Axios client, endpoints, Socket.IO, SSE
 |   +-- components/                  # Reusable UI components
-|   +-- constants/                   # Theme, colors, spacing
+|   +-- constants/                   # Theme, colors, spacing, config
 |   +-- hooks/                       # Custom React hooks
 |   +-- store/                       # Zustand state stores
 |   +-- types/                       # TypeScript interfaces
-|   +-- utils/                       # Helper functions
+|   +-- utils/                       # Helper functions (notifications, formatters)
 |
 +-- website/                         # React SPA (Admin + Owner + User)
 |   +-- src/
@@ -250,30 +280,143 @@ TravelCheckinApp/
 |   |   +-- pages/
 |   |       +-- Admin/               # 18 admin pages
 |   |       +-- Owner/               # 20 owner pages (incl. PMS and POS)
-|   |       +-- User/                # 17 user pages
+|   |       +-- User/                # 19 user pages
 |   |       +-- Auth/                # Login, Register, OAuth callbacks
 |   +-- package.json
 |
 +-- docs/                            # Project documentation
-+-- TravelCheckinApp.sql             # MySQL database dump (53 tables)
+|
++-- TravelCheckinApp.sql             # MySQL database dump (56 tables)
++-- LICENSE                          # License file
 +-- .gitignore
 +-- README.md
 ```
 
 ---
 
-## VII. Database Schema
+## VII. Database Schema (56 Tables)
 
-The system uses a relational **MySQL** database with **53 tables** to ensure data integrity for complex business workflows. Below is the architecture of core entities:
+The system uses a relational **MySQL** database with **56 tables** organized across 12 functional domains to ensure data integrity for complex business workflows. The complete schema with foreign key constraints and query-optimized indexes is stored in `TravelCheckinApp.sql` at the project root.
 
-*   **Core Entity System:** `users` ───< `locations` ───< `services` ───< `bookings`
-*   **Hotel PMS Subsystem:** `hotel_rooms` >─── `hotel_stays` (Real-time room status tracking)
-*   **Restaurant POS Subsystem:** `pos_tables` ───< `pos_orders` ───< `pos_order_items`
-*   **Utilities & AI:** `vouchers`, `user_diary`, `sos_alerts`, `ai_chat_history`
+### A. Complete Table Inventory
 
-> **Note:** The complete schema with foreign key constraints and query-optimized indexes is stored in `TravelCheckinApp.sql` at the project root.
+#### 1. Authentication and Users (8 tables)
 
-### A. Core Entity Relationships
+| # | Table | Description |
+|---|-------|-------------|
+| 1 | `users` | Core user accounts with role-based access (admin, owner, employee, user) |
+| 2 | `owner_profiles` | Extended business profile for owners (bank info, approval status, commission) |
+| 3 | `user_active_sessions` | JWT session tracking — single active session per user |
+| 4 | `login_history` | Complete login audit trail with IP, device, and timestamp |
+| 5 | `login_attempts` | Failed login tracking for brute-force protection |
+| 6 | `otp_codes` | One-time passwords for email verification and password reset |
+| 7 | `account_blacklist` | Banned accounts with reason and expiration |
+| 8 | `user_preferences` | User settings and notification preferences |
+
+#### 2. Locations and Services (3 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 9 | `locations` | Business locations with geo coordinates, images, opening hours, and auto-config |
+| 10 | `services` | Bookable services per location (rooms, tables, tickets, food, combos) |
+| 11 | `service_categories` | Service type classification and grouping |
+
+#### 3. Bookings and Payments (7 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 12 | `bookings` | Core booking records with status tracking and voucher integration |
+| 13 | `booking_tickets` | QR-coded digital tickets for tourist attractions |
+| 14 | `booking_table_reservations` | Restaurant table reservations linked to bookings |
+| 15 | `booking_preorder_items` | Pre-ordered food/menu items for table reservations |
+| 16 | `payments` | Payment transactions with commission calculation |
+| 17 | `commissions` | Platform commission records per owner |
+| 18 | `commission_history` | Commission payment history and settlement tracking |
+
+#### 4. Hotel PMS (3 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 19 | `hotel_rooms` | Room inventory with floor, number, type, and status |
+| 20 | `hotel_stays` | Active and historical guest stays with check-in/out |
+| 21 | `hotel_stay_items` | Minibar charges, service fees, and additional costs per stay |
+
+#### 5. Restaurant POS (5 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 22 | `pos_areas` | Dining area sections (indoor, outdoor, VIP, etc.) |
+| 23 | `pos_tables` | Physical tables with drag-and-drop positioning |
+| 24 | `pos_orders` | Active orders linked to occupied tables |
+| 25 | `pos_order_items` | Individual items within each order |
+| 26 | `pos_tickets` | Tourist attraction tickets sold via POS |
+
+#### 6. Check-in and SOS (2 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 27 | `checkins` | GPS-based location check-ins with photo and geofence data |
+| 28 | `sos_alerts` | Emergency alerts with real-time GPS coordinates and resolution status |
+
+#### 7. Reviews and Reports (4 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 29 | `reviews` | User reviews and ratings for locations |
+| 30 | `review_replies` | Owner responses to user reviews |
+| 31 | `reports` | User-submitted reports (content violations, abuse) |
+| 32 | `owner_violations` | Tracked violations and warnings issued to owners |
+
+#### 8. Voucher System (5 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 33 | `vouchers` | Voucher definitions with type, discount, and validity |
+| 34 | `voucher_locations` | Voucher-to-location mapping (which locations accept which vouchers) |
+| 35 | `voucher_usage_history` | Redemption tracking per user per voucher |
+| 36 | `voucher_reviews` | User reviews tied to voucher usage |
+| 37 | `user_voucher_wallet` | User's claimed vouchers stored in personal wallet |
+
+#### 9. Chat and Notifications (6 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 38 | `chat_messages` | General real-time chat messages (Socket.IO) |
+| 39 | `location_chat_messages` | Location-specific chat between users and owners |
+| 40 | `push_notifications` | Push notification records (Firebase Cloud Messaging) |
+| 41 | `user_notification_reads` | Read status tracking for user notifications |
+| 42 | `user_notification_dismissed` | Dismissed notification tracking for users |
+| 43 | `owner_notification_reads` | Read status tracking for owner notifications |
+
+#### 10. Image Storage (3 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 44 | `images` | Binary image data stored as LONGBLOB with metadata |
+| 45 | `entity_images` | Polymorphic junction table linking images to any entity |
+| 46 | `image_categories` | Image type definitions with size/quality constraints |
+
+#### 11. Itinerary (2 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 47 | `itineraries` | User-created travel itineraries with date range |
+| 48 | `itinerary_items` | Day-by-day itinerary items with location and notes |
+
+#### 12. System and Utilities (8 tables)
+
+| # | Table | Description |
+|---|-------|-------------|
+| 49 | `favorites` | User's saved/favorite locations |
+| 50 | `user_diary` | Travel diary entries with mood, text, and photos |
+| 51 | `ai_chat_history` | AI chatbot conversation logs (Google Gemini) |
+| 52 | `audit_logs` | System-wide audit trail for admin actions |
+| 53 | `system_settings` | Key-value system configuration store |
+| 54 | `background_schedules` | Scheduled tasks (auto-confirm, auto-cancel, cleanup) |
+| 55 | `owner_notification_dismissed` | Dismissed notification tracking for owners |
+| 56 | `employee_locations` | Employee-to-location permission assignments |
+
+### B. Core Entity Relationships
 
 ```
 +----------------+       +--------------------+       +--------------------+
@@ -284,7 +427,7 @@ The system uses a relational **MySQL** database with **53 tables** to ensure dat
 | email          |   |   | type               |   |   | name               |
 | role           |   |   | province           |   |   | type               |
 | password       |   |   | latitude           |   |   | price              |
-| avatar         |   |   | longitude          |   |   | quantity           |
+| avatar_url     |   |   | longitude          |   |   | quantity           |
 | status         |   |   | owner_id (FK) -----+---+   +--------+-----------+
 +--------+-------+   |   | images (JSON)      |                |
          |           |   | opening_hours      |                |
@@ -315,7 +458,7 @@ The system uses a relational **MySQL** database with **53 tables** to ensure dat
     +----------------+  +----------------+  +-------------------------+
 ```
 
-### B. PMS and POS Subsystems
+### C. PMS and POS Subsystems
 
 ```
     +----------------+  +----------------+  +----------------+
@@ -351,20 +494,21 @@ The system uses a relational **MySQL** database with **53 tables** to ensure dat
                         +----------------+
 ```
 
-### C. Table Summary by Domain
+### D. Image Storage System
 
-| Domain | Tables | Key Entities |
-|--------|:------:|--------------|
-| Auth and Users | 8 | users, owner_profiles, active_sessions, login_history, login_attempts, otp_codes, blacklist, preferences |
-| Locations and Services | 3 | locations, services, service_categories |
-| Bookings and Payments | 7 | bookings, booking_tickets, table_reservations, preorder_items, payments, commissions, commission_history |
-| Hotel PMS | 3 | hotel_rooms, hotel_stays, hotel_stay_items |
-| Restaurant POS | 5 | pos_areas, pos_tables, pos_orders, pos_order_items, pos_tickets |
-| Check-in and SOS | 2 | checkins, sos_alerts |
-| Reviews and Reports | 4 | reviews, review_replies, reports, owner_violations |
-| Vouchers | 5 | vouchers, voucher_locations, voucher_usage_history, voucher_reviews, user_voucher_wallet |
-| Chat and Notifications | 6 | chat_messages, location_chat_messages, push_notifications, notification_reads/dismissed |
-| Other | 10 | favorites, diary, ai_chat_history, audit_logs, system_settings, background_schedules |
+```
+    +----------------+  +----------------+  +----------------+
+    |    images      |  | entity_images  |  |image_categories|
+    |----------------|  |----------------|  |----------------|
+    | id (PK)        |  | id (PK)        |  | id (PK)        |
+    | category_id FK |  | image_id (FK)  |  | name           |
+    | original_name  |  | entity_type    |  | max_width      |
+    | mime_type      |  | entity_id      |  | max_height     |
+    | file_size      |  | role           |  | quality        |
+    | data (LONGBLOB)|  | sort_order     |  | max_file_size  |
+    | uploaded_by    |  | is_primary     |  +----------------+
+    +----------------+  +----------------+
+```
 
 ---
 
@@ -505,15 +649,17 @@ http://localhost:3000/api
 | Auth | `/auth` | Public + Protected | Login, register, OAuth, token refresh |
 | Admin | `/admin` | Admin only | 100+ endpoints for platform management |
 | Owner | `/owner` | Owner + Employee | 100+ endpoints for business management |
-| User | `/user` | User only | Consumer features |
+| User | `/user` | User only | Consumer features (checkins, favorites, diary, vouchers, itinerary, notifications) |
 | Bookings | `/bookings` | User only | Booking and reservation system |
 | Locations | `/locations` | Optional | Public location data and search |
+| Images | `/images` | Optional | Image serving (binary) from database |
+| Itinerary | `/user/itineraries` | User only | Travel itinerary CRUD |
 | SOS | `/sos` | User only | Emergency alerts |
-| Chat | `/chat` | Authenticated | Location-based group chat |
-| AI | `/ai` | Authenticated | AI chat assistant |
-| Geocoding | `/geo` | Public | Forward/reverse geocoding |
-| Push | `/push` | Authenticated | Device token management |
-| Events | `/events` | Query token | SSE real-time updates |
+| Chat | `/chat` | Authenticated | Location-based real-time chat |
+| AI | `/ai` | Authenticated | AI chat assistant (Google Gemini) |
+| Geocoding | `/geo` | Public | Forward/reverse geocoding (Nominatim) |
+| Push | `/push` | Authenticated | Device token management (FCM) |
+| Events | `/events` | Query token | SSE real-time booking updates |
 
 ### C. Example: Create a Booking
 
@@ -534,14 +680,12 @@ curl -X POST http://localhost:3000/api/bookings \
 
 ## X. Development Progress
 
-The project is currently in the final sprint to complete advanced features for the graduation thesis defense:
-
 - [x] **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
-- [x] **Phase 2** — Mobile App Development (Check-in, Map, Booking, QR Wallet, Diary)
-- [x] **Phase 3** — Web Dashboard for Admin & Owner management module
-- [ ] **Phase 4** — Complete drag-and-drop core for Hotel PMS and Restaurant POS *(90% done)*
-- [ ] **Phase 5** — Full Firebase Push Notification integration & Socket.IO real-time stress testing
-- [ ] **Phase 6** — AI Chat Integration with Google Gemini *(placeholder only, not yet connected)*
+- [x] **Phase 2** — Web Dashboard for Admin & Owner management module
+- [x] **Phase 3** — Complete database schema (56 tables) and restore full functionality
+- [ ] **Phase 4** — Mobile App Rebuild
+- [ ] **Phase 5** — Hotel PMS and Restaurant POS drag-and-drop refinement
+- [ ] **Phase 6** — AI Chat Integration with Google Gemini
 
 ---
 
@@ -550,12 +694,85 @@ The project is currently in the final sprint to complete advanced features for t
 **Mai Nhut Minh**
 
 - GitHub: [@Minh2244](https://github.com/Minh2244)
+- Email: minhmap3367@gmail.com
 - Institution: Tay Do University
 - Class: CNTT17A
-- Project: Travel Checkin
+- Year: 2026
 
 ---
 
-## XII. License
+## XII. Copyright and License
 
-Copyright belongs to the author. All rights reserved.
+### Project Information
+
+| Field | Details |
+|-------|---------|
+| **Project Name (Vietnamese)** | Hệ thống quản lý và trải nghiệm du lịch đa vai trò tích hợp trí tuệ nhân tạo |
+| **Project Name (English)** | Multi-role Travel Management and Experience System with AI Integration |
+| **Author** | Mai Nhut Minh |
+| **Institution** | Tay Do University |
+| **Class** | CNTT17A |
+| **Year** | 2026 |
+| **Project Type** | Graduation Thesis |
+
+### Copyright Notice
+
+```
+Copyright (c) 2026 Mai Nhut Minh. All rights reserved.
+
+This project is an original graduation thesis developed at Tay Do University,
+Vietnam. All intellectual property rights, including but not limited to source
+code, database design, system architecture, UI/UX design, and documentation,
+belong exclusively to the author.
+
+Unauthorized use is strictly prohibited. The following activities require
+prior written consent from the author:
+
+  1. Copying, reproducing, or distributing all or part of the source code
+  2. Using this project or its derivatives for commercial purposes
+  3. Registering copyright or patent under any other name
+  4. Modifying, adapting, or creating derivative works for redistribution
+  5. Removing or altering this copyright notice
+  6. Claiming authorship of any portion of this work
+
+This project is provided "as-is" for educational and academic reference only.
+The author makes no warranties regarding its fitness for any particular purpose.
+
+Any violation of these terms will be pursued under the Intellectual Property
+Law of Vietnam (Law No. 50/2005/QH11, amended by Law No. 36/2009/QH12) and
+applicable international copyright treaties.
+
+For permissions or inquiries, contact the author at:
+  GitHub:  https://github.com/Minh2244
+  Email:   minhmap3367@gmail.com
+```
+
+### Trademark and Branding
+
+The project name "Travel Check-in" and all associated logos, marks, and branding
+elements are the property of Mai Nhut Minh. Use of the brand name in any
+derivative, fork, or related project without written permission is prohibited.
+
+### Third-Party Acknowledgments
+
+This project uses the following open-source technologies. Their respective
+licenses apply to their own code:
+
+| Technology | License |
+|------------|---------|
+| Node.js | MIT |
+| Express | MIT |
+| React | MIT |
+| React Native | MIT |
+| Expo | MIT |
+| Ant Design | MIT |
+| Tailwind CSS | MIT |
+| Socket.IO | MIT |
+| MySQL | GPL v2 (server) / MIT (client driver) |
+| Google Gemini API | Google API Terms of Service |
+| Firebase | Google Firebase Terms of Service |
+| OpenStreetMap | Open Database License (ODbL) |
+
+---
+
+*This README was last updated on June 16, 2026.*

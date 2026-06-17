@@ -2,6 +2,10 @@
 import { Router } from "express";
 import multer from "multer";
 import {
+  getAdminHistoryRevenueSummary,
+  getAdminHistoryInvoices,
+} from "../controllers/adminHistoryController";
+import {
   getDashboardStats,
   getAdminProfile,
   updateAdminProfile,
@@ -201,6 +205,8 @@ router.get(
   getAdminLocationTouristTicketInvoices,
 );
 router.get("/owners/:id/revenue-summary", getAdminOwnerRevenueSummary);
+router.get("/history/revenue-summary", getAdminHistoryRevenueSummary);
+router.get("/history/invoices", getAdminHistoryInvoices);
 router.put("/checkins/:id/verify", verifyCheckin);
 router.put("/checkins/:id/fail", failCheckin);
 router.put("/checkins/:id/toggle-lock", toggleCheckinLock);

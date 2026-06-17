@@ -117,9 +117,7 @@ const Users = () => {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(
     undefined,
   );
-  const [minSpent, setMinSpent] = useState<string>("");
-  const [maxSpent, setMaxSpent] = useState<string>("");
-  const [provinceFilter, setProvinceFilter] = useState<string>("");
+
 
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -192,9 +190,7 @@ const Users = () => {
       };
       if (searchText) params.search = searchText;
       if (statusFilter) params.status = statusFilter;
-      if (minSpent) params.min_spent = Number(minSpent);
-      if (maxSpent) params.max_spent = Number(maxSpent);
-      if (provinceFilter) params.province = provinceFilter;
+
 
       const response = await adminApi.getUsers(params);
       if (response?.success) {
@@ -220,7 +216,7 @@ const Users = () => {
     fetchUsers("owner");
     fetchUsers("employee");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchText, statusFilter, minSpent, maxSpent, provinceFilter]);
+  }, [searchText, statusFilter]);
 
   const handleViewDetail = async (userId: number) => {
     try {
@@ -483,7 +479,7 @@ const Users = () => {
       title: "Họ tên",
       dataIndex: "full_name",
       key: "full_name",
-      width: 200,
+      width: 180,
       render: (text: string, record: User) => (
         <div className="flex items-center gap-2">
           {record.avatar_url ? (
@@ -503,7 +499,6 @@ const Users = () => {
       title: "Email",
       dataIndex: "email",
       key: "email",
-      width: 220,
       ellipsis: true,
     },
     {
@@ -526,7 +521,7 @@ const Users = () => {
       title: "Xác thực",
       dataIndex: "is_verified",
       key: "is_verified",
-      width: 120,
+      width: 100,
       render: (verified: number) => (
         <Tag color={verified ? "green" : "default"}>
           {verified ? "Đã xác thực" : "Chưa"}
@@ -542,14 +537,14 @@ const Users = () => {
         title: "Đặt chỗ",
         dataIndex: "total_bookings",
         key: "total_bookings",
-        width: 95,
+        width: 80,
         align: "right",
       },
       {
         title: "Chi tiêu",
         dataIndex: "total_spent",
         key: "total_spent",
-        width: 130,
+        width: 120,
         align: "right",
         render: (amount: number) => (
           <span className="tabular-nums whitespace-nowrap">
@@ -565,7 +560,7 @@ const Users = () => {
         title: "Địa điểm",
         dataIndex: "total_locations",
         key: "total_locations",
-        width: 95,
+        width: 80,
         align: "right",
       },
       actionCol,
@@ -576,7 +571,7 @@ const Users = () => {
         title: "Owner quản lý",
         dataIndex: "employee_owners",
         key: "employee_owners",
-        width: 240,
+        width: 160,
         ellipsis: true,
         render: (v: string | null) => v || "-",
       },
@@ -584,12 +579,17 @@ const Users = () => {
         title: "Nơi làm việc",
         dataIndex: "employee_work_locations",
         key: "employee_work_locations",
-        width: 240,
         ellipsis: true,
         render: (v: string | null | undefined) => v || "-",
       },
       actionCol,
     ],
+  };
+
+  const scrollXByRole: Record<UserRole, number> = {
+    user: 800,
+    owner: 700,
+    employee: 900,
   };
 
   const renderTable = (role: UserRole) => {
@@ -613,7 +613,10 @@ const Users = () => {
           loading={loadingByRole[role]}
           rowKey="user_id"
           pagination={false}
-          scroll={{ x: "max-content", y: LIST_SCROLL_Y }}
+          scroll={{
+            x: scrollXByRole[role],
+            y: data.length > 5 ? LIST_SCROLL_Y : undefined,
+          }}
         />
       </Card>
     );
@@ -687,47 +690,7 @@ const Users = () => {
             </Select.Option>
           </Select>
 
-          <Input
-            placeholder="Chi tiêu tối thiểu"
-            value={minSpent}
-            onChange={(e) => {
-              setMinSpent(e.target.value);
-              setPaginationByRole((prev) => ({
-                user: { ...prev.user, current: 1 },
-                owner: { ...prev.owner, current: 1 },
-                employee: { ...prev.employee, current: 1 },
-              }));
-            }}
-            className="w-[160px]"
-          />
 
-          <Input
-            placeholder="Chi tiêu tối đa"
-            value={maxSpent}
-            onChange={(e) => {
-              setMaxSpent(e.target.value);
-              setPaginationByRole((prev) => ({
-                user: { ...prev.user, current: 1 },
-                owner: { ...prev.owner, current: 1 },
-                employee: { ...prev.employee, current: 1 },
-              }));
-            }}
-            className="w-[160px]"
-          />
-
-          <Input
-            placeholder="Tỉnh/Thành"
-            value={provinceFilter}
-            onChange={(e) => {
-              setProvinceFilter(e.target.value);
-              setPaginationByRole((prev) => ({
-                user: { ...prev.user, current: 1 },
-                owner: { ...prev.owner, current: 1 },
-                employee: { ...prev.employee, current: 1 },
-              }));
-            }}
-            className="w-[180px]"
-          />
         </div>
       </Card>
 

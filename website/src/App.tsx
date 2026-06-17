@@ -23,7 +23,7 @@ const AdminDashboard = lazy(() => import("./pages/Admin/Dashboard"));
 const AdminUsers = lazy(() => import("./pages/Admin/Users"));
 const AdminOwners = lazy(() => import("./pages/Admin/Owners"));
 const AdminLocations = lazy(() => import("./pages/Admin/Locations"));
-const AdminCheckins = lazy(() => import("./pages/Admin/Checkins"));
+const AdminCheckins = lazy(() => import("./pages/Admin/History"));
 const AdminCommissions = lazy(() => import("./pages/Admin/Commissions"));
 const AdminSettings = lazy(() => import("./pages/Admin/Settings"));
 const AdminVouchers = lazy(() => import("./pages/Admin/Vouchers"));

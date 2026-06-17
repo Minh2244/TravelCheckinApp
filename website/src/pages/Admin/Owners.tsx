@@ -475,12 +475,13 @@ const Owners = () => {
         </div>
 
         <Table
+          tableLayout="fixed"
           columns={columns}
           dataSource={owners}
           loading={loading}
           rowKey="user_id"
           pagination={false}
-          scroll={{ y: LIST_SCROLL_Y }}
+          scroll={{ x: 800, y: LIST_SCROLL_Y }}
         />
       </Card>
 

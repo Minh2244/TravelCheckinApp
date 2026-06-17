@@ -73,15 +73,10 @@ export const getLocations = async (req: Request, res: Response) => {
       effectiveSource === "web" || effectiveSource === "mobile";
     if (isPublicConsumer) {
       filters.push("l.status = 'active'");
-      // Cho phep user thay location do chinh minh tao (owner_id = userId) nhung phai nam trong danh sach da luu
-      if (req.userId) {
-        filters.push(
-          "(u.role IS NULL OR u.role <> 'user' OR (l.owner_id = ? AND l.location_id IN (SELECT location_id FROM favorite_locations WHERE user_id = ?)))",
-        );
-        params.push(String(req.userId), String(req.userId));
-      } else {
-        filters.push("(u.role IS NULL OR u.role <> 'user')");
-      }
+      // Chỉ hiện địa điểm owner/admin tạo, bỏ qua OSM và địa điểm tự tạo của user
+      filters.push("l.source IN ('owner', 'admin')");
+      filters.push("l.location_name != 'Vị trí tự do'");
+      filters.push("(l.owner_id IS NULL OR u.role != 'user')");
     }
 
     if (filters.length > 0) {

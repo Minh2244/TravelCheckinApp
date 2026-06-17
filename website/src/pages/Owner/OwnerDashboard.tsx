@@ -5,7 +5,7 @@ import {
   Col,
   DatePicker,
   Row,
-  Segmented,
+  Radio,
   Space,
   Progress,
   message,
@@ -25,7 +25,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { useNavigate } from "react-router-dom";
 import { asRecord, getErrorMessage } from "../../utils/safe";
 import dayjs from "dayjs";
-import { formatDateVi } from "../../utils/formatDateVi";
+
 
 type BookingRow = {
   booking_id: number;
@@ -63,45 +63,25 @@ const OwnerDashboard = () => {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
 
-  const [range, setRange] = useState<
-    "today" | "week" | "month" | "year" | "all"
-  >("today");
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [rangeType, setRangeType] = useState<string>("today");
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs(), dayjs()]);
 
   const role = String(asRecord(asRecord(asRecord(me).data).actor).role || "");
   const ownerName = String(asRecord(asRecord(asRecord(me).data).user).full_name || "Chủ địa điểm");
 
   const windowRange = useMemo(() => {
-    if (selectedDate) {
-      const from = dayjs(selectedDate, "YYYY-MM-DD").startOf("day");
-      const to = dayjs(selectedDate, "YYYY-MM-DD").endOf("day");
-      return { from, to };
-    }
-
-    const end = dayjs().endOf("day");
-    if (range === "today") {
-      return { from: dayjs().startOf("day"), to: end };
-    }
-    if (range === "week") {
-      return { from: dayjs().subtract(6, "day").startOf("day"), to: end };
-    }
-    if (range === "month") {
-      return { from: dayjs().subtract(1, "month").startOf("day"), to: end };
-    }
-    if (range === "year") {
-      return { from: dayjs().subtract(1, "year").startOf("day"), to: end };
-    }
-    return { from: null, to: null };
-  }, [range, selectedDate]);
+    if (rangeType === "all") return { from: null, to: null };
+    return { from: dateRange[0].startOf("day"), to: dateRange[1].endOf("day") };
+  }, [rangeType, dateRange]);
 
   const periodLabel = useMemo(() => {
-    if (selectedDate) return `ngày ${formatDateVi(selectedDate)}`;
-    if (range === "today") return "hôm nay";
-    if (range === "week") return "7 ngày";
-    if (range === "month") return "1 tháng";
-    if (range === "year") return "1 năm";
+    if (rangeType === "custom") return `từ ${dateRange[0].format("DD/MM/YYYY")} đến ${dateRange[1].format("DD/MM/YYYY")}`;
+    if (rangeType === "today") return "hôm nay";
+    if (rangeType === "7days") return "7 ngày qua";
+    if (rangeType === "month") return "1 tháng qua";
+    if (rangeType === "year") return "1 năm qua";
     return "tất cả";
-  }, [range, selectedDate]);
+  }, [rangeType, dateRange]);
 
   const inWindow = useMemo(() => {
     if (!windowRange.from || !windowRange.to) return () => true;
@@ -195,6 +175,17 @@ const OwnerDashboard = () => {
     void loadData();
   }, [loadData]);
 
+  const handleRangeChange = (e: any) => {
+    const val = e.target.value;
+    setRangeType(val);
+    const today = dayjs();
+    if (val === "today") setDateRange([today, today]);
+    else if (val === "7days") setDateRange([today.subtract(6, 'day'), today]);
+    else if (val === "month") setDateRange([today.startOf('month'), today.endOf('month')]);
+    else if (val === "year") setDateRange([today.startOf('year'), today.endOf('year')]);
+    else if (val === "all") setDateRange([dayjs('2020-01-01'), today]);
+  };
+
   // Lời chào theo thời gian thực
   const welcomeMessage = useMemo(() => {
     const hour = dayjs().hour();
@@ -203,15 +194,43 @@ const OwnerDashboard = () => {
     return `Chào buổi tối, ${ownerName}!`;
   }, [ownerName]);
 
-  // Tính toán Cơ cấu Doanh thu dịch vụ (mock dựa trên tổng doanh thu thực tế để số liệu luôn chính xác và nhất quán)
+  // Tính toán Cơ cấu Doanh thu dịch vụ
   const serviceRevenue = useMemo(() => {
-    const total = stats.totalRevenue;
+    let hotelRev = 0;
+    let restaurantRev = 0;
+    let touristRev = 0;
+
+    const locTypeMap = new Map<number, string>();
+    locations.forEach(l => locTypeMap.set(l.location_id, l.location_type));
+
+    filteredPayments.forEach(p => {
+      if (String(p.status || "").toLowerCase() !== "completed") return;
+      if (!p.location_id) return;
+      
+      const type = locTypeMap.get(p.location_id) || "other";
+      const amt = Number(p.amount || 0);
+
+      if (type === "hotel" || type === "resort") hotelRev += amt;
+      else if (type === "restaurant" || type === "cafe") restaurantRev += amt;
+      else if (type === "tourist") touristRev += amt;
+      else touristRev += amt; // fallback cho các loại khác
+    });
+
+    const total = hotelRev + restaurantRev + touristRev;
+    
+    let hotelPct = 0, restaurantPct = 0, touristPct = 0;
+    if (total > 0) {
+      hotelPct = Math.round((hotelRev / total) * 100);
+      restaurantPct = Math.round((restaurantRev / total) * 100);
+      touristPct = 100 - hotelPct - restaurantPct;
+    }
+
     return [
-      { name: "Lưu trú & Phòng nghỉ", percentage: 55, amount: total * 0.55, color: "#3b82f6" },
-      { name: "Ẩm thực & Nhà hàng", percentage: 25, amount: total * 0.25, color: "#10b981" },
-      { name: "Vé dịch vụ & Tham quan", percentage: 20, amount: total * 0.20, color: "#f59e0b" },
+      { name: "Lưu trú & Phòng nghỉ", percentage: hotelPct, amount: hotelRev, color: "#3b82f6" },
+      { name: "Ẩm thực & Nhà hàng", percentage: restaurantPct, amount: restaurantRev, color: "#10b981" },
+      { name: "Vé dịch vụ & Tham quan", percentage: touristPct, amount: touristRev, color: "#f59e0b" },
     ];
-  }, [stats.totalRevenue]);
+  }, [filteredPayments, locations]);
 
   // Tính toán Top 3 Địa điểm có doanh thu tốt nhất trong kỳ lọc
   const topLocations = useMemo(() => {
@@ -247,17 +266,16 @@ const OwnerDashboard = () => {
     }));
   }, [filteredPayments, locations]);
 
-  // Con số tổng hợp vận hành trong ngày
-  const dailyOperations = useMemo(() => {
-    const todayStr = dayjs().format("YYYY-MM-DD");
-    const todayBookings = bookings.filter((b) => b.created_at?.startsWith(todayStr)).length;
-    const todayPayments = payments.filter((p) => p.payment_time?.startsWith(todayStr) && p.status === "completed").length;
+  // Con số tổng hợp vận hành (thay đổi theo kỳ lọc)
+  const operations = useMemo(() => {
+    const periodBookings = filteredBookings.length;
+    const periodPayments = filteredPayments.filter((p) => p.status === "completed").length;
     return {
-      todayBookings,
-      todayPayments,
+      periodBookings,
+      periodPayments,
       activeLocations: locations.filter((l) => l.status === "active" || l.status === "approved").length || locations.length,
     };
-  }, [bookings, locations, payments]);
+  }, [filteredBookings, locations, filteredPayments]);
 
   return (
     <MainLayout>
@@ -268,29 +286,47 @@ const OwnerDashboard = () => {
             <h2 className="text-2xl font-bold text-gray-800">Tổng quan</h2>
             <p className="text-gray-500">Báo cáo theo {periodLabel}.</p>
           </div>
-          <Space align="center" wrap>
-            <Segmented
-              value={range}
-              options={[
-                { label: "Hôm nay", value: "today" },
-                { label: "7 ngày", value: "week" },
-                { label: "1 tháng", value: "month" },
-                { label: "1 năm", value: "year" },
-                { label: "Tất cả", value: "all" },
-              ]}
-              onChange={(v) => {
-                setSelectedDate(null);
-                setRange(v as "today" | "week" | "month" | "year" | "all");
+          <Space size="middle" className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+            <Radio.Group value={rangeType} onChange={handleRangeChange} optionType="button" buttonStyle="solid">
+              <Radio.Button value="today">Hôm nay</Radio.Button>
+              <Radio.Button value="7days">7 ngày</Radio.Button>
+              <Radio.Button value="month">1 tháng</Radio.Button>
+              <Radio.Button value="year">1 năm</Radio.Button>
+              <Radio.Button value="all">Tất cả</Radio.Button>
+            </Radio.Group>
+          <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
+            <DatePicker 
+              value={dateRange[0]}
+              onChange={(d) => {
+                if (d) {
+                  let end = dateRange[1];
+                  if (end.isBefore(d, 'day')) end = d;
+                  setDateRange([d, end]);
+                  setRangeType("custom");
+                }
               }}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              className="w-32"
+              disabledDate={(current) => current && current > dayjs().endOf('day')}
+              placeholder="Từ ngày"
             />
-            <DatePicker
-              allowClear
-              placeholder="Chọn ngày"
-              value={selectedDate ? dayjs(selectedDate, "YYYY-MM-DD") : null}
-              onChange={(d) =>
-                setSelectedDate(d ? d.format("YYYY-MM-DD") : null)
-              }
+            <span className="text-gray-400">→</span>
+            <DatePicker 
+              value={dateRange[1]}
+              onChange={(d) => {
+                if (d) {
+                  setDateRange([dateRange[0], d]);
+                  setRangeType("custom");
+                }
+              }}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              className="w-32"
+              disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
+              placeholder="Đến ngày"
             />
+          </Space>
           </Space>
         </div>
 
@@ -536,13 +572,13 @@ const OwnerDashboard = () => {
             </Card>
           </Col>
 
-          {/* Widget 4: Tóm tắt Hoạt động Vận hành trong ngày */}
+          {/* Widget 4: Tóm tắt Hoạt động Vận hành */}
           <Col xs={24} md={12}>
             <Card
               title={
                 <span className="font-bold text-slate-800 text-base flex items-center gap-2">
                   <ThunderboltOutlined className="text-amber-500" />
-                  Tóm tắt vận hành trong ngày
+                  Hiệu suất vận hành
                 </span>
               }
               className="shadow-sm border-0 rounded-2xl h-full"
@@ -553,22 +589,22 @@ const OwnerDashboard = () => {
                 <Col span={8}>
                   <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
                     <div className="text-xl">🏪</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Hoạt động</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{dailyOperations.activeLocations}</div>
+                    <div className="text-xs text-slate-400 font-semibold mt-1">Đang mở</div>
+                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.activeLocations}</div>
                   </div>
                 </Col>
                 <Col span={8}>
                   <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
                     <div className="text-xl">📅</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Đơn hôm nay</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{dailyOperations.todayBookings}</div>
+                    <div className="text-xs text-slate-400 font-semibold mt-1">Lượt Booking</div>
+                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.periodBookings}</div>
                   </div>
                 </Col>
                 <Col span={8}>
                   <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
                     <div className="text-xl">💳</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Thanh toán</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{dailyOperations.todayPayments}</div>
+                    <div className="text-xs text-slate-400 font-semibold mt-1">Lượt Giao dịch</div>
+                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.periodPayments}</div>
                   </div>
                 </Col>
               </Row>

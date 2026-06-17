@@ -1,28 +1,78 @@
-# Track package.json and package-lock.json for all projects
-
-# Chặn thư mục thư viện gốc (Cái cục nặng nhất nãy giờ)
-node_modules/
-
+# ======= CUSTOM APP IGNORES =======
 # Chặn file log hoặc lịch sử chạy cục bộ của Claude (Tránh lộ token)
 .claude/
 .claude_session/
+claude/
+CLAUDE.md
 
 # Chặn thư mục Playwright MCP
 .playwright-mcp/
 
-# Chặn folder lịch sử/feedback của Claude
-claude/
-
 # Chặn .superpowers
 .superpowers/
-
-# Chặn file secrets
-.env
-.env.local
 
 # Chặn thư mục Kilo & Claude memory
 .kilo/
 .remember/
 
-# Chặn file CLAUDE.md
-CLAUDE.md
+
+# ======= STANDARD NODE.JS IGNORES =======
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Dependency directories
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+build/
+dist/
+out/
+.next/
+
+# Coverage directory
+coverage
+*.lcov
+.nyc_output
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Caches
+.npm
+.eslintcache
+.stylelintcache
+.cache
+.parcel-cache
+
+# dotenv environment variable files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

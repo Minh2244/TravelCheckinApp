@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import LocationPickerMap from "../../components/LocationPickerMap";
 import userApi from "../../api/userApi";
-import locationApi from "../../api/locationApi";
+// import locationApi from "../../api/locationApi";
+
 import { getErrorMessage } from "../../utils/safe";
 
 interface ItineraryItemForm {
@@ -55,13 +56,19 @@ const ItineraryEditor = () => {
   // Navigation mode
   const [navMode, setNavMode] = useState(false);
   const [navTarget, setNavTarget] = useState<ItineraryItemForm | null>(null);
-  const [myPosition, setMyPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [myPosition] = useState<{ lat: number; lng: number } | null>(null);
+
+
+
+
 
   // Modal
   const [showAddModal, setShowAddModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<LocationOption[]>([]);
-  const [searching, setSearching] = useState(false);
+  // const [searchQuery, setSearchQuery] = useState("");
+  // const [searchResults, setSearchResults] = useState<LocationOption[]>([]);
+  // const [searching, setSearching] = useState(false);
+
+
   const [customName, setCustomName] = useState("");
   const [customAddress, setCustomAddress] = useState("");
   const [addTime, setAddTime] = useState("");
@@ -117,18 +124,19 @@ const ItineraryEditor = () => {
     return () => { cancelled = true; };
   }, [id, isEdit]);
 
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
-    try {
-      setSearching(true);
-      const res = await locationApi.getLocations({ keyword: searchQuery.trim() });
-      if (res.success) setSearchResults((res.data || []).map((l: any) => ({ location_id: l.location_id, name: l.name, address: l.address || "", type: l.type })));
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, [searchQuery]);
+  // const handleSearch = useCallback(async () => {
+  //   if (!searchQuery.trim()) return;
+  //   try {
+  //     setSearching(true);
+  //     const res = await locationApi.getLocations({ keyword: searchQuery.trim() });
+  //     if (res.success) setSearchResults((res.data || []).map((l: any) => ({ location_id: l.location_id, name: l.name, address: l.address || "", type: l.type })));
+  //   } catch {
+  //     setSearchResults([]);
+  //   } finally {
+  //     setSearching(false);
+  //   }
+  // }, [searchQuery]);
+
 
   // Tọa độ từ map click (lưu tạm)
   const [pickedLat, setPickedLat] = useState<number | null>(null);
@@ -147,8 +155,10 @@ const ItineraryEditor = () => {
 
   const closeModal = () => {
     setShowAddModal(false);
-    setSearchQuery("");
-    setSearchResults([]);
+    // setSearchQuery("");
+    // setSearchResults([]);
+
+
     setCustomName("");
     setCustomAddress("");
     setAddTime("");

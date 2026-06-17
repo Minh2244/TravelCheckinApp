@@ -262,6 +262,11 @@ const ownerApi = {
     return res.data;
   },
 
+  reconcileCommissions: async () => {
+    const res = await axiosClient.post("/owner/commissions/reconcile");
+    return res.data;
+  },
+
   createCommissionPaymentRequest: async (payload?: { note?: string }) => {
     const res = await axiosClient.post(
       "/owner/commissions/payment-request",

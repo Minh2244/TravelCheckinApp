@@ -70,26 +70,35 @@ export const getDashboardStats = async (
   res: Response,
 ): Promise<void> => {
   try {
-    // 1. KPIs
-    // Active locations
+    const type = (req.query.type as string) || "day";
+    let from = req.query.from as string;
+    let to = req.query.to as string;
+
+    if (!from || !to) {
+      const now = new Date();
+      from = now.toISOString().slice(0, 10);
+      to = from;
+    }
+
+    const fromStart = `${from} 00:00:00`;
+    const toEnd = `${to} 23:59:59`;
+
+    // 1. KPIs (Keep as snapshot of total system)
     const [locRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) as count FROM locations WHERE status = 'active'"
     );
     const activeLocations = locRows[0]?.count || 0;
 
-    // Users (role = user)
     const [userRows] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) as count FROM users WHERE role = 'user' AND deleted_at IS NULL`
     );
     const totalUsers = userRows[0]?.count || 0;
 
-    // Active reviews
     const [reviewRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) as count FROM reviews WHERE status = 'active'"
     );
     const totalReviews = reviewRows[0]?.count || 0;
 
-    // Active vouchers (status = 'active', end_date >= CURDATE())
     const [voucherRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) as count FROM vouchers WHERE status = 'active' AND end_date >= CURDATE()"
     );
@@ -106,9 +115,11 @@ export const getDashboardStats = async (
        FROM users u
        JOIN payments p ON p.user_id = u.user_id AND p.status = 'completed'
        WHERE u.role = 'user' AND u.deleted_at IS NULL
+         AND p.payment_time BETWEEN ? AND ?
        GROUP BY u.user_id
        ORDER BY total_spent DESC
-       LIMIT 3`
+       LIMIT 3`,
+       [fromStart, toEnd]
     );
 
     // 3. Top 3 Owners by total revenue
@@ -123,9 +134,11 @@ export const getDashboardStats = async (
        JOIN locations l ON l.owner_id = u.user_id
        JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'
        WHERE u.role = 'owner' AND u.deleted_at IS NULL
+         AND p.payment_time BETWEEN ? AND ?
        GROUP BY u.user_id
        ORDER BY total_revenue DESC
-       LIMIT 3`
+       LIMIT 3`,
+       [fromStart, toEnd]
     );
 
     // 4. Service Trends by Revenue
@@ -140,7 +153,9 @@ export const getDashboardStats = async (
          COALESCE(SUM(p.amount), 0) as total_revenue
        FROM locations l
        JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'
-       GROUP BY category`
+       WHERE p.payment_time BETWEEN ? AND ?
+       GROUP BY category`,
+       [fromStart, toEnd]
     );
 
     let restaurantRev = 0;
@@ -163,17 +178,89 @@ export const getDashboardStats = async (
 
     const serviceTrends = { restaurant, hotel, tourist };
 
-    // 5. Line Chart: Revenue Trend (6 months)
+    // 5. Line Chart: Dynamic Revenue Trend
+    let chartFromStr: string;
+    let chartToStr: string;
+    let groupBy: string;
+    let selectDate: string;
+
+    const currentYear = new Date().getFullYear();
+
+    if (type === 'all') {
+      chartFromStr = `2020-01-01 00:00:00`;
+      chartToStr = `${currentYear}-12-31 23:59:59`;
+      selectDate = `DATE_FORMAT(payment_time, '%Y')`;
+      groupBy = `DATE_FORMAT(payment_time, '%Y')`;
+    } else if (type === 'year') {
+      const year = from.substring(0, 4);
+      chartFromStr = `${year}-01-01 00:00:00`;
+      chartToStr = `${year}-12-31 23:59:59`;
+      selectDate = `DATE_FORMAT(payment_time, '%m/%Y')`;
+      groupBy = `DATE_FORMAT(payment_time, '%m/%Y'), DATE_FORMAT(payment_time, '%Y-%m')`;
+    } else {
+      const fromDate = new Date(from);
+      const year = fromDate.getFullYear();
+      const monthStr = String(fromDate.getMonth() + 1).padStart(2, '0');
+      const lastDay = new Date(year, fromDate.getMonth() + 1, 0).getDate();
+      
+      chartFromStr = `${year}-${monthStr}-01 00:00:00`;
+      chartToStr = `${year}-${monthStr}-${String(lastDay).padStart(2, '0')} 23:59:59`;
+      
+      selectDate = `DATE_FORMAT(payment_time, '%d/%m')`;
+      groupBy = `DATE_FORMAT(payment_time, '%d/%m'), DATE(payment_time)`;
+    }
+
     const [revenueTrendRows] = await pool.query<RowDataPacket[]>(
       `SELECT 
-         DATE_FORMAT(payment_time, '%m/%Y') as month,
+         ${selectDate} as month,
          SUM(amount) as total
        FROM payments
        WHERE status = 'completed'
-         AND payment_time >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-       GROUP BY DATE_FORMAT(payment_time, '%m/%Y'), DATE_FORMAT(payment_time, '%Y-%m')
-       ORDER BY DATE_FORMAT(payment_time, '%Y-%m') ASC`
+         AND payment_time BETWEEN ? AND ?
+       GROUP BY ${groupBy}
+       ORDER BY ${groupBy} ASC`,
+      [chartFromStr, chartToStr]
     );
+
+    const revenueMap = new Map<string, number>();
+    revenueTrendRows.forEach((row: any) => {
+      revenueMap.set(row.month, Number(row.total));
+    });
+
+    const filledRevenueTrend = [];
+    if (type === 'all') {
+      for (let y = 2020; y <= currentYear; y++) {
+        const key = String(y);
+        filledRevenueTrend.push({
+          month: key,
+          total: revenueMap.get(key) || 0
+        });
+      }
+    } else if (type === 'year') {
+      const year = from.substring(0, 4);
+      for (let i = 1; i <= 12; i++) {
+        const m = String(i).padStart(2, '0');
+        const key = `${m}/${year}`;
+        filledRevenueTrend.push({
+          month: key,
+          total: revenueMap.get(key) || 0
+        });
+      }
+    } else {
+      const fromDate = new Date(from);
+      const year = fromDate.getFullYear();
+      const month = fromDate.getMonth() + 1;
+      const monthStr = String(month).padStart(2, '0');
+      const lastDay = new Date(year, month, 0).getDate();
+      for (let i = 1; i <= lastDay; i++) {
+        const d = String(i).padStart(2, '0');
+        const key = `${d}/${monthStr}`;
+        filledRevenueTrend.push({
+          month: key,
+          total: revenueMap.get(key) || 0
+        });
+      }
+    }
 
     res.json({
       success: true,
@@ -190,7 +277,7 @@ export const getDashboardStats = async (
         },
         serviceTrends,
         charts: {
-          revenueTrend: revenueTrendRows
+          revenueTrend: filledRevenueTrend
         }
       },
     });
@@ -2553,10 +2640,22 @@ export const deleteUser = async (
       return;
     }
 
-    const [delResult] = await pool.query(
-      `DELETE FROM users WHERE user_id = ? AND role IN ('user','owner','employee')`,
-      [id],
-    );
+    let delResult: any;
+    try {
+      const [result] = await pool.query(
+        `UPDATE users
+         SET deleted_at = NOW()
+         WHERE user_id = ? AND role IN ('user','owner','employee') AND deleted_at IS NULL`,
+        [id],
+      );
+      delResult = result;
+    } catch {
+      const [result] = await pool.query(
+        `DELETE FROM users WHERE user_id = ? AND role IN ('user','owner','employee')`,
+        [id],
+      );
+      delResult = result;
+    }
 
     const affected = (delResult as unknown as { affectedRows: number })
       .affectedRows;
@@ -6489,10 +6588,11 @@ export const getCommissionPaymentRequests = async (
     );
 
     let commissionStatusMap = new Map<number, string>();
+    let commissionBillingMap = new Map<number, string>();
     if (allCommissionIds.length > 0) {
       const placeholders = allCommissionIds.map(() => "?").join(",");
       const [cRows] = await pool.query<RowDataPacket[]>(
-        `SELECT commission_id, status
+        `SELECT commission_id, status, billing_period
          FROM commissions
          WHERE commission_id IN (${placeholders})`,
         allCommissionIds,
@@ -6500,13 +6600,19 @@ export const getCommissionPaymentRequests = async (
       commissionStatusMap = new Map(
         cRows.map((c) => [Number(c.commission_id), String(c.status || "")]),
       );
+      commissionBillingMap = new Map(
+        cRows.map((c) => [Number(c.commission_id), String(c.billing_period || "")]),
+      );
     }
 
     const enriched = requests.map((r: any) => {
       const ids = (r.commission_ids as number[]) || [];
       const unpaid = ids.filter((id) => commissionStatusMap.get(id) !== "paid");
+      // Use billing_period from the first commission in the request
+      const billingPeriod = ids.length > 0 ? (commissionBillingMap.get(ids[0]) || null) : null;
       return {
         ...r,
+        billing_period: billingPeriod,
         unpaid_count: unpaid.length,
         is_fully_paid: ids.length > 0 && unpaid.length === 0,
       };

@@ -157,6 +157,18 @@ const adminApi = {
     });
     return response.data;
   },
+  getHistoryRevenueSummary: async (params?: QueryParams) => {
+    const response = await axiosClient.get("/admin/history/revenue-summary", {
+      params,
+    });
+    return response.data;
+  },
+  getHistoryInvoices: async (params?: QueryParams) => {
+    const response = await axiosClient.get("/admin/history/invoices", {
+      params,
+    });
+    return response.data;
+  },
 
   // Quản lý User
   getUsers: async (params?: QueryParams) => {

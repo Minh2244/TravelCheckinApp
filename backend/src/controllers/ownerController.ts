@@ -17569,3 +17569,114 @@ export const setServiceCoverImage = async (
       .json({ success: false, message: error?.message || "Lỗi server" });
   }
 };
+
+/**
+ * POST /api/owner/commissions/reconcile
+ * Owner manually reconciles/locks their pending commissions.
+ */
+export const reconcileOwnerCommissionsManually = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    if (auth.role !== "owner") {
+      res.status(403).json({ success: false, message: "Chỉ owner được phép" });
+      return;
+    }
+
+    const ownerId = auth.userId;
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const now = new Date();
+      const thisMonth = now.getMonth() + 1;
+      const thisYear = now.getFullYear();
+
+      const billingPeriod = `Đối soát thủ công ngày ${now.getDate()}/${thisMonth}/${thisYear}`;
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 3); // 3 days payment terms
+      const dueDateStr = dueDate.toISOString().slice(0, 10);
+
+      // Find all completed payments for locations of this owner that have no commission linked
+      const [payments] = await conn.query<RowDataPacket[]>(
+        `SELECT p.payment_id, p.amount, p.commission_amount, p.vat_amount
+         FROM payments p
+         JOIN locations l ON l.location_id = p.location_id
+         WHERE l.owner_id = ?
+           AND p.status = 'completed'
+           AND p.commission_id IS NULL`,
+        [ownerId]
+      );
+
+      if (payments.length === 0) {
+        await conn.commit();
+        res.status(400).json({
+          success: false,
+          message: "Không có giao dịch tạm tính nào để chốt",
+        });
+        return;
+      }
+
+      let totalCommission = 0;
+      const totalVat = 0; // Đã bỏ VAT
+      const paymentIds: number[] = [];
+
+      for (const p of payments) {
+        totalCommission += Number(p.commission_amount || 0);
+        paymentIds.push(Number(p.payment_id));
+      }
+
+      const totalDue = +totalCommission.toFixed(2);
+
+      // Create a pending commission invoice record
+      const [insertRes] = await conn.query<ResultSetHeader>(
+        `INSERT INTO commissions (owner_id, payment_id, commission_amount, vat_amount, total_due, due_date, status, billing_period)
+         VALUES (?, NULL, ?, ?, ?, ?, 'pending', ?)`,
+        [ownerId, totalCommission, totalVat, totalDue, dueDateStr, billingPeriod]
+      );
+      const newCommissionId = insertRes.insertId;
+
+      // Link payments to this commission
+      await conn.query(
+        `UPDATE payments SET commission_id = ? WHERE payment_id IN (?)`,
+        [newCommissionId, paymentIds]
+      );
+
+      // Log action
+      await conn.query(
+        `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
+        [
+          ownerId,
+          "MANUAL_COMMISSION_RECONCILIATION",
+          JSON.stringify({
+            commission_id: newCommissionId,
+            total_due: totalDue,
+            payment_count: paymentIds.length,
+            timestamp: new Date(),
+          }),
+        ]
+      );
+
+      await conn.commit();
+      res.json({
+        success: true,
+        message: "Chốt đối soát hoa hồng thành công",
+        data: { commission_id: newCommissionId, total_due: totalDue }
+      });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  } catch (error: any) {
+    console.error("Lỗi chốt đối soát hoa hồng:", error);
+    res.status(500).json({
+      success: false,
+      message: error?.message || "Lỗi server khi chốt đối soát",
+    });
+  }
+};
+
