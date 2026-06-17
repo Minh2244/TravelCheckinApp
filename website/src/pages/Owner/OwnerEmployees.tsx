@@ -264,11 +264,12 @@ const OwnerEmployees = () => {
         }
       >
         <Table
+          tableLayout="fixed"
           rowKey="user_id"
           dataSource={items}
           columns={columns}
           pagination={false}
-          scroll={{ y: 560 }}
+          scroll={{ x: 800, y: 560 }}
         />
       </Card>
 

@@ -26,6 +26,7 @@ type CommissionRow = {
   total_due?: number | string | null;
   due_date?: string | null;
   status?: string | null;
+  created_at?: string | null;
 };
 
 type PendingPaymentRow = {
@@ -52,10 +53,9 @@ const OwnerCommissions = () => {
   const [pendingItems, setPendingItems] = useState<PendingPaymentRow[]>([]);
   const [adminBank, setAdminBank] = useState<AdminBankInfo | null>(null);
   const [requesting, setRequesting] = useState(false);
-  const [filterMonth, setFilterMonth] = useState<dayjs.Dayjs | null>(() => {
-    const now = dayjs();
-    return now.date() >= 15 ? now : now.subtract(1, 'month');
-  });
+  const [reconciling, setReconciling] = useState(false);
+  const [filterMonth, setFilterMonth] = useState<dayjs.Dayjs | null>(() => dayjs());
+
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,19 +93,19 @@ const OwnerCommissions = () => {
 
   const columns: ColumnsType<CommissionRow> = useMemo(
     () => [
-      { title: "#", dataIndex: "commission_id", width: 90 },
+      {
+        title: "STT",
+        key: "stt",
+        width: 80,
+        align: "center" as const,
+        render: (_1: unknown, _2: CommissionRow, idx: number) => idx + 1,
+      },
       { title: "Kỳ đối soát", dataIndex: "billing_period" },
       {
-        title: "Hoa hồng",
+        title: "Số tiền hoa hồng",
         dataIndex: "commission_amount",
         render: (v: unknown) => formatMoney(Number(v || 0)),
       },
-      {
-        title: "Tổng phải trả",
-        dataIndex: "total_due",
-        render: (v: unknown) => formatMoney(Number(v || 0)),
-      },
-      { title: "Hạn", dataIndex: "due_date" },
       {
         title: "Trạng thái",
         dataIndex: "status",
@@ -125,8 +125,8 @@ const OwnerCommissions = () => {
     if (!filterMonth) return pendingItems;
     const y = filterMonth.year();
     const m = filterMonth.month(); // 0-11
-    const start = new Date(y, m, 15, 0, 0, 0).getTime();
-    const end = new Date(m === 11 ? y + 1 : y, m === 11 ? 0 : m + 1, 14, 23, 59, 59).getTime();
+    const start = new Date(y, m, 1, 0, 0, 0).getTime();
+    const end = new Date(y, m + 1, 0, 23, 59, 59).getTime();
     return pendingItems.filter((item) => {
       const t = new Date(item.payment_time).getTime();
       return t >= start && t <= end;
@@ -145,23 +145,7 @@ const OwnerCommissions = () => {
     return pendingItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
   }, [pendingItems]);
 
-  const earliestDueDate = useMemo(() => {
-    if (unpaidItems.length === 0) return null;
-    let earliest = new Date(unpaidItems[0].due_date || "");
-    for (const item of unpaidItems) {
-      const d = new Date(item.due_date || "");
-      if (d < earliest) earliest = d;
-    }
-    return earliest;
-  }, [unpaidItems]);
 
-  const daysRemaining = useMemo(() => {
-    if (!earliestDueDate || isNaN(earliestDueDate.getTime())) return null;
-    const now = new Date();
-    const diff = new Date(earliestDueDate.getFullYear(), earliestDueDate.getMonth(), earliestDueDate.getDate()).getTime() - 
-                 new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    return Math.round(diff / (1000 * 3600 * 24));
-  }, [earliestDueDate]);
 
   const createPaymentRequest = () => {
     if (unpaidItems.length === 0) {
@@ -250,6 +234,45 @@ const OwnerCommissions = () => {
     });
   };
 
+  const handleReconcileCommissions = () => {
+    if (pendingTotal <= 0) {
+      message.info("Không có khoản tạm tính nào để chốt.");
+      return;
+    }
+
+    Modal.confirm({
+      title: "Xác nhận chốt đối soát hoa hồng",
+      content: (
+        <div className="space-y-2">
+          <div>
+            Số tiền hoa hồng tạm tính sẽ chốt: <b>{formatMoney(pendingTotal)}</b>
+          </div>
+          <div className="text-sm text-gray-500">
+            Sau khi chốt, toàn bộ số tiền tạm tính này sẽ được kết toán thành một kỳ hoa hồng (chốt thành công) và chuyển thành khoản cần thanh toán nộp lại cho Admin.
+          </div>
+        </div>
+      ),
+      okText: "Xác nhận chốt",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          setReconciling(true);
+          const res = await ownerApi.reconcileCommissions();
+          if (res?.success) {
+            message.success("Chốt đối soát hoa hồng thành công!");
+            void load();
+          } else {
+            message.error(res?.message || "Lỗi chốt đối soát");
+          }
+        } catch (err: unknown) {
+          message.error(getErrorMessage(err, "Lỗi chốt đối soát"));
+        } finally {
+          setReconciling(false);
+        }
+      },
+    });
+  };
+
   return (
     <MainLayout>
       <div className="space-y-4">
@@ -261,15 +284,11 @@ const OwnerCommissions = () => {
                 <div className="text-3xl font-bold">{formatMoney(unpaidTotal)}</div>
               </div>
               <div className="flex flex-wrap items-end justify-between gap-2 mt-2">
-                {earliestDueDate && (
+                {unpaidItems.length > 0 && (
                   <div className="bg-white/20 rounded-xl p-2 px-3 backdrop-blur-sm">
-                    <div className="text-white/90 text-xs mb-1">Hạn thanh toán gần nhất</div>
+                    <div className="text-white/90 text-xs mb-1">Số kỳ chờ thanh toán</div>
                     <div className="text-lg font-bold">
-                      {daysRemaining !== null && daysRemaining < 0 
-                        ? `Quá hạn ${Math.abs(daysRemaining)} ngày` 
-                        : daysRemaining !== null && daysRemaining === 0 
-                        ? "Hết hạn hôm nay" 
-                        : `Còn ${daysRemaining} ngày`}
+                      {unpaidItems.length} kỳ
                     </div>
                   </div>
                 )}
@@ -292,10 +311,19 @@ const OwnerCommissions = () => {
                 <div className="text-blue-100 text-sm font-medium mb-1">Tổng tạm tính (Chưa chốt)</div>
                 <div className="text-3xl font-bold">{formatMoney(pendingTotal)}</div>
               </div>
-              <div className="mt-auto pt-2">
-                <div className="text-blue-100 text-sm opacity-80">
-                  Số tiền này dự kiến sẽ chốt vào kỳ kế tiếp (Ngày 15 hàng tháng).
+              <div className="flex flex-wrap items-end justify-between gap-2 mt-2">
+                <div className="text-blue-100 text-xs opacity-80 max-w-[60%]">
+                  Số tiền này là tạm tính từ các giao dịch hoàn thành và chưa được chốt đối soát.
                 </div>
+                <Button
+                  size="large"
+                  className={`border-none font-semibold shadow-sm ml-auto ${pendingTotal > 0 ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-white/40 text-white/80 hover:bg-white/40 cursor-not-allowed'}`}
+                  onClick={handleReconcileCommissions}
+                  loading={reconciling}
+                  disabled={pendingTotal <= 0}
+                >
+                  Chốt đối soát
+                </Button>
               </div>
             </div>
           </Card>
@@ -306,28 +334,28 @@ const OwnerCommissions = () => {
           loading={loading}
           className="rounded-2xl"
         >
-          <Table rowKey="commission_id" dataSource={items} columns={columns} />
+          <Table rowKey="commission_id" dataSource={items} columns={columns} pagination={false} />
         </Card>
 
         <Card
           title={
             <div className="flex flex-wrap justify-between items-center gap-2">
               <span>Các giao dịch phát sinh chờ kết toán</span>
-              <DatePicker.MonthPicker
+              <DatePicker
                 value={filterMonth}
                 onChange={setFilterMonth}
                 format="MM/YYYY"
-                placeholder="Chọn kỳ đối soát"
+                placeholder="Chọn tháng"
                 allowClear
               />
             </div>
           }
           loading={loading}
           className="rounded-2xl border border-indigo-100"
-          headStyle={{ backgroundColor: '#f5f7ff', borderBottom: '1px solid #e0e7ff', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem' }}
+          styles={{ header: { backgroundColor: '#f5f7ff', borderBottom: '1px solid #e0e7ff', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem' } }}
         >
           <div className="mb-4 text-sm text-gray-500">
-            Các khoản này sẽ được hệ thống tự động gom lại và chốt vào 0h00 ngày 15 hàng tháng. 
+            Các khoản này là tạm tính phát sinh từ các giao dịch thành công và sẽ được chốt đối soát thủ công để thực hiện thanh toán hoa hồng.
             Đang hiển thị {filteredPendingItems.length} giao dịch.
           </div>
           

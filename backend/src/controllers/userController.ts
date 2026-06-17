@@ -1621,8 +1621,11 @@ export const getUserLocationRecommendations = async (
               l.location_name, l.address, l.location_type, l.first_image, l.rating
        FROM checkins c
        JOIN locations l ON l.location_id = c.location_id
+       LEFT JOIN users u ON u.user_id = l.owner_id
        WHERE c.user_id = ?
          AND c.checkin_time >= (NOW() - INTERVAL 60 DAY)
+         AND l.location_name != 'Vị trí tự do'
+         AND (l.owner_id IS NULL OR u.role != 'user')
        GROUP BY c.location_id
        ORDER BY last_checkin DESC
        LIMIT 10`,
@@ -1654,18 +1657,38 @@ export const getUserLocationRecommendations = async (
     let recommended: RowDataPacket[] = [];
     if (preferredTypes.length > 0) {
       const placeholders = preferredTypes.map(() => "?").join(",");
-      // NOTE: Exclusion by set is handled in JS to keep query simple.
+      // Chỉ lấy địa điểm owner/admin tạo, bỏ qua địa điểm tự do (OSM / vị trí tự tạo của user)
       const [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT location_id, location_name, address, location_type, first_image, rating
-         FROM locations
-         WHERE status = 'active'
-           AND location_type IN (${placeholders})
-         ORDER BY rating DESC, total_checkins DESC
+        `SELECT l.location_id, l.location_name, l.address, l.location_type, l.first_image, l.rating
+         FROM locations l
+         LEFT JOIN users u ON u.user_id = l.owner_id
+         WHERE l.status = 'active'
+           AND l.location_type IN (${placeholders})
+           AND l.source IN ('owner', 'admin')
+           AND l.location_name != 'Vị trí tự do'
+           AND (l.owner_id IS NULL OR u.role != 'user')
+         ORDER BY l.rating DESC, l.total_checkins DESC
          LIMIT 50`,
         preferredTypes,
       );
 
       recommended = rows.filter((r) => !excludedIds.has(Number(r.location_id)));
+    }
+
+    if (recommended.length === 0) {
+      // Fallback: Lấy các địa điểm nổi bật được đánh giá tốt nhất hệ thống
+      const [fallbackRows] = await pool.query<RowDataPacket[]>(
+        `SELECT l.location_id, l.location_name, l.address, l.location_type, l.first_image, l.rating
+         FROM locations l
+         LEFT JOIN users u ON u.user_id = l.owner_id
+         WHERE l.status = 'active'
+           AND l.source IN ('owner', 'admin')
+           AND l.location_name != 'Vị trí tự do'
+           AND (l.owner_id IS NULL OR u.role != 'user')
+         ORDER BY l.rating DESC, l.total_checkins DESC
+         LIMIT 50`
+      );
+      recommended = fallbackRows.filter((r) => !excludedIds.has(Number(r.location_id)));
     }
 
     res.json({

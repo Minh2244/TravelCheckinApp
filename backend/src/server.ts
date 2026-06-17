@@ -22,7 +22,7 @@ import { ensureBookingTableReservationsSchema } from "./utils/tableReservations"
 import { initSocketHub } from "./utils/socketHub";
 import { ensureLocationChatSchema } from "./utils/locationChat";
 import locationChatRoutes from "./routes/locationChatRoutes";
-import { startCommissionCron } from "./cron/commissionJob";
+// import { startCommissionCron } from "./cron/commissionJob";
 import imageRoutes from "./routes/imageRoutes";
 import itineraryRoutes from "./routes/itineraryRoutes";
 
@@ -566,7 +566,7 @@ const startServer = async () => {
     app.set("socketio", io);
     initSocketHub(io);
 
-    startCommissionCron();
+    // startCommissionCron();
 
     httpServer.listen(PORT, () => {
       console.log(`📡 Server đang chạy tại: http://localhost:${PORT}`);

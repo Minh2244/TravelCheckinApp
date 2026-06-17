@@ -100,6 +100,7 @@ import {
   verifyOwnerCheckin,
   setLocationCoverImage,
   setServiceCoverImage,
+  reconcileOwnerCommissionsManually,
 } from "../controllers/ownerController";
 
 const router = express.Router();
@@ -194,6 +195,7 @@ router.post(
   "/commissions/payment-request",
   createOwnerCommissionPaymentRequest,
 );
+router.post("/commissions/reconcile", reconcileOwnerCommissionsManually);
 
 // Vouchers (owner-only)
 router.get("/vouchers/stats", getOwnerVoucherStats);

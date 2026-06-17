@@ -9,7 +9,10 @@ import {
   Statistic,
   Table,
   Avatar,
-  Typography
+  Typography,
+  Radio,
+  DatePicker,
+  Space
 } from "antd";
 import {
   ShopOutlined,
@@ -24,6 +27,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
@@ -73,6 +77,10 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [rangeType, setRangeType] = useState<string>("today");
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs(), dayjs()]);
+
+  // Auth check: chỉ chạy 1 lần khi mount
   useEffect(() => {
     try {
       const userStr = sessionStorage.getItem("user");
@@ -88,16 +96,40 @@ const AdminDashboard = () => {
       }
 
       setUser(userData);
-      fetchDashboardStats();
     } catch (error) {
       console.error("Lỗi loading user:", error);
       navigate("/login", { replace: true });
     }
   }, [navigate]);
 
+  // Fetch data khi filter thay đổi
+  useEffect(() => {
+    if (!user) return;
+    fetchDashboardStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeType, dateRange, user]);
+
   const fetchDashboardStats = async () => {
     try {
-      const response = await adminApi.getDashboardStats({});
+      setLoading(true);
+
+      const fromStr = dateRange[0].format("YYYY-MM-DD");
+      const toStr = dateRange[1].format("YYYY-MM-DD");
+      
+      let queryType = "day";
+      if (rangeType === "all") {
+        queryType = "all";
+      } else if (rangeType === "year") {
+        queryType = "year";
+      } else {
+        queryType = "month";
+      }
+
+      const response = await adminApi.getDashboardStats({
+        type: queryType,
+        from: fromStr,
+        to: toStr
+      });
       if (response.success && response.data) {
         setStats(response.data);
       }
@@ -106,6 +138,17 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRangeChange = (e: any) => {
+    const val = e.target.value;
+    setRangeType(val);
+    const today = dayjs();
+    if (val === "today") setDateRange([today, today]);
+    else if (val === "7days") setDateRange([today.subtract(6, 'day'), today]);
+    else if (val === "month") setDateRange([today.startOf('month'), today.endOf('month')]);
+    else if (val === "year") setDateRange([today.startOf('year'), today.endOf('year')]);
+    else if (val === "all") setDateRange([dayjs('2020-01-01'), today]);
   };
 
   if (!user || loading) {
@@ -134,9 +177,54 @@ const AdminDashboard = () => {
 
   return (
     <MainLayout>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Tổng quan hệ thống</h2>
-        <p className="text-gray-500">Các chỉ số hoạt động cốt lõi của nền tảng.</p>
+      <div className="mb-6 flex justify-between items-start flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Tổng quan hệ thống</h2>
+          <p className="text-gray-500">Các chỉ số hoạt động cốt lõi của nền tảng.</p>
+        </div>
+        
+        <Space size="middle" className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+          <Radio.Group value={rangeType} onChange={handleRangeChange} optionType="button" buttonStyle="solid">
+            <Radio.Button value="today">Hôm nay</Radio.Button>
+            <Radio.Button value="7days">7 ngày</Radio.Button>
+            <Radio.Button value="month">1 tháng</Radio.Button>
+            <Radio.Button value="year">1 năm</Radio.Button>
+            <Radio.Button value="all">Tất cả</Radio.Button>
+          </Radio.Group>
+          <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
+            <DatePicker 
+              value={dateRange[0]}
+              onChange={(d) => {
+                if (d) {
+                  let end = dateRange[1];
+                  if (end.isBefore(d, 'day')) end = d;
+                  setDateRange([d, end]);
+                  setRangeType("custom");
+                }
+              }}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              className="w-32"
+              disabledDate={(current) => current && current > dayjs().endOf('day')}
+              placeholder="Từ ngày"
+            />
+            <span className="text-gray-400">→</span>
+            <DatePicker 
+              value={dateRange[1]}
+              onChange={(d) => {
+                if (d) {
+                  setDateRange([dateRange[0], d]);
+                  setRangeType("custom");
+                }
+              }}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              className="w-32"
+              disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
+              placeholder="Đến ngày"
+            />
+          </Space>
+        </Space>
       </div>
 
       {stats ? (
@@ -314,11 +402,18 @@ const AdminDashboard = () => {
             </Col>
           </Row>
 
-          {/* Hàng 3: Biểu đồ doanh thu 6 tháng */}
+          {/* Hàng 3: Biểu đồ doanh thu */}
           <Row gutter={[16, 16]}>
             <Col span={24}>
               <Card 
-                title={<span className="text-lg font-bold text-slate-800">Xu hướng doanh thu hệ thống (6 tháng qua)</span>}
+                title={<span className="text-lg font-bold text-slate-800">
+                  {rangeType === 'all' 
+                    ? `Xu hướng doanh thu qua các năm`
+                    : rangeType === 'year'
+                      ? `Xu hướng doanh thu trong Năm ${dateRange[0].format('YYYY')}`
+                      : `Xu hướng doanh thu trong Tháng ${dateRange[0].format('M/YYYY')}`
+                  }
+                </span>}
                 className="rounded-2xl border-none shadow-sm"
               >
                 {lineChartData.length > 0 ? (
