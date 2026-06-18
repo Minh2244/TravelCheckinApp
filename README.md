@@ -5,7 +5,6 @@
 [![Copyright](https://img.shields.io/badge/Copyright-©%202026%20Mai%20Nhut%20Minh-blue)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-v20+-339933)](https://nodejs.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-v8.0+-4479A1)](https://mysql.com/)
-[![React Native](https://img.shields.io/badge/React%20Native-Expo%20SDK%2054-61DAFB)](https://reactnative.dev/)
 [![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
 
 A comprehensive full-stack travel ecosystem connecting tourists with service providers through integrated POS (Point of Sale), PMS (Property Management System), Smart Check-in, and AI-powered features. Built as a graduation thesis at Tay Do University.
@@ -31,12 +30,11 @@ A comprehensive full-stack travel ecosystem connecting tourists with service pro
 
 ## I. Project Overview
 
-This project is a full-stack travel ecosystem consisting of three main components:
+This project is a full-stack travel ecosystem consisting of two main components:
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
 | **Backend API** | RESTful server with real-time capabilities | Node.js, Express 5, TypeScript |
-| **Mobile App** | Consumer-facing app for travelers | React Native, Expo SDK 54, TypeScript |
 | **Web Dashboard** | Admin, Owner, and User management panels | React 19, Vite 7, Ant Design, TypeScript |
 
 The system enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, plan itineraries, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations. The platform integrates Google Gemini AI for intelligent chatbot assistance and personalized recommendations.
@@ -45,7 +43,7 @@ The system enables tourists to discover locations, book services (hotel rooms, r
 
 ## II. Key Features
 
-### A. For Travelers (Mobile App)
+### A. For Travelers
 
 1. **Smart Check-in** — GPS-based check-in with geofencing and photo capture
 2. **Interactive Map** — Browse locations with OpenStreetMap tiles, markers, and routing (OSRM)
@@ -112,31 +110,31 @@ The system enables tourists to discover locations, book services (hotel rooms, r
 
 ## III. System Architecture
 
-```
+```text
                          +---------------------------------------------+
                          |              Client Layer                    |
-                         +----------------+--------------+--------------+
-                         |  Mobile App    |  Website     |  Admin       |
-                         |  (Expo RN)     |  (React)     |  (React)     |
-                         +--------+-------+------+-------+------+-------+
-                                  |             |              |
-                                  +--------+----+--------------+
-                                           |
-                                  +--------v--------+
-                                  |   Backend API   |
-                                  |  (Express 5)    |
-                                  |  Port: 3000     |
-                                  +--+-----+-----+--+
-                                     |     |     |
-                             +-------+     |     +-------+
-                             v             v             v
-                      +-----------+  +-----------+  +-----------+
-                      |   MySQL   |  |  Firebase |  |  Google   |
-                      | Database  |  |  Cloud    |  |  Gemini   |
-                      | 56 tables |  | Messaging |  |    AI     |
-                      +-----------+  +-----------+  +-----------+
+                         +-------------------------------+--------------+
+                         |  Website (Owner/User)         |  Admin       |
+                         |  (React SPA)                  |  (React)     |
+                         +-----------------------+-------+------+-------+
+                                                 |              |
+                                                 +----+---------+
+                                                      |
+                                          +-----------v-----------+
+                                          |      Backend API      |
+                                          |     (Express 5)       |
+                                          |     Port: 3000        |
+                                          +---+-------+-------+---+
+                                              |       |       |
+                              +---------------+       |       +---------------+
+                              v                       v                       v
+                       +-------------+         +-------------+         +-------------+
+                       |    MySQL    |         |  Firebase   |         |   Google    |
+                       |  Database   |         |    Cloud    |         |   Gemini    |
+                       |  56 tables  |         |  Messaging  |         |     AI      |
+                       +-------------+         +-------------+         +-------------+
 
-                      Real-time: Socket.IO (WebSocket) + SSE
+                       Real-time: Socket.IO (WebSocket) + SSE
 ```
 
 ---
@@ -180,24 +178,7 @@ The system implements **4 distinct roles** with JWT-based authentication:
 | Validation | Zod v4 |
 | Security | Helmet, CORS, Compression |
 
-### B. Mobile App
-
-| Category | Technology |
-|----------|------------|
-| Framework | React Native + Expo SDK 54 |
-| Routing | expo-router (file-based) |
-| State Management | Zustand + AsyncStorage |
-| HTTP Client | Axios (auto token refresh) |
-| Maps | react-native-maps + OpenStreetMap tiles |
-| QR Codes | react-native-qrcode-svg |
-| Real-time | Socket.IO (chat), SSE (booking updates) |
-| Push Notifications | expo-notifications |
-| OAuth | expo-auth-session + expo-web-browser |
-| Date Handling | date-fns |
-| Animations | react-native-reanimated |
-| Gestures | react-native-gesture-handler |
-
-### C. Website
+### B. Website
 
 | Category | Technology |
 |----------|------------|
@@ -217,7 +198,7 @@ The system implements **4 distinct roles** with JWT-based authentication:
 
 ## VI. Project Structure
 
-```
+```text
 TravelCheckinApp/
 |
 +-- backend/                         # Node.js + Express REST API
@@ -244,33 +225,6 @@ TravelCheckinApp/
 |   |   +-- server.ts                # Entry point
 |   +-- .env.example                 # Environment variables template
 |   +-- package.json
-|
-+-- mobile/                          # React Native (Expo) Mobile App
-|   +-- app/                         # File-based routing (28 screens)
-|   |   +-- (tabs)/                  # Tab navigation (5 tabs)
-|   |   |   +-- index.tsx            #   Home
-|   |   |   +-- map.tsx              #   Map
-|   |   |   +-- tickets.tsx          #   Tickets
-|   |   |   +-- profile.tsx          #   Profile
-|   |   |   +-- history.tsx          #   History
-|   |   +-- auth/                    # Auth screens
-|   |   +-- booking/                 # Booking flows
-|   |   +-- location/[id].tsx        # Location detail
-|   |   +-- chat/[locationId].tsx    # Real-time chat
-|   |   +-- checkins.tsx             # Check-ins & Diary
-|   |   +-- saved-locations.tsx      # Favorites
-|   |   +-- vouchers.tsx             # Voucher wallet
-|   |   +-- itineraries/             # Itinerary management
-|   |   +-- sos.tsx                  # SOS emergency
-|   |   +-- notifications.tsx        # Notifications
-|   |   +-- leaderboard.tsx          # Leaderboard
-|   +-- api/                         # Axios client, endpoints, Socket.IO, SSE
-|   +-- components/                  # Reusable UI components
-|   +-- constants/                   # Theme, colors, spacing, config
-|   +-- hooks/                       # Custom React hooks
-|   +-- store/                       # Zustand state stores
-|   +-- types/                       # TypeScript interfaces
-|   +-- utils/                       # Helper functions (notifications, formatters)
 |
 +-- website/                         # React SPA (Admin + Owner + User)
 |   +-- src/
@@ -418,16 +372,16 @@ The system uses a relational **MySQL** database with **56 tables** organized acr
 
 ### B. Core Entity Relationships
 
-```
+```text
 +----------------+       +--------------------+       +--------------------+
 |     users      |       |     locations      |       |     services       |
 |----------------|       |--------------------|       |--------------------|
 | id (PK)        |<--+   | id (PK)            |<--+   | id (PK)            |
 | name           |   |   | name               |   +---| location_id (FK)   |
 | email          |   |   | type               |   |   | name               |
-| role           |   |   | province           |   |   | type               |
-| password       |   |   | latitude           |   |   | price              |
-| avatar_url     |   |   | longitude          |   |   | quantity           |
+| role           |   |   | province           |   |   | price              |
+| password       |   |   | latitude           |   |   | quantity           |
+| avatar_url     |   |   | longitude          |   |   | pos_id             |
 | status         |   |   | owner_id (FK) -----+---+   +--------+-----------+
 +--------+-------+   |   | images (JSON)      |                |
          |           |   | opening_hours      |                |
@@ -460,7 +414,7 @@ The system uses a relational **MySQL** database with **56 tables** organized acr
 
 ### C. PMS and POS Subsystems
 
-```
+```text
     +----------------+  +----------------+  +----------------+
     |  hotel_rooms   |  |   pos_tables   |  |    vouchers    |
     |----------------|  |----------------|  |----------------|
@@ -496,7 +450,7 @@ The system uses a relational **MySQL** database with **56 tables** organized acr
 
 ### D. Image Storage System
 
-```
+```text
     +----------------+  +----------------+  +----------------+
     |    images      |  | entity_images  |  |image_categories|
     |----------------|  |----------------|  |----------------|
@@ -521,7 +475,6 @@ The system uses a relational **MySQL** database with **56 tables** organized acr
 | Node.js | v20.x or later |
 | MySQL | v8.0 or later |
 | npm | v9.x or later |
-| Expo Go App | Latest (for testing on real mobile devices) |
 | Git | Any |
 
 ### 2. Clone the Repository
@@ -614,15 +567,6 @@ npm run dev
 # Server runs at http://localhost:3000
 ```
 
-**Mobile App (new terminal):**
-
-```bash
-cd mobile
-npm install
-npx expo start
-# Scan QR code with Expo Go app
-```
-
 **Website (new terminal):**
 
 ```bash
@@ -638,7 +582,7 @@ npm run dev
 
 ### A. Base URL
 
-```
+```text
 http://localhost:3000/api
 ```
 
@@ -683,7 +627,7 @@ curl -X POST http://localhost:3000/api/bookings \
 - [x] **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
 - [x] **Phase 2** — Web Dashboard for Admin & Owner management module
 - [x] **Phase 3** — Complete database schema (56 tables) and restore full functionality
-- [ ] **Phase 4** — Mobile App Rebuild
+- [ ] **Phase 4** — Mobile App Planning & Scoping (in progress)
 - [ ] **Phase 5** — Hotel PMS and Restaurant POS drag-and-drop refinement
 - [ ] **Phase 6** — AI Chat Integration with Google Gemini
 
@@ -717,7 +661,7 @@ curl -X POST http://localhost:3000/api/bookings \
 
 ### Copyright Notice
 
-```
+```text
 Copyright (c) 2026 Mai Nhut Minh. All rights reserved.
 
 This project is an original graduation thesis developed at Tay Do University,
@@ -763,8 +707,6 @@ licenses apply to their own code:
 | Node.js | MIT |
 | Express | MIT |
 | React | MIT |
-| React Native | MIT |
-| Expo | MIT |
 | Ant Design | MIT |
 | Tailwind CSS | MIT |
 | Socket.IO | MIT |
