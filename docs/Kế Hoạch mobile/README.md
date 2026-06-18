@@ -1,90 +1,75 @@
-# Kế Hoạch Rebuild Mobile App
+# Yêu Cầu Kỹ Thuật & Cấu Hình Mobile App (Phase 4)
 
-## Tổng quan
-Xây dựng lại mobile app từ đầu với Expo SDK 54, Expo Router, TanStack Query, Zustand.
+Tài liệu này quy định các tiêu chuẩn kỹ thuật, thư viện, cấu hình môi trường và quy trình làm việc để xây dựng ứng dụng Mobile (Travel Check-in App).
 
-## Tech Stack
-- **Framework:** Expo SDK 54 + React Native 0.81
-- **Routing:** Expo Router v6 (file-based)
-- **State:** Zustand (client) + TanStack Query (server)
-- **Map:** react-native-maps + OSM tiles
-- **API:** Axios + interceptors
-- **Build:** EAS Build (APK)
+## 1. Môi trường & Nền tảng
+- **Framework**: React Native
+- **Môi trường build**: Expo SDK 54 (Hỗ trợ tốt nhất cho đa thiết bị).
+- **Quy trình Build (Build Pipeline)**: Ứng dụng được thiết kế song song cho cả **Expo Go** (để test nhanh) và **EAS Build (để xuất file APK/AAB)**. Tất cả thư viện native (Camera, Location) phải được cấu hình chuẩn qua Expo Plugins trong `app.json` để tối ưu hóa khi build APK, đảm bảo app chạy mượt và ổn định nhất khi đưa vào thực tế.
+- **Ngôn ngữ**: TypeScript
+- **Routing**: Expo Router (File-based routing)
 
-## Các giai đoạn
+## 2. Quy trình làm việc (Workflow)
+- **Tạo cấu trúc dự án**: Tất cả thư mục và file cấu trúc dự án `mobile` sẽ được khởi tạo hoàn toàn bằng các dòng lệnh (CLI).
+- **Phân kỳ giai đoạn**: "Làm tới đâu, lên kế hoạch tới đó". Sẽ không lập kế hoạch dư thừa. Mỗi trang sẽ được phân tích kỹ, vẽ UI bằng ký tự `---` (hoặc ảnh) và chốt luồng hoạt động rồi mới đưa vào file `.md`.
+- **Tái sử dụng Backend**: Đảm bảo gọi API và sử dụng chung Database chính xác 100% như cách Website đang hoạt động.
 
-| Giai đoạn | Nội dung | File | Ước tính |
-|---|---|---|---|
-| 1 | Scaffold project + EAS Build | [giai-doan-1-scaffold.md](giai-doan-1-scaffold.md) | 1 ngày |
-| 2 | Map + API Layer | [giai-doan-2-map-api.md](giai-doan-2-map-api.md) | 3-4 ngày |
-| 3 | Auth Flow (login, register, OTP, social) | giai-doan-3-auth.md | 2 ngày |
-| 4 | Home + Navigation | giai-doan-4-home.md | 2 ngày |
-| 5 | Location Detail + Booking | giai-doan-5-booking.md | 3 ngày |
-| 6 | Tickets + QR Code | giai-doan-6-tickets.md | 2 ngày |
-| 7 | Profile + Settings | giai-doan-7-profile.md | 1 ngày |
-| 8 | Secondary Features (vouchers, history, saved, reminders) | giai-doan-8-secondary.md | 2 ngày |
-| 9 | SOS + Notifications | giai-doan-9-sos.md | 1 ngày |
-| 10 | Itinerary Planning | giai-doan-10-itinerary.md | 2 ngày |
-| 11 | Polish + Testing | giai-doan-11-polish.md | 2 ngày |
+## 3. Cấu hình Môi trường (.env)
+Bắt buộc sử dụng các biến môi trường sau cho Mobile App. Lưu ý dùng URL của ngrok để quá trình Đăng nhập Google qua `expo-auth-session` diễn ra chính xác.
 
-**Tổng ước tính: ~20 ngày**
+```env
+# API Configuration
+EXPO_PUBLIC_API_URL=https://diligent-suffice-paradox.ngrok-free.dev/api
 
-## Features từ app cũ cần rebuild
+# Google OAuth (cùng Client ID với website)
+EXPO_PUBLIC_GOOGLE_CLIENT_ID=649280086350-dcnmaq0dg1isfnt7hmtso9paq6r8jgqr.apps.googleusercontent.com
 
-### Core (phải có)
-- [ ] Auth: Login, Register, OTP, Forgot Password, Social Login (Google/Facebook)
-- [ ] Home: Dashboard, weather, quick actions, recommendations
-- [ ] Map: OSM tiles, markers, routing, GPS, check-in, search, categories
-- [ ] Location Detail: Info, services, reviews, vouchers, booking
-- [ ] Booking: Ticket, table, room + VietQR payment
-- [ ] Tickets: QR code wallet, table pass, room pass
-- [ ] Profile: Info, stats, avatar, member tier
-
-### Secondary (nên có)
-- [ ] History: Check-in history
-- [ ] Saved Locations: Favorites
-- [ ] Vouchers: Saved/claimed vouchers
-- [ ] Booking Reminders: Upcoming reminders
-- [ ] Diary: Travel diary entries
-- [ ] Notifications: Push notifications
-
-### Advanced (có thể làm sau)
-- [ ] SOS: Emergency alert
-- [ ] Itinerary: Trip planning
-- [ ] AI Chat: Chatbot
-- [ ] Leaderboard: Rankings
-- [ ] Chat with Owner: Location chat
-
-## API Endpoints (tổng hợp)
-
-| Group | Endpoints | Auth |
-|---|---|---|
-| Auth | 10 endpoints | Public + Bearer |
-| Locations | 8 endpoints | Optional |
-| Bookings | 12 endpoints | Bearer + user role |
-| User | 25+ endpoints | Bearer + user role |
-| Geo | 2 endpoints | Public |
-| SOS | 3 endpoints | Bearer + user role |
-| AI | 2 endpoints | Bearer |
-| Push | 2 endpoints | Bearer |
-| Chat | 3 endpoints | Bearer |
-| Itinerary | 6 endpoints | Bearer |
-
-## Cách chạy app
-
-### Expo Go (nhanh)
-```bash
-cd E:\TravelCheckinApp\mobile
-npx expo start
-# Quét QR bằng Expo Go
+# Facebook App ID (cùng App ID với website - Dù không dùng vẫn giữ cấu hình)
+EXPO_PUBLIC_FACEBOOK_APP_ID=4153740721542373
 ```
 
-### Custom Dev Client (ổn định)
-```bash
-# Build APK lần đầu
-eas build --profile development --platform android
+## 4. Thư viện cốt lõi (Core Dependencies)
+- **Styling**: `nativewind` v4 (Tailwind CSS cho React Native).
+- **Phông chữ (Font)**: **Bắt buộc sử dụng phông chữ mặc định của hệ thống** (San Francisco trên iOS, Roboto trên Android). Không cài đặt thêm font bên ngoài để đảm bảo ứng dụng nhẹ, mượt và đồng bộ với thiết bị.
+- **Xử lý tai thỏ (Notch/SafeArea)**: Sử dụng `react-native-safe-area-context` để bọc toàn bộ giao diện, đảm bảo nội dung không bao giờ bị lẹm vào tai thỏ, Dynamic Island, hay thanh điều hướng ảo dưới đáy màn hình.
+- **State Management**: `zustand`.
+- **Lưu trữ cục bộ**: `@react-native-async-storage/async-storage`.
+- **HTTP Client**: `axios` (kèm interceptor cho tự động Refresh Token).
 
-# Chạy dev server
-npx expo start --dev-client
-# Quét QR bằng custom APK
+## 5. Thư viện tính năng (Feature Dependencies)
+- **Xác thực (OAuth)**: `expo-auth-session`, `expo-crypto`, `expo-web-browser`.
+- **Bản đồ & Chỉ đường (OSM + Routing)**: 
+  - Sử dụng `react-native-maps` kết hợp với `<UrlTile />` để tải bản đồ OpenStreetMap.
+  - Tích hợp gọi API của **OSRM (Open Source Routing Machine)** (đúng như Website đang dùng) để lấy dữ liệu tọa độ chỉ đường và vẽ mượt mà lên bản đồ thông qua `<Polyline>`.
+  - Đảm bảo 100% khả thi và không cần cài thêm Google Maps API Key phức tạp.
+- **Định vị & Smart Check-in**:
+  - `expo-location`: Sử dụng để lấy vị trí GPS. **Bắt buộc** cấu hình tham số độ chính xác cao nhất (`Accuracy.Highest` hoặc `Accuracy.BestForNavigation`) để phục vụ việc chỉ đường mượt mà và Smart Check-in (bán kính < 100m) được chính xác tuyệt đối.
+- **Tính năng Đặt Trước (Booking) Thời Gian Thực (Real-time)**:
+  - **Bắt buộc** đồng bộ dữ liệu liên tục như Website bằng cách kết hợp `socket.io-client` và `Server-Sent Events (SSE)`. Khi người dùng đặt phòng/bàn/vé hoặc khi Admin xác nhận, ứng dụng Mobile phải lập tức cập nhật trạng thái ngay thời gian thực (Real-time) mà không cần load lại trang.
+- **Camera & Hình ảnh**: `expo-camera`, `expo-image-picker`.
+- **Mã QR**: `react-native-qrcode-svg`.
+
+## 6. Cấu hình Quyền (Permissions) cho EAS Build APK
+Để tối ưu hóa việc xuất file APK/AAB mà không bị crash, ứng dụng bắt buộc phải khai báo đầy đủ các quyền native trong file `app.json` (thông qua Expo Plugins):
+- **Location**: Khai báo `ACCESS_FINE_LOCATION` (Định vị chính xác cao) và `ACCESS_COARSE_LOCATION` cho Android; `NSLocationWhenInUseUsageDescription` cho iOS.
+- **Camera**: Khai báo quyền sử dụng máy ảnh cho tính năng Check-in.
+- **Media Library**: Khai báo quyền truy cập thư viện ảnh để cho phép luồng check-in "chọn ảnh từ thư viện" đã chốt.
+
+## 7. Cấu trúc thư mục dự kiến (Đồng bộ với Website)
+Cấu trúc được thiết kế tối ưu, tách biệt API, State và UI, giúp tái sử dụng lại tư duy code từ Website sang Mobile một cách chuẩn xác nhất:
+
+```text
+mobile/
+├── app/                  # File-based routing (Các màn hình giống thư mục `pages` trên Web)
+│   ├── (tabs)/           # 5 Bottom Tabs chính
+│   ├── auth/             # Luồng xác thực
+│   └── _layout.tsx       # Root layout
+├── api/                  # Nơi định nghĩa các modules gọi axios (Đồng bộ với src/api của Web)
+├── components/           # UI Components tái sử dụng (Đồng bộ với src/components của Web)
+├── store/                # Zustand stores quản lý State toàn cục
+├── hooks/                # Custom React hooks
+├── types/                # TypeScript Interfaces (Dùng chung model từ Web)
+├── utils/                # Hàm tiện ích (định dạng tiền tệ, ngày tháng...)
+├── constants/            # Hằng số (Colors, Themes, Config)
+└── assets/               # Hình ảnh, fonts, icon
 ```
