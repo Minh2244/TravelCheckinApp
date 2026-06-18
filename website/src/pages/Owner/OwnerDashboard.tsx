@@ -13,6 +13,7 @@ import {
 import {
   CheckCircleOutlined,
   DollarOutlined,
+  FileExcelOutlined,
   GiftOutlined,
   ShopOutlined,
   CalendarOutlined,
@@ -25,6 +26,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { useNavigate } from "react-router-dom";
 import { asRecord, getErrorMessage } from "../../utils/safe";
 import dayjs from "dayjs";
+import InvoiceExportModal from "../../components/InvoiceExportModal";
 
 
 type BookingRow = {
@@ -42,9 +44,21 @@ type PaymentRow = {
   status: string;
   amount: number;
   payment_time?: string;
+  payment_method?: string;
   location_id?: number;
   location_name?: string;
   commission_amount?: number;
+  // Fields từ JOIN với bookings/services/users
+  booking_service_name?: string;
+  booking_service_type?: string;
+  booked_full_name?: string;
+  booked_phone?: string;
+  user_full_name?: string;
+  user_phone?: string;
+  booking_check_in_date?: string;
+  booking_check_out_date?: string;
+  booking_final_amount?: number;
+  booking_status?: string;
 };
 
 type LocationRow = {
@@ -65,9 +79,10 @@ const OwnerDashboard = () => {
 
   const [rangeType, setRangeType] = useState<string>("today");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs(), dayjs()]);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   const role = String(asRecord(asRecord(asRecord(me).data).actor).role || "");
-  const ownerName = String(asRecord(asRecord(asRecord(me).data).user).full_name || "Chủ địa điểm");
+  const ownerName = String(asRecord(asRecord(asRecord(me).data).actor).full_name || "Chủ địa điểm");
 
   const windowRange = useMemo(() => {
     if (rangeType === "all") return { from: null, to: null };
@@ -287,6 +302,12 @@ const OwnerDashboard = () => {
             <p className="text-gray-500">Báo cáo theo {periodLabel}.</p>
           </div>
           <Space size="middle" className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={() => setIsInvoiceModalOpen(true)}
+            >
+              Xuất hóa đơn & Báo cáo
+            </Button>
             <Radio.Group value={rangeType} onChange={handleRangeChange} optionType="button" buttonStyle="solid">
               <Radio.Button value="today">Hôm nay</Radio.Button>
               <Radio.Button value="7days">7 ngày</Radio.Button>
@@ -612,6 +633,35 @@ const OwnerDashboard = () => {
           </Col>
         </Row>
       </div>
+
+      <InvoiceExportModal
+        open={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        role="owner"
+        currentUserName={ownerName}
+        invoices={payments.map((p) => ({
+          payment_id: p.payment_id,
+          booking_id: (p as any).booking_id,
+          location_name: p.location_name || "",
+          location_id: p.location_id,
+          amount: p.amount,
+          payment_time: p.payment_time || "",
+          payment_method: p.payment_method || "",
+          booking_service_name: p.booking_service_name,
+          booking_service_type: p.booking_service_type,
+          booked_full_name: p.booked_full_name,
+          user_full_name: p.user_full_name,
+          phone: p.booked_phone || p.user_phone,
+          check_in_date: p.booking_check_in_date,
+          check_out_date: p.booking_check_out_date,
+          notes: (p as any).notes,
+          qr_data: (p as any).qr_data,
+        }))}
+        locations={locations.map((l) => ({
+          location_id: l.location_id,
+          location_name: l.location_name,
+        }))}
+      />
     </MainLayout>
   );
 };

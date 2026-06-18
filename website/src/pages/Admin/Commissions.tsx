@@ -25,12 +25,14 @@ import {
   EyeOutlined,
   FileTextOutlined,
   WarningOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
 import { statusToVi } from "../../utils/statusText";
+import { exportCommissionExcel } from "../../utils/exportCommissionExcel";
 
 const getApiErrorMessage = (error: unknown, fallback: string): string => {
   const e = error as {
@@ -680,7 +682,7 @@ const Commissions = () => {
       <Card
         className="mb-6"
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 15, color: '#1e293b' }}>Hoa hồng theo Owner</span>
             {overdueCount > 0 && (
               <span style={{
@@ -688,6 +690,20 @@ const Commissions = () => {
                 padding: '1px 9px', fontSize: 11, fontWeight: 700,
               }}>{overdueCount} quá hạn</span>
             )}
+            <div style={{ flex: 1 }} />
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={async () => {
+                try {
+                  await exportCommissionExcel(ownerCommissions, "Admin");
+                } catch (err: any) {
+                  message.error(err.message || "Lỗi khi xuất Excel");
+                }
+              }}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
+            >
+              Xuất file
+            </Button>
           </div>
         }
         loading={ownerCommissionsLoading}

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Button,
   Card,
   Row,
   Col,
@@ -15,6 +16,7 @@ import {
   Space
 } from "antd";
 import {
+  FileExcelOutlined,
   ShopOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -31,6 +33,8 @@ import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
+import InvoiceExportModal from "../../components/InvoiceExportModal";
+import type { InvoiceData } from "../../utils/exportExcel";
 
 const { Title, Text } = Typography;
 
@@ -73,12 +77,16 @@ interface DashboardStats {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<{ role?: string } | null>(null);
+  const [user, setUser] = useState<{ role?: string; full_name?: string } | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [rangeType, setRangeType] = useState<string>("today");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs(), dayjs()]);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceData[]>([]);
+  const [owners, setOwners] = useState<{ user_id: number; full_name: string }[]>([]);
+  const [locations, setLocations] = useState<{ location_id: number; location_name: string }[]>([]);
 
   // Auth check: chỉ chạy 1 lần khi mount
   useEffect(() => {
@@ -89,7 +97,7 @@ const AdminDashboard = () => {
         return;
       }
 
-      const userData = JSON.parse(userStr) as { role?: string };
+      const userData = JSON.parse(userStr) as { role?: string; full_name?: string };
       if (userData.role !== "admin") {
         navigate("/unauthorized", { replace: true });
         return;
@@ -108,6 +116,26 @@ const AdminDashboard = () => {
     fetchDashboardStats();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeType, dateRange, user]);
+
+  // Fetch invoices & owners cho modal xuất hóa đơn
+  const fetchInvoiceData = useCallback(async () => {
+    try {
+      const [invRes, ownerRes, locRes] = await Promise.all([
+        adminApi.getHistoryInvoices(),
+        adminApi.getOwners(),
+        adminApi.getLocations(),
+      ]);
+      setInvoices(invRes?.data || []);
+      setOwners(ownerRes?.data || []);
+      setLocations(locRes?.data || []);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchInvoiceData();
+  }, [user, fetchInvoiceData]);
 
   const fetchDashboardStats = async () => {
     try {
@@ -184,6 +212,13 @@ const AdminDashboard = () => {
         </div>
         
         <Space size="middle" className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+          <Button
+            icon={<FileExcelOutlined />}
+            onClick={() => setIsInvoiceModalOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
+          >
+            Xuất file
+          </Button>
           <Radio.Group value={rangeType} onChange={handleRangeChange} optionType="button" buttonStyle="solid">
             <Radio.Button value="today">Hôm nay</Radio.Button>
             <Radio.Button value="7days">7 ngày</Radio.Button>
@@ -472,6 +507,15 @@ const AdminDashboard = () => {
           <Empty description="Chưa có dữ liệu thống kê" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </Card>
       )}
+      <InvoiceExportModal
+        open={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        role="admin"
+        currentUserName={user?.full_name || "Admin"}
+        invoices={invoices}
+        locations={locations}
+        owners={owners}
+      />
     </MainLayout>
   );
 };

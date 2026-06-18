@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Button,
   Card,
@@ -16,12 +16,17 @@ import {
   FileTextOutlined,
   GlobalOutlined,
   ShopOutlined,
+  PrinterOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
+import { useReactToPrint } from "react-to-print";
+import { exportInvoiceExcel } from "../../utils/exportInvoiceExcel";
+import InvoicePrintTemplate from "../../components/InvoicePrintTemplate";
 
 const DATE_UI_FORMAT = "DD/MM/YYYY";
 
@@ -250,6 +255,41 @@ export default function AdminHistory() {
     }
   };
 
+  const printRef = useRef<HTMLDivElement>(null);
+  const [printData, setPrintData] = useState<any>(null);
+
+  const handlePrintTrigger = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: printData
+      ? (() => {
+          const t = printData.hotel ? "hotel" : printData.items ? "restaurant" : "tourist";
+          const pfx = t === "hotel" ? "RS" : t === "restaurant" ? "DI" : "SB";
+          const code = printData.booking_id && Number(printData.booking_id) > 0
+            ? `${pfx}-${printData.booking_id}`
+            : `${pfx}-POS-${printData.payment_id}`;
+          return `Hoa_don_${code}`;
+        })()
+      : "Hoa_don",
+  });
+
+  const handlePrintRow = useCallback((row: any) => {
+    setPrintData(row);
+    setTimeout(() => {
+      handlePrintTrigger();
+    }, 100);
+  }, [handlePrintTrigger]);
+
+  const handleExportRowExcel = useCallback(async (row: any) => {
+    try {
+      const roleLabel = row.performed_by?.role === "owner" ? "Owner" : row.performed_by?.role === "employee" ? "Nhân viên" : null;
+      const userName = row.performed_by?.name ? `${row.performed_by.name} ${roleLabel ? `(${roleLabel})` : ""}` : "Hệ thống";
+      await exportInvoiceExcel(row as any, userName, row);
+      message.success("Xuất Excel thành công!");
+    } catch (err: any) {
+      message.error("Lỗi xuất Excel: " + err?.message);
+    }
+  }, []);
+
   const expandedInvoiceRender = useCallback((row: any) => {
     const hotelRooms = Array.isArray(row.hotel_rooms) ? row.hotel_rooms : [];
     const fallbackHotelRoom = row.hotel
@@ -474,9 +514,25 @@ export default function AdminHistory() {
             </div>
           </div>
         ) : null}
+        <div className="mt-4 flex justify-end gap-2 border-t pt-3">
+          <Button
+            size="small"
+            icon={<PrinterOutlined />}
+            onClick={() => handlePrintRow(row)}
+          >
+            In PDF
+          </Button>
+          <Button
+            size="small"
+            icon={<FileExcelOutlined />}
+            onClick={() => handleExportRowExcel(row)}
+          >
+            Xuất Excel
+          </Button>
+        </div>
       </div>
     );
-  }, []);
+  }, [handlePrintRow, handleExportRowExcel]);
 
   const columns: any[] = [
     {
@@ -800,6 +856,20 @@ export default function AdminHistory() {
           </div>
         ) : (
           <div>
+            <div style={{ display: "none" }}>
+              {printData && (
+                <InvoicePrintTemplate
+                  ref={printRef}
+                  invoice={printData as any}
+                  currentUserName={
+                    printData.performed_by?.name
+                      ? `${printData.performed_by.name} ${printData.performed_by.role === "owner" ? "(Owner)" : printData.performed_by.role === "employee" ? "(Nhân viên)" : ""}`
+                      : "Hệ thống"
+                  }
+                  detailPayment={printData as any}
+                />
+              )}
+            </div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-slate-800">Danh sách Hóa đơn</h3>
               <Button onClick={() => setShowTable(false)}>Ẩn bảng</Button>

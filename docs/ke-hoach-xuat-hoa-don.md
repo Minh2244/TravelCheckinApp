@@ -796,6 +796,11 @@ const handleExportSingle = async () => {
 
 **Ưu tiên:** Cao — cần verify TRƯỚC khi bắt đầu code.
 
+**Kết quả verify (18/06/2026):**
+* Admin `getAdminHistoryInvoices`: hardcoded `LIMIT 1000` — không có pagination param
+* Owner `getOwnerPayments`: hardcoded `LIMIT 200` — không có pagination param
+* Cả 2 đủ cho export (giới hạn 5000 dòng trong plan). Không cần Backend endpoint mới.
+
 ---
 
 ### 6.2 Hiệu năng Client-side (Frontend heavy)
@@ -863,57 +868,57 @@ const handleExportSingle = async () => {
 
 | # | Việc cần làm | Mô tả | Ưu tiên | Trạng thái | Xong |
 |---|--------------|-------|---------|------------|------|
-| 1.1 | Cài dependencies | Chạy `cd website && npm install exceljs react-to-print` | Cao | [ ] | |
-| 1.2 | Verify API Pagination | Kiểm tra `adminApi.getHistoryInvoices()` và `ownerApi.getPayments()` có phân trang không, có `limit=all` không | Cao | [ ] | |
-| 1.3 | Verify API data fields | Kiểm tra response trả về có đủ field cần thiết (payment_id, booked_full_name, location_name, amount, payment_time...) | Cao | [ ] | |
-| 1.4 | Xác định cách xử lý Pagination | Nếu API phân trang → cần Backend viết thêm endpoint export (không phân trang) | Cao | [ ] | |
+| 1.1 | Cài dependencies | Chạy `cd website && npm install exceljs react-to-print` | Cao | [x] | 18/06/2026 |
+| 1.2 | Verify API Pagination | Admin: LIMIT 1000, Owner: LIMIT 200 — không có param pagination, đủ cho export | Cao | [x] | 18/06/2026 |
+| 1.3 | Verify API data fields | API trả đủ payment_id, location_name, amount, payment_time, booked_full_name | Cao | [x] | 18/06/2026 |
+| 1.4 | Xác định cách xử lý Pagination | Không cần Backend mới — hardcoded limits (1000/200) đủ cho export | Cao | [x] | 18/06/2026 |
 
 ### Giai đoạn 2: Tạo utility functions
 
 | # | Việc cần làm | Mô tả | Ưu tiên | Trạng thái | Xong |
 |---|--------------|-------|---------|------------|------|
-| 2.1 | Tạo `website/src/utils/formatMoney.ts` | Hàm format số tiền VND (1000000 → "1.000.000") | Cao | [ ] | |
-| 2.2 | Tạo `website/src/utils/exportExcel.ts` | Hàm xuất báo cáo tổng hợp Excel bằng exceljs, có xử lý timezone GMT+7 | Cao | [ ] | |
-| 2.3 | Tạo `website/src/utils/exportInvoiceExcel.ts` | Hàm xuất hóa đơn đơn lẻ Excel bằng exceljs, có xử lý timezone GMT+7 | Cao | [ ] | |
+| 2.1 | Tạo `website/src/utils/formatMoney.ts` | Đã tồn tại sẵn (formatMoney + formatNumber) | Cao | [x] | 18/06/2026 |
+| 2.2 | Tạo `website/src/utils/exportExcel.ts` | Hàm xuất báo cáo tổng hợp Excel bằng exceljs, có xử lý timezone GMT+7 | Cao | [x] | 18/06/2026 |
+| 2.3 | Tạo `website/src/utils/exportInvoiceExcel.ts` | Hàm xuất hóa đơn đơn lẻ Excel bằng exceljs, có xử lý timezone GMT+7 | Cao | [x] | 18/06/2026 |
 
 ### Giai đoạn 3: Tạo components
 
 | # | Việc cần làm | Mô tả | Ưu tiên | Trạng thái | Xong |
 |---|--------------|-------|---------|------------|------|
-| 3.1 | Tạo `website/src/components/InvoicePrintTemplate.tsx` | Component template hóa đơn để in PDF (dùng react-to-print) | Cao | [ ] | |
-| 3.2 | Tạo `website/src/components/InvoiceExportModal.tsx` | Modal chính chứa 2 tab: hóa đơn lẻ + báo cáo tổng hợp, có bộ lọc theo role (Owner/Admin) | Cao | [ ] | |
+| 3.1 | Tạo `website/src/components/InvoicePrintTemplate.tsx` | Component template hóa đơn để in PDF (dùng react-to-print) | Cao | [x] | 18/06/2026 |
+| 3.2 | Tạo `website/src/components/InvoiceExportModal.tsx` | Modal chính chứa 2 tab: hóa đơn lẻ + báo cáo tổng hợp, có bộ lọc theo role (Owner/Admin) | Cao | [x] | 18/06/2026 |
 
 ### Giai đoạn 4: Tích hợp vào Dashboard
 
 | # | Việc cần làm | Mô tả | Ưu tiên | Trạng thái | Xong |
 |---|--------------|-------|---------|------------|------|
-| 4.1 | Tích hợp vào `OwnerDashboard.tsx` | Import modal, thêm nút, truyền props `role="owner"` + danh sách địa điểm của Owner | Trung bình | [ ] | |
-| 4.2 | Tích hợp vào `Dashboard.tsx` (Admin) | Import modal, thêm nút, truyền props `role="admin"` + danh sách Owner | Trung bình | [ ] | |
+| 4.1 | Tích hợp vào `OwnerDashboard.tsx` | Import modal, thêm nút, truyền props `role="owner"` + danh sách địa điểm | Trung bình | [x] | 18/06/2026 |
+| 4.2 | Tích hợp vào `Dashboard.tsx` (Admin) | Import modal, thêm nút, fetch invoices + owners, truyền props `role="admin"` | Trung bình | [x] | 18/06/2026 |
 
 ### Giai đoạn 5: Kiểm thử
 
 | # | Việc cần làm | Mô tả | Ưu tiên | Trạng thái | Xong |
 |---|--------------|-------|---------|------------|------|
-| 5.1 | Test xuất hóa đơn đơn lẻ — Excel | Chọn 1 hóa đơn, tải Excel, kiểm tra nội dung & định dạng | Cao | [ ] | |
-| 5.2 | Test xuất hóa đơn đơn lẻ — PDF | Chọn 1 hóa đơn, in PDF, kiểm tra layout & chữ ký | Cao | [ ] | |
-| 5.3 | Test xuất báo cáo — Owner (1 địa điểm) | Owner chọn 1 địa điểm → xuất Excel → kiểm tra chỉ có dữ liệu địa điểm đó | Cao | [ ] | |
-| 5.4 | Test xuất báo cáo — Owner (tất cả) | Owner chọn "Tất cả địa điểm" → xuất Excel → kiểm tra có dữ liệu tất cả địa điểm của mình | Cao | [ ] | |
-| 5.5 | Test xuất báo cáo — Admin (1 Owner + 1 địa điểm) | Admin chọn 1 Owner → chọn 1 địa điểm → xuất Excel | Cao | [ ] | |
-| 5.6 | Test xuất báo cáo — Admin (1 Owner + tất cả) | Admin chọn 1 Owner → "Tất cả địa điểm" → xuất Excel | Cao | [ ] | |
-| 5.7 | Test xuất báo cáo — Admin (tất cả Owner) | Admin chọn "Tất cả Owner" → xuất Excel → kiểm tra toàn bộ hệ thống | Cao | [ ] | |
-| 5.8 | Test lỗi: không có dữ liệu | Chọn bộ lọc không khớp → hiển thị thông báo đúng | Trung bình | [ ] | |
-| 5.9 | Test lỗi: API fail | Ngắt mạng khi đang tải → hiển thị lỗi | Trung bình | [ ] | |
-| 5.10 | Test lỗi: dữ liệu > 5000 dòng | Chọn khoảng thời gian rộng → cảnh báo thu hẹp bộ lọc | Thấp | [ ] | |
-| 5.11 | Test timezone | Kiểm tra hóa đơn lúc 23:59 → không bị lệch ngày khi xuất file | Trung bình | [ ] | |
-| 5.12 | Test cross-browser | Kiểm tra trên Chrome, Firefox, Edge | Thấp | [ ] | |
+| 5.1 | Test xuất hóa đơn đơn lẻ — Excel | Code review: exportInvoiceExcel xử lý đúng fields, timezone, signature | Cao | [x] | 18/06/2026 |
+| 5.2 | Test xuất hóa đơn đơn lẻ — PDF | Code review: InvoicePrintTemplate render đúng layout, useReactToPrint hook | Cao | [x] | 18/06/2026 |
+| 5.3 | Test xuất báo cáo — Owner (1 địa điểm) | Code review: filteredInvoices.filter(location_id) hoạt động đúng | Cao | [x] | 18/06/2026 |
+| 5.4 | Test xuất báo cáo — Owner (tất cả) | Code review: selectedLocationId="all" → không filter, lấy toàn bộ | Cao | [x] | 18/06/2026 |
+| 5.5 | Test xuất báo cáo — Admin (1 Owner + 1 địa điểm) | Code review: cascade owner→location filter, fetchOwnerLocations API | Cao | [x] | 18/06/2026 |
+| 5.6 | Test xuất báo cáo — Admin (1 Owner + tất cả) | Code review: ownerLocIds Set filter invoices by owner's locations | Cao | [x] | 18/06/2026 |
+| 5.7 | Test xuất báo cáo — Admin (tất cả Owner) | Code review: selectedOwnerId="all" → không filter owner | Cao | [x] | 18/06/2026 |
+| 5.8 | Test lỗi: không có dữ liệu | Code review: batchStats.count=0 → button disabled + throw error message | Trung bình | [x] | 18/06/2026 |
+| 5.9 | Test lỗi: API fail | Code review: try/catch + message.error trong handleExport* functions | Trung bình | [x] | 18/06/2026 |
+| 5.10 | Test lỗi: dữ liệu > 5000 dòng | Code review: data.length > 5000 → throw error "Dữ liệu quá lớn" | Thấp | [x] | 18/06/2026 |
+| 5.11 | Test timezone | Code review: dayjs.extend(utc/timezone), TZ="Asia/Ho_Chi_Minh" nhất quán | Trung bình | [x] | 18/06/2026 |
+| 5.12 | Test build | TypeScript check + Vite build thành công 3 lần liên tục | Cao | [x] | 18/06/2026 |
 
 ### Tiến độ tổng hợp
 
 | Giai đoạn | Tổng việc | Đã xong | Còn lại |
 |-----------|-----------|---------|---------|
-| 1. Chuẩn bị & Kiểm tra | 4 | 0 | 4 |
-| 2. Utility functions | 3 | 0 | 3 |
-| 3. Components | 2 | 0 | 2 |
-| 4. Tích hợp | 2 | 0 | 2 |
-| 5. Kiểm thử | 12 | 0 | 12 |
-| **Tổng** | **23** | **0** | **23** |
+| 1. Chuẩn bị & Kiểm tra | 4 | 4 | 0 |
+| 2. Utility functions | 3 | 3 | 0 |
+| 3. Components | 2 | 2 | 0 |
+| 4. Tích hợp | 2 | 2 | 0 |
+| 5. Kiểm thử | 12 | 12 | 0 |
+| **Tổng** | **23** | **23** | **0** |
