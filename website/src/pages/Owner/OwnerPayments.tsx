@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   Button,
   Card,
@@ -18,6 +18,8 @@ import {
   FileTextOutlined,
   GlobalOutlined,
   ShopOutlined,
+  PrinterOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -27,6 +29,9 @@ import ownerApi from "../../api/ownerApi";
 import { formatMoney } from "../../utils/formatMoney";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import { useReactToPrint } from "react-to-print";
+import { exportInvoiceExcel } from "../../utils/exportInvoiceExcel";
+import InvoicePrintTemplate from "../../components/InvoicePrintTemplate";
 
 type RangeKey = "day" | "week" | "month" | "year" | "all";
 
@@ -134,15 +139,6 @@ const formatDurationMinutes = (mins: number | null) => {
   const mm = m % 60;
   return mm > 0 ? `${h} giờ ${mm} phút` : `${h} giờ`;
 };
-
-const getExecDisplay = (
-  row: HistoryRow,
-): { label: string; role: string | null } => {
-  const role = row.performed_by?.role ?? null;
-  const name = row.processed_by?.name || row.performed_by?.name || "-";
-  return { label: name, role };
-};
-
 const renderPaymentMethodTag = (method: unknown) => {
   const raw = method == null ? "" : String(method);
   const m = raw.trim().toLowerCase();
@@ -464,6 +460,50 @@ export default function OwnerPayments() {
     };
   }, [history, invoiceSummary, isTouristLocation]);
 
+  const getExecDisplay = useCallback((row: HistoryRow) => {
+    const role = row.performed_by?.role;
+    let label = "Hệ thống";
+    if (role === "owner" || role === "employee") {
+      label = row.performed_by.name || "Nhân viên";
+    } else if (role === "user") {
+      label = "Khách hàng";
+    }
+    return { role, label };
+  }, []);
+
+  const printRef = useRef<HTMLDivElement>(null);
+  const [printData, setPrintData] = useState<HistoryRow | null>(null);
+
+  const handlePrintTrigger = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: printData
+      ? (() => {
+          const t = printData.hotel ? "hotel" : printData.items ? "restaurant" : "tourist";
+          const pfx = t === "hotel" ? "RS" : t === "restaurant" ? "DI" : "SB";
+          const code = printData.booking_id && Number(printData.booking_id) > 0
+            ? `${pfx}-${printData.booking_id}`
+            : `${pfx}-POS-${printData.payment_id}`;
+          return `Hoa_don_${code}`;
+        })()
+      : "Hoa_don",
+  });
+
+  const handlePrintRow = useCallback((row: HistoryRow) => {
+    setPrintData(row);
+    setTimeout(() => {
+      handlePrintTrigger();
+    }, 100);
+  }, [handlePrintTrigger]);
+
+  const handleExportRowExcel = useCallback(async (row: HistoryRow) => {
+    try {
+      await exportInvoiceExcel(row as any, getExecDisplay(row).label, row);
+      message.success("Xuất Excel thành công!");
+    } catch (err: any) {
+      message.error("Lỗi xuất Excel: " + err?.message);
+    }
+  }, [getExecDisplay]);
+
   const expandedInvoiceRender = useCallback((row: HistoryRow) => {
     const hotelRooms = Array.isArray(row.hotel_rooms) ? row.hotel_rooms : [];
     const fallbackHotelRoom = row.hotel
@@ -656,9 +696,25 @@ export default function OwnerPayments() {
             <div className="text-lg font-bold">{formatMoney(row.amount)}</div>
           </div>
         )}
+        <div className="mt-4 flex justify-end gap-2 border-t pt-3">
+          <Button
+            size="small"
+            icon={<PrinterOutlined />}
+            onClick={() => handlePrintRow(row)}
+          >
+            In PDF
+          </Button>
+          <Button
+            size="small"
+            icon={<FileExcelOutlined />}
+            onClick={() => handleExportRowExcel(row)}
+          >
+            Xuất Excel
+          </Button>
+        </div>
       </div>
     );
-  }, []);
+  }, [handlePrintRow, handleExportRowExcel]);
 
   const hotelColumns = useMemo(
     () => [
@@ -1043,6 +1099,18 @@ export default function OwnerPayments() {
             </div>
           </div>
         </Card>
+
+
+        <div style={{ display: "none" }}>
+          {printData && (
+            <InvoicePrintTemplate
+              ref={printRef}
+              invoice={printData as any}
+              currentUserName={getExecDisplay(printData).label}
+              detailPayment={printData as any}
+            />
+          )}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gradient-to-br from-emerald-50 to-teal-50/50 border border-emerald-100/80 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-md hover:translate-y-[-2px] flex items-center justify-between">
