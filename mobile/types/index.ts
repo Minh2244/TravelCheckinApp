@@ -64,19 +64,18 @@ export interface ApiResponse<T = any> {
 
 // Location types
 export interface Location {
-  id: number;
-  name: string;
-  description: string;
+  location_id: number;
+  location_name: string;
   address: string;
   latitude: number;
   longitude: number;
-  type: string;
+  location_type: 'tourist' | 'restaurant' | 'hotel' | 'cafe' | 'resort' | 'other' | string;
   rating: number;
   total_reviews: number;
   images: string[];
-  opening_hours: any;
-  contact_info: any;
+  first_image: string | null;
   status: 'active' | 'inactive' | 'pending';
+  created_at?: string;
 }
 
 // Booking types

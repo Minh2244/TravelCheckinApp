@@ -1,15 +1,32 @@
+import '../global.css';
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, Platform } from 'react-native';
 import useAuthStore from '../store/authStore';
 
 export default function RootLayout() {
-  const { isLoading, loadUser } = useAuthStore();
+  const { isLoading, loadUser, isAuthenticated } = useAuthStore();
+  const segments = useSegments();
+  const router = useRouter();
 
   useEffect(() => {
     loadUser();
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'auth';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Redirect to the sign-in page.
+      router.replace('/auth/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Redirect away from the sign-in page.
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, segments]);
 
   if (isLoading) {
     return (
