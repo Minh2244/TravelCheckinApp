@@ -206,8 +206,46 @@ export const geoReverse = async (req: Request, res: Response) => {
     });
 
     const data = resp.data ?? null;
-    cacheSet(cacheKey, data, 24 * 60 * 60 * 1000);
-    res.json(data);
+
+    let temperature: number | undefined;
+    let weather: string | undefined;
+
+    try {
+      const meteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(lat))}&longitude=${encodeURIComponent(String(lng))}&current=temperature_2m,weathercode`;
+      const meteoResp = await axios.get(meteoUrl, { timeout: 5000 });
+      if (meteoResp.data?.current) {
+        temperature = meteoResp.data.current.temperature_2m;
+        const code = meteoResp.data.current.weathercode;
+        
+        weather = "Nhiều mây";
+        if (code === 0) weather = "Trời quang";
+        else if (code >= 1 && code <= 3) weather = "Có mây";
+        else if (code >= 45 && code <= 48) weather = "Có sương mù";
+        else if (code >= 51 && code <= 57) weather = "Mưa phùn";
+        else if (code >= 61 && code <= 67) weather = "Có mưa";
+        else if (code >= 71 && code <= 77) weather = "Có tuyết";
+        else if (code >= 80 && code <= 82) weather = "Mưa rào";
+        else if (code >= 95 && code <= 99) weather = "Có giông bão";
+      }
+    } catch (err) {
+      console.error("Open-Meteo error:", err);
+    }
+
+    const city = data?.address?.city 
+      || data?.address?.town 
+      || data?.address?.county 
+      || data?.address?.state_district 
+      || "Vị trí không xác định";
+
+    const finalData = {
+      city,
+      temperature,
+      weather,
+      raw_nominatim: data
+    };
+
+    cacheSet(cacheKey, finalData, 24 * 60 * 60 * 1000);
+    res.json(finalData);
   } catch {
     res.status(502).json({ message: "Reverse-geocoding upstream error" });
   }
