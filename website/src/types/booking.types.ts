@@ -168,6 +168,7 @@ export interface TableReservationItem {
   totalAmount?: number;
   qrPayload?: string;
   secureCode?: string;
+  invoiceCode?: string;
 }
 
 export interface RoomReservationItem {
@@ -186,6 +187,7 @@ export interface RoomReservationItem {
   totalAmount: number;
   qrPayload?: string;
   secureCode?: string;
+  invoiceCode?: string;
 }
 
 export interface TableReservationsResponse {

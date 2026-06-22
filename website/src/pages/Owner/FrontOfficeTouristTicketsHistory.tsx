@@ -38,6 +38,7 @@ type TicketInvoiceRow = {
   invoice_no?: number;
   payment_time: string;
   payment_method?: string | null;
+  booking_status?: string | null;
   seller_name?: string | null;
   buyer_name?: string | null;
   buyer_phone?: string | null;
@@ -330,19 +331,28 @@ export default function FrontOfficeTouristTicketsHistory() {
         width: 140,
         render: (_: unknown, row: TicketInvoiceRow) => {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
+          const cancelTag = row.booking_status === "cancelled" ? (
+            <span className="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-[10px] ml-1 block mt-1 w-fit">ĐÃ HỦY ĐƠN</span>
+          ) : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
-              <span className="font-semibold text-blue-700">
-                #SB-{row.booking_id}
-                {vcTag}
-              </span>
+              <div>
+                <span className="font-semibold text-blue-700">
+                  #SB-{row.booking_id}
+                  {vcTag}
+                </span>
+                {cancelTag}
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              #SB-POS-{row.payment_id}
-              {vcTag}
-            </span>
+            <div>
+              <span className="font-semibold text-blue-700">
+                #SB-POS-{row.payment_id}
+                {vcTag}
+              </span>
+              {cancelTag}
+            </div>
           );
         },
       },
@@ -953,7 +963,7 @@ export default function FrontOfficeTouristTicketsHistory() {
                 size="middle"
                 pagination={false}
                 sticky
-                scroll={{ x: true, y: 260 }}
+                scroll={{ x: 'max-content', y: 260 }}
                 columns={invoiceColumns}
                 expandable={{
                   columnTitle: (
@@ -988,7 +998,7 @@ export default function FrontOfficeTouristTicketsHistory() {
                           dataSource={items}
                           size="small"
                           pagination={false}
-                          scroll={{ x: true }}
+                          scroll={{ x: 'max-content' }}
                           columns={itemColumns}
                         />
                       </div>

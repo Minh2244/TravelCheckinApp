@@ -167,18 +167,24 @@ export default function RoomBookingPass({ isEmbedded }: { isEmbedded?: boolean }
 
   const handleCancelBooking = async (bookingId: number) => {
     Modal.confirm({
-      title: "Xác nhận hủy đặt phòng?",
+      title: <div className="text-lg font-bold text-slate-800">Xác nhận hủy đặt phòng?</div>,
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-rose-500 mt-0.5 mr-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      ),
       content: (
-        <div className="space-y-2 text-sm text-slate-600 mt-2">
-          <p className="font-semibold text-red-600">
+        <div className="space-y-3 text-sm text-slate-600 mt-3 bg-rose-50/50 p-4 rounded-xl border border-rose-100">
+          <p className="font-semibold text-rose-600 leading-relaxed">
             ⚠️ Chính sách hủy: Hủy phòng trong vòng 24 giờ trước ngày nhận phòng sẽ KHÔNG được hoàn tiền đặt cọc dưới mọi hình thức.
           </p>
-          <p>Bạn có chắc chắn muốn hủy đơn đặt phòng này và giải phóng phòng lập tức không?</p>
+          <p className="font-medium text-slate-700">Bạn có chắc chắn muốn hủy đơn đặt phòng này và giải phóng phòng lập tức không?</p>
         </div>
       ),
       okText: "Đồng ý hủy",
-      okType: "danger",
-      cancelText: "Quay lại",
+      okButtonProps: { danger: true, className: "font-semibold rounded-lg px-5 shadow-sm" },
+      cancelButtonProps: { className: "font-semibold rounded-lg px-5 border-slate-300 text-slate-600" },
+      cancelText: "Không, quay lại",
       centered: true,
       onOk: async () => {
         setCancellingId(bookingId);
@@ -277,9 +283,16 @@ export default function RoomBookingPass({ isEmbedded }: { isEmbedded?: boolean }
                       {/* Left: Ticket Info */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                          <span className="text-xl font-extrabold text-slate-900 tracking-tight font-mono">
-                            Mã vé: {pass.secureCode || `#RS-${bookingId}`}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            {pass.invoiceCode && (
+                              <span className="text-xl font-extrabold text-blue-700 tracking-tight font-mono">
+                                Hóa đơn: {pass.invoiceCode}
+                              </span>
+                            )}
+                            <span className="text-base font-bold text-slate-800 tracking-tight font-mono">
+                              Mã vé: {pass.secureCode || `#RS-${bookingId}`}
+                            </span>
+                          </div>
                           <span className={`rounded-md px-3 py-1 text-xs font-bold uppercase tracking-wider ${badge}`}>
                             {label}
                           </span>
@@ -307,6 +320,7 @@ export default function RoomBookingPass({ isEmbedded }: { isEmbedded?: boolean }
                           <div>
                             <span className="text-slate-500 font-medium">Tổng tiền phòng:</span>{" "}
                             <span className="font-bold text-emerald-700">{priceLabel}</span>
+
                           </div>
                           {pass.contactName && (
                             <div className="sm:col-span-2">
@@ -337,6 +351,16 @@ export default function RoomBookingPass({ isEmbedded }: { isEmbedded?: boolean }
 
                       {/* Right: QR Code Block */}
                       <div className="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6 shrink-0 w-full md:w-[180px]">
+                        {pass.paymentStatus === "completed" && (
+                          <div className="flex justify-center mb-2">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider text-center shadow-sm">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                              Đã thanh toán trước
+                            </span>
+                          </div>
+                        )}
                         {pass.bookingStatus === "pending" ? (
                           <div className="relative p-2 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-center overflow-hidden">
                             <img
@@ -392,9 +416,7 @@ export default function RoomBookingPass({ isEmbedded }: { isEmbedded?: boolean }
                             </div>
                           </div>
                         )}
-                        <span className="text-[10.5px] font-extrabold text-slate-850 mt-2 font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded whitespace-nowrap">
-                          Mã vé: {pass.secureCode || `#RS-${bookingId}`}
-                        </span>
+
                       </div>
 
                     </div>

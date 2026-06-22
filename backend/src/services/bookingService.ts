@@ -327,6 +327,7 @@ export interface TableBookingReservationSummary {
   totalAmount?: number;
   qrPayload?: string;
   secureCode?: string;
+  invoiceCode?: string;
 }
 
 export interface RoomBookingReservationSummary {
@@ -345,6 +346,7 @@ export interface RoomBookingReservationSummary {
   totalAmount: number;
   qrPayload?: string;
   secureCode?: string;
+  invoiceCode?: string;
 }
 
 export interface AttachTablePreorderResult {
@@ -2870,7 +2872,7 @@ export const confirmTicketBankTransfer = async (params: {
         for (let i = 0; i < it.quantity; i++) {
           ticketIndex++;
           const secureHash = generateSecureHash(6);
-          const code = `SB-${bookingId}-${ticketIndex}-${secureHash}`;
+          const code = `DL-${bookingId}-${ticketIndex}-${secureHash}`;
           await connection.query(
             `INSERT INTO booking_tickets (booking_id, location_id, service_id, ticket_code, status)
              VALUES (?, ?, ?, ?, 'unused')`,
@@ -3359,7 +3361,8 @@ export const listMyTableReservations = async (params: {
        t.table_id,
        t.table_name,
        p.status AS payment_status,
-       b.total_amount
+       b.total_amount,
+       p.invoice_code
      FROM booking_table_reservations r
      JOIN bookings b ON b.booking_id = r.booking_id
      JOIN locations l ON l.location_id = b.location_id
@@ -3420,12 +3423,13 @@ export const listMyTableReservations = async (params: {
         tableNames: [],
         contactName: row.contact_name ? String(row.contact_name) : null,
         contactPhone: row.contact_phone ? String(row.contact_phone) : null,
-        canCancel: now.getTime() < windowOpenAt.getTime() && row.payment_status !== 'completed' && String(row.booking_status || "") !== 'completed',
+        canCancel: String(row.booking_status || "pending") === "pending",
         canPreorder: Number(row.pos_order_id) == null,
         posOrderId: row.pos_order_id == null ? null : Number(row.pos_order_id),
         totalAmount: row.total_amount ? Number(row.total_amount) : 0,
         qrPayload,
         secureCode,
+        invoiceCode: row.invoice_code ? String(row.invoice_code) : undefined,
       });
     }
 
@@ -3436,8 +3440,11 @@ export const listMyTableReservations = async (params: {
       item.tableIds.push(tableId);
     }
     const tableName = String(row.table_name || "").trim();
-    if (tableName && !item.tableNames.includes(tableName)) {
-      item.tableNames.push(tableName);
+    if (row.table_name && !item.tableNames.includes(row.table_name)) {
+      item.tableNames.push(row.table_name);
+    }
+    if (!item.invoiceCode && row.invoice_code) {
+      item.invoiceCode = String(row.invoice_code);
     }
     item.canPreorder = item.tableIds.length === 1;
     if (item.paymentStatus === "completed") {
@@ -3477,7 +3484,8 @@ export const listMyRoomBookings = async (params: {
        b.total_amount,
        hr.room_id,
        hr.room_number,
-       p.status AS payment_status
+       p.status AS payment_status,
+       p.invoice_code
      FROM bookings b
      JOIN locations l ON l.location_id = b.location_id
      JOIN services s ON s.service_id = b.service_id
@@ -3488,6 +3496,11 @@ export const listMyRoomBookings = async (params: {
          SELECT p2.payment_id
          FROM payments p2
          WHERE p2.booking_id = b.booking_id
+            OR (
+              p2.transaction_source = 'online_booking'
+              AND p2.notes LIKE 'BATCH_BOOKINGS:%'
+              AND FIND_IN_SET(b.booking_id, REPLACE(p2.notes, 'BATCH_BOOKINGS:', '')) > 0
+            )
          ORDER BY p2.payment_id DESC
          LIMIT 1
        )
@@ -3520,10 +3533,8 @@ export const listMyRoomBookings = async (params: {
       // Hủy đặt chỗ: Được phép hủy trước 24 giờ so với ngày checkin
       let canCancel = false;
       const bStatus = String(row.booking_status || "");
-      if (row.check_in_date && (bStatus === "pending" || bStatus === "confirmed")) {
-        const checkinTime = new Date(row.check_in_date).getTime();
-        const limitTime = checkinTime - 24 * 60 * 60 * 1000;
-        canCancel = now.getTime() < limitTime;
+      if (bStatus === "pending") {
+        canCancel = true;
       }
 
       const secureSalt = "TravelCheckinApp_Dining_Secure_Salt_2026";
@@ -3552,6 +3563,7 @@ export const listMyRoomBookings = async (params: {
         totalAmount: row.total_amount ? Number(row.total_amount) : 0,
         qrPayload,
         secureCode,
+        invoiceCode: row.invoice_code ? String(row.invoice_code) : undefined,
       });
     }
 
@@ -4039,8 +4051,8 @@ export const cancelMyBooking = async (params: {
     if (Number(booking.user_id) !== userId) {
       throw new BookingError("Bạn không có quyền hủy đơn đặt chỗ này", 403);
     }
-    if (!["pending", "confirmed"].includes(String(booking.status || ""))) {
-      throw new BookingError("Đơn đặt chỗ không còn ở trạng thái có thể hủy", 400);
+    if (String(booking.status || "") !== "pending") {
+      throw new BookingError("Chỉ có thể hủy đơn đặt chỗ khi đang chờ duyệt. Vui lòng liên hệ trực tiếp với cơ sở để hủy.", 400);
     }
 
     const locationId = Number(booking.location_id);

@@ -573,6 +573,7 @@ export const getPosPaymentsHistory = async (
       "(SELECT voucher_code FROM bookings WHERE booking_id = p.booking_id) AS booking_voucher_code",
       "(SELECT discount_amount FROM bookings WHERE booking_id = p.booking_id) AS booking_discount_amount",
       "(SELECT final_amount FROM bookings WHERE booking_id = p.booking_id) AS booking_final_amount",
+      "p.invoice_code"
     ];
     if (support.hasTransactionSource) selectCols.push("p.transaction_source");
     if (support.hasPerformedByUserId) selectCols.push("p.performed_by_user_id");
@@ -619,7 +620,9 @@ export const getPosPaymentsHistory = async (
       payment_method: string;
       transaction_source: string;
       booking_id: number | null;
+      booking_ids?: number[];
       invoice_no?: number;
+      invoice_code?: string | null;
       pos_order_id?: number | null;
       booking_contact_name?: string | null;
       booking_contact_phone?: string | null;
@@ -742,7 +745,7 @@ export const getPosPaymentsHistory = async (
 
     // Query ALL completed payments for this location from the beginning of time
     const [allLocPayments] = await pool.query<RowDataPacket[]>(
-      `SELECT p.payment_id, p.booking_id, p.notes, p.transaction_source,
+      `SELECT p.payment_id, p.booking_id, p.notes, p.transaction_source, p.invoice_code,
               (SELECT status FROM bookings WHERE booking_id = p.booking_id) AS booking_status
        FROM payments p
        WHERE p.location_id = ?
@@ -1258,6 +1261,7 @@ export const getPosPaymentsHistory = async (
         voucher_code: voucherCode,
         discount_amount: discountAmount,
         final_amount: finalAmountVal,
+        invoice_code: r.invoice_code || null,
         performed_by: {
           role: performedRole,
           user_id: performedUserId,
@@ -1384,22 +1388,40 @@ export const getPosPaymentsHistory = async (
         const [bRows] = await pool.query<RowDataPacket[]>(
           `SELECT b.booking_id,
                   COALESCE(NULLIF(b.contact_name, ''), u.full_name) AS contact_name,
-                  COALESCE(NULLIF(b.contact_phone, ''), u.phone) AS contact_phone
+                  COALESCE(NULLIF(b.contact_phone, ''), u.phone) AS contact_phone,
+                  b.check_in_date,
+                  b.check_out_date,
+                  b.status AS booking_status,
+                  b.service_id,
+                  s.service_name,
+                  b.quantity,
+                  b.final_amount
            FROM bookings b
            LEFT JOIN users u ON u.user_id = b.user_id
+           LEFT JOIN services s ON b.service_id = s.service_id
            WHERE b.booking_id IN (${placeholders})`,
           ids,
         );
 
         const byBookingId = new Map<
           number,
-          { contact_name: string | null; contact_phone: string | null }
+          { 
+            contact_name: string | null; 
+            contact_phone: string | null;
+            service_id: number | null;
+            service_name: string | null;
+            quantity: number | null;
+            unit_price: number | null;
+            line_total: number | null;
+          }
         >();
         for (const br of bRows) {
           const bid = Number((br as any).booking_id);
           if (!Number.isFinite(bid)) continue;
           const rawName = (br as any).contact_name;
           const rawPhone = (br as any).contact_phone;
+          const qty = Number(br.quantity || 1);
+          const finalAmt = Number(br.final_amount || 0);
           byBookingId.set(bid, {
             contact_name:
               rawName != null && String(rawName).trim()
@@ -1409,10 +1431,43 @@ export const getPosPaymentsHistory = async (
               rawPhone != null && String(rawPhone).trim()
                 ? String(rawPhone)
                 : null,
+            service_id: br.service_id ? Number(br.service_id) : null,
+            service_name: br.service_name ? String(br.service_name) : null,
+            quantity: qty,
+            unit_price: qty > 0 ? finalAmt / qty : 0,
+            line_total: finalAmt
           });
         }
 
         for (const h of history) {
+          // Push mapped items into h.items to ensure printing works properly
+          if (Array.isArray(h.booking_ids) && h.booking_ids.length > 0) {
+            h.items = h.items || [];
+            for (const bId of h.booking_ids) {
+              const info = byBookingId.get(bId);
+              if (info && info.service_name) {
+                h.items.push({
+                  service_id: info.service_id || 0,
+                  service_name: info.service_name,
+                  quantity: info.quantity || 1,
+                  unit_price: info.unit_price || 0,
+                  line_total: info.line_total || 0,
+                });
+              }
+            }
+          } else if (h.booking_id) {
+            const info = byBookingId.get(h.booking_id);
+            if (info && info.service_name && (!h.items || h.items.length === 0)) {
+              h.items = [{
+                service_id: info.service_id || 0,
+                service_name: info.service_name,
+                quantity: info.quantity || 1,
+                unit_price: info.unit_price || 0,
+                line_total: info.line_total || 0,
+              }];
+            }
+          }
+
           if (!h.booking_id) continue;
           const info = byBookingId.get(h.booking_id);
           if (!info) continue;
@@ -5306,7 +5361,7 @@ export const checkinSecureQr = async (
       return;
     }
 
-    // 2) Try parsing as DI-, RS-, SB-, BK-, BT- bookingId or bookingId-hash
+    // 2) Try parsing as DI-, NH-, RS-, KS-, SB-, DL-, BK-, BT- bookingId or bookingId-hash
     if (!bookingId) {
       const cleanCode = cleanData.replace(/^#/, "").trim().toUpperCase();
       const parts = cleanCode.split("-");
@@ -15554,7 +15609,8 @@ export const getTouristTicketInvoices = async (
               performed_by_user_id,
               performed_by_role,
               qr_data,
-              notes
+              notes,
+              invoice_code
        FROM payments
        WHERE ${posWhere.join(" AND ")}
        ORDER BY payment_time DESC
@@ -15622,6 +15678,7 @@ export const getTouristTicketInvoices = async (
         source: "pos",
         payment_id: Number(r.payment_id),
         invoice_no: seqMap.get(Number(r.payment_id)) || 1,
+        invoice_code: r.invoice_code || null,
         booking_id: null,
         payment_time: toIso(r.payment_time),
         payment_method: String(r.payment_method || ""),
@@ -15660,6 +15717,7 @@ export const getTouristTicketInvoices = async (
               MAX(p.payment_method) AS payment_method,
               MAX(p.commission_amount) AS commission_amount,
               MAX(p.owner_receivable) AS owner_receivable,
+              MAX(p.invoice_code) AS invoice_code,
               MAX(b.check_in_date) AS check_in_date,
               MAX(b.voucher_code) AS voucher_code,
               MAX(b.discount_amount) AS discount_amount,
@@ -15678,7 +15736,8 @@ export const getTouristTicketInvoices = async (
                 MAX(payment_time) AS payment_time,
                 MAX(payment_method) AS payment_method,
                 MAX(commission_amount) AS commission_amount,
-                MAX(owner_receivable) AS owner_receivable
+                MAX(owner_receivable) AS owner_receivable,
+                MAX(invoice_code) AS invoice_code
          FROM payments
          WHERE status = 'completed'
            AND booking_id IS NOT NULL
@@ -15697,6 +15756,7 @@ export const getTouristTicketInvoices = async (
         source: "booking";
         payment_id: number | null;
         booking_id: number;
+        invoice_code: string | null;
         payment_time: string;
         payment_method?: string | null;
         buyer_id: number | null;
@@ -15734,6 +15794,7 @@ export const getTouristTicketInvoices = async (
         source: "booking" as const,
         payment_id: r.payment_id != null ? Number(r.payment_id) : null,
         booking_id: bookingId,
+        invoice_code: r.invoice_code ? String(r.invoice_code) : null,
         payment_time: toIso(r.payment_time || r.issued_at),
         payment_method: r.payment_method ? String(r.payment_method) : null,
         buyer_id: r.buyer_id != null ? Number(r.buyer_id) : null,

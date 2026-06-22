@@ -87,6 +87,7 @@ export interface UserTouristTicketItem {
   location_id: number;
   location_name: string | null;
   payment_status?: string | null;
+  invoice_code?: string | null;
 }
 
 

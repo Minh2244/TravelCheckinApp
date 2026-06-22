@@ -28,6 +28,9 @@ type HistoryRow = {
   payment_method: string;
   transaction_source?: string;
   booking_id?: number | null;
+  booking_ids?: number[];
+  booking_status?: string | null;
+  invoice_code?: string | null;
   invoice_no?: number;
   pos_order_id?: number | null;
   booking_contact_name?: string | null;
@@ -369,6 +372,11 @@ export default function FrontOfficePaymentsHistory() {
                   : String(r.transaction_source),
               booking_id:
                 r.booking_id == null ? null : Number(r.booking_id || 0),
+              booking_ids: Array.isArray(r.booking_ids) ? r.booking_ids : [],
+              booking_status:
+                r.booking_status == null ? null : String(r.booking_status),
+              invoice_code:
+                r.invoice_code == null ? null : String(r.invoice_code),
               pos_order_id:
                 r.pos_order_id == null ? null : Number(r.pos_order_id || 0),
               booking_contact_name:
@@ -694,8 +702,18 @@ export default function FrontOfficePaymentsHistory() {
       <div className="rounded-2xl border bg-white p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-base font-semibold text-blue-800">
-              Hóa đơn {row.booking_id != null && Number(row.booking_id) > 0 ? `#${prefix}-${row.booking_id}` : `#${prefix}-POS-${row.payment_id}`}
+            <div className="text-base font-semibold text-blue-800 flex items-center flex-wrap gap-2">
+              Hóa đơn {row.invoice_code || (row.booking_ids && row.booking_ids.length > 1
+                ? `#${prefix}-BATCH (Vé: ${row.booking_ids.map(id => `#${prefix}-${id}`).join(", ")})`
+                : (row.booking_id != null && Number(row.booking_id) > 0) || (row.booking_ids && row.booking_ids.length === 1)
+                  ? `#${prefix}-${row.booking_id || (row.booking_ids && row.booking_ids[0])}` 
+                  : `#${prefix}-POS-${row.payment_id}`)}
+              {row.booking_status === "cancelled" && (
+                <span className="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded text-xs">ĐÃ HỦY ĐƠN</span>
+              )}
+              {row.booking_status === "partial_cancelled" && (
+                <span className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded text-xs">HỦY MỘT PHẦN</span>
+              )}
             </div>
             <div className="text-xs text-gray-500">
               {formatDateTimeVi(row.payment_time)}
@@ -920,17 +938,48 @@ export default function FrontOfficePaymentsHistory() {
         title: "Hóa đơn",
         render: (_: unknown, row: HistoryRow) => {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
-          if (row.booking_id != null && Number(row.booking_id) > 0) {
+          const cancelTag = row.booking_status === "cancelled" ? (
+            <span className="block text-[10px] text-rose-600 font-bold">ĐÃ HỦY</span>
+          ) : row.booking_status === "partial_cancelled" ? (
+            <span className="block text-[10px] text-orange-600 font-bold">HỦY 1 PHẦN</span>
+          ) : null;
+
+          if (row.booking_ids && row.booking_ids.length > 1) {
             return (
-              <span className="font-semibold text-blue-700">
-                #RS-{row.booking_id}{vcTag}
-              </span>
+              <div className="flex flex-col gap-1 items-start">
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || (
+                    <>
+                      #RS-BATCH{vcTag}
+                      <br />
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({row.booking_ids.map(id => `#RS-${id}`).join(", ")})
+                      </span>
+                    </>
+                  )}
+                </span>
+                {cancelTag}
+              </div>
+            );
+          }
+          const singleId = row.booking_id != null && Number(row.booking_id) > 0 ? row.booking_id : (row.booking_ids && row.booking_ids.length === 1 ? row.booking_ids[0] : null);
+          if (singleId) {
+            return (
+              <div>
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || <>#RS-{singleId}{vcTag}</>}
+                </span>
+                {cancelTag}
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              #RS-POS-{row.payment_id}{vcTag}
-            </span>
+            <div>
+              <span className="font-semibold text-blue-700">
+                {row.invoice_code || <>#RS-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              {cancelTag}
+            </div>
           );
         },
       },
@@ -1072,13 +1121,13 @@ export default function FrontOfficePaymentsHistory() {
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
               <span className="font-semibold text-blue-700">
-                #DI-{row.booking_id}{vcTag}
+                {row.invoice_code || <>#DI-{row.booking_id}{vcTag}</>}
               </span>
             );
           }
           return (
             <span className="font-semibold text-blue-700">
-              #DI-POS-{row.payment_id}{vcTag}
+              {row.invoice_code || <>#DI-POS-{row.payment_id}{vcTag}</>}
             </span>
           );
         },
@@ -1663,7 +1712,7 @@ export default function FrontOfficePaymentsHistory() {
             loading={loading}
             dataSource={history}
             pagination={false}
-            scroll={{ y: 340, x: true }}
+            scroll={{ y: 340, x: 'max-content' }}
             expandable={{
               columnTitle: <span className="whitespace-nowrap">Chi tiết</span>,
               expandIconColumnIndex: columns.length,
