@@ -165,6 +165,7 @@ export const getAdminHistoryRevenueSummary = async (
          p.qr_data,
          p.performed_by_role,
          p.performed_by_name,
+         b.status AS booking_status,
          COALESCE(NULLIF(b.contact_name, ''), bu.full_name) AS booking_contact_name,
          COALESCE(NULLIF(b.contact_phone, ''), bu.phone) AS booking_contact_phone
        FROM payments p
@@ -178,6 +179,8 @@ export const getAdminHistoryRevenueSummary = async (
     const summary = createAccumulator();
 
     for (const row of paymentRows) {
+      if (row.booking_status === "cancelled") continue;
+
       const amount = Number(row.amount || 0);
       if (!Number.isFinite(amount) || amount <= 0) continue;
 

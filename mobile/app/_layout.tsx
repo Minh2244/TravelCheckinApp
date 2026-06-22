@@ -1,60 +1,71 @@
-import '../global.css';
-import { useEffect } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, Platform } from 'react-native';
-import useAuthStore from '../store/authStore';
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useEffect } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+import { useAuthStore } from "../src/modules/auth/store";
+
+void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const { isLoading, loadUser, isAuthenticated } = useAuthStore();
-  const segments = useSegments();
-  const router = useRouter();
+  const bootstrap = useAuthStore((state) => state.bootstrap);
+  const hydrated = useAuthStore((state) => state.hydrated);
 
   useEffect(() => {
-    loadUser();
-  }, []);
+    void bootstrap();
+  }, [bootstrap]);
 
   useEffect(() => {
-    if (isLoading) return;
-
-    const inAuthGroup = segments[0] === 'auth';
-
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to the sign-in page.
-      router.replace('/auth/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect away from the sign-in page.
-      router.replace('/(tabs)');
+    if (hydrated) {
+      void SplashScreen.hideAsync();
     }
-  }, [isAuthenticated, isLoading, segments]);
-
-  if (isLoading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#ffffff',
-        }}
-      >
-        <ActivityIndicator size="large" color="#3b82f6" />
-      </View>
-    );
-  }
+  }, [hydrated]);
 
   return (
-    <>
-      <StatusBar style="dark" translucent />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: 'fade',
-        }}
-      >
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="auth" />
-      </Stack>
-    </>
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      {hydrated ? (
+        <Stack screenOptions={{ headerShown: false, contentStyle: styles.stackContent }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(app)" />
+        </Stack>
+      ) : (
+        <View style={styles.loadingScreen}>
+          <Text style={styles.loadingTitle}>Đang chuẩn bị ứng dụng</Text>
+          <Text style={styles.loadingText}>
+            Mình đang khôi phục phiên đăng nhập và kiểm tra kết nối.
+          </Text>
+        </View>
+      )}
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  stackContent: {
+    backgroundColor: "#eef2f3",
+  },
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    backgroundColor: "#eef2f3",
+    gap: 12,
+  },
+  loadingTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+  },
+  loadingText: {
+    maxWidth: 280,
+    textAlign: "center",
+    color: "#475569",
+    lineHeight: 22,
+  },
+});

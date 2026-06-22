@@ -1,57 +1,36 @@
 {
   "expo": {
-    "name": "Travel Checkin",
+    "name": "Travel Checkin App",
     "slug": "travel-checkin-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
     "scheme": "travelcheckin",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-asset"
+    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.travelcheckin.app",
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Ứng dụng cần truy cập vị trí để hiển thị các địa điểm du lịch gần bạn.",
-        "NSCameraUsageDescription": "Ứng dụng cần sử dụng camera để chụp ảnh check-in.",
-        "NSPhotoLibraryUsageDescription": "Ứng dụng cần truy cập thư viện ảnh để chọn ảnh check-in."
-      }
+      "bundleIdentifier": "com.travelcheckin.app"
     },
     "android": {
       "package": "com.travelcheckin.app",
-      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
-      ]
-    },
-    "androidNavigationBar": {
-      "backgroundColor": "#ffffff",
-      "barStyle": "dark-content"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Ứng dụng cần truy cập vị trí để hiển thị các địa điểm du lịch gần bạn."
-        }
-      ]
-    ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": false
     }
   }
 }

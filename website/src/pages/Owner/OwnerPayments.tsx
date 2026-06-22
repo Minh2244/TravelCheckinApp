@@ -57,6 +57,9 @@ type HistoryRow = {
   payment_method: string;
   transaction_source?: string;
   booking_id?: number | null;
+  booking_ids?: number[];
+  booking_status?: string | null;
+  invoice_code?: string | null;
   invoice_no?: number;
   table_name: string | null;
   total_qty: number;
@@ -111,8 +114,10 @@ type TicketInvoiceRow = {
   payment_id: number | null;
   booking_id: number | null;
   invoice_no?: number;
+  invoice_code?: string | null;
   payment_time: string;
   payment_method?: string | null;
+  booking_status?: string | null;
   seller_name?: string | null;
   buyer_name?: string | null;
   buyer_phone?: string | null;
@@ -287,6 +292,10 @@ export default function OwnerPayments() {
                   : String(r.transaction_source),
               booking_id:
                 r.booking_id == null ? null : Number(r.booking_id || 0),
+              booking_status:
+                r.booking_status == null ? null : String(r.booking_status),
+              invoice_code:
+                r.invoice_code == null ? null : String(r.invoice_code),
               table_name: r.table_name == null ? null : String(r.table_name),
               total_qty: Number(r.total_qty || 0),
               items_count: Number(r.items_count || 0),
@@ -544,8 +553,14 @@ export default function OwnerPayments() {
       <div className="rounded-2xl border bg-white p-4 font-sans">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-base font-semibold text-blue-800">
-              Hóa đơn {row.booking_id != null && Number(row.booking_id) > 0 ? `#${prefix}-${row.booking_id}` : `#${prefix}-POS-${row.payment_id}`}
+            <div className="text-base font-semibold text-blue-800 flex items-center flex-wrap gap-2">
+              {row.invoice_code ? `Hóa đơn ${row.invoice_code}` : `Hóa đơn ${row.booking_id != null && Number(row.booking_id) > 0 ? `#${prefix}-${row.booking_id}` : `#${prefix}-POS-${row.payment_id}`}`}
+              {row.booking_status === "cancelled" && (
+                <span className="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded text-xs">ĐÃ HỦY ĐƠN</span>
+              )}
+              {row.booking_status === "partial_cancelled" && (
+                <span className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded text-xs">HỦY MỘT PHẦN</span>
+              )}
             </div>
             <div className="text-xs text-gray-500">
               {formatDateTimeVi(row.payment_time)}
@@ -722,17 +737,47 @@ export default function OwnerPayments() {
         title: "Hóa đơn",
         render: (_: unknown, row: HistoryRow) => {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
-          if (row.booking_id != null && Number(row.booking_id) > 0) {
+          const cancelTag = row.booking_status === "cancelled" ? (
+            <span className="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-[10px] ml-1 block mt-1 w-fit">ĐÃ HỦY ĐƠN</span>
+          ) : row.booking_status === "partial_cancelled" ? (
+            <span className="bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded text-[10px] ml-1 block mt-1 w-fit">HỦY MỘT PHẦN</span>
+          ) : null;
+          if (row.booking_ids && row.booking_ids.length > 1) {
             return (
-              <span className="font-semibold text-blue-700">
-                #RS-{row.booking_id}{vcTag}
-              </span>
+              <div className="flex flex-col gap-1 items-start">
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || (
+                    <>
+                      #RS-BATCH{vcTag}
+                      <br />
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({row.booking_ids.map(id => `#RS-${id}`).join(", ")})
+                      </span>
+                    </>
+                  )}
+                </span>
+                {cancelTag}
+              </div>
+            );
+          }
+          const singleId = row.booking_id != null && Number(row.booking_id) > 0 ? row.booking_id : (row.booking_ids && row.booking_ids.length === 1 ? row.booking_ids[0] : null);
+          if (singleId) {
+            return (
+              <div>
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || <>#RS-{singleId}{vcTag}</>}
+                </span>
+                {cancelTag}
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              #RS-POS-{row.payment_id}{vcTag}
-            </span>
+            <div>
+              <span className="font-medium text-blue-700">
+                {row.invoice_code || <>#RS-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              {cancelTag}
+            </div>
           );
         },
       },
@@ -830,17 +875,26 @@ export default function OwnerPayments() {
         title: "Hóa đơn",
         render: (_: unknown, row: HistoryRow) => {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
+          const cancelTag = row.booking_status === "cancelled" ? (
+            <span className="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-[10px] ml-1 block mt-1 w-fit">ĐÃ HỦY ĐƠN</span>
+          ) : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
-              <span className="font-semibold text-blue-700">
-                #DI-{row.booking_id}{vcTag}
-              </span>
+              <div>
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || <>#DI-{row.booking_id}{vcTag}</>}
+                </span>
+                {cancelTag}
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              #DI-POS-{row.payment_id}{vcTag}
-            </span>
+            <div>
+              <span className="font-semibold text-blue-700">
+                {row.invoice_code || <>#DI-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              {cancelTag}
+            </div>
           );
         },
       },
@@ -936,17 +990,26 @@ export default function OwnerPayments() {
         width: 140,
         render: (_: unknown, row: TicketInvoiceRow) => {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
+          const cancelTag = row.booking_status === "cancelled" ? (
+            <span className="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-[10px] ml-1 block mt-1 w-fit">ĐÃ HỦY ĐƠN</span>
+          ) : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
-              <span className="font-semibold text-blue-700">
-                #SB-{row.booking_id}{vcTag}
-              </span>
+              <div>
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code || <>#SB-{row.booking_id}{vcTag}</>}
+                </span>
+                {cancelTag}
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              #SB-POS-{row.payment_id}{vcTag}
-            </span>
+            <div>
+              <span className="font-semibold text-blue-700">
+                {row.invoice_code || <>#SB-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              {cancelTag}
+            </div>
           );
         },
       },
@@ -1004,6 +1067,7 @@ export default function OwnerPayments() {
         align: "right",
         render: (v: unknown) => formatMoney(Number(v || 0)),
       },
+      Table.EXPAND_COLUMN,
     ],
     [],
   );
@@ -1216,13 +1280,12 @@ export default function OwnerPayments() {
               loading={loading}
               dataSource={topInvoices}
               pagination={false}
-              scroll={{ y: 420, x: true }}
+              scroll={{ y: 420, x: 'max-content' }}
               columns={invoiceColumns}
               expandable={{
                 columnTitle: (
                   <span className="whitespace-nowrap">Chi tiết</span>
                 ),
-                expandIconColumnIndex: invoiceColumns.length,
                 columnWidth: 90,
                 expandedRowRender: (row) => (
                   <div className="rounded-2xl border bg-white p-4 font-sans">
@@ -1247,7 +1310,7 @@ export default function OwnerPayments() {
                       }
                       size="small"
                       pagination={false}
-                      scroll={{ y: 240, x: true }}
+                      scroll={{ x: 'max-content' }}
                       dataSource={Array.isArray(row.items) ? row.items : []}
                       columns={itemColumns}
                     />
@@ -1261,7 +1324,7 @@ export default function OwnerPayments() {
               loading={loading}
               dataSource={history}
               pagination={false}
-              scroll={{ y: 420, x: true }}
+              scroll={{ y: 420, x: 'max-content' }}
               expandable={{
                 columnTitle: (
                   <span className="whitespace-nowrap">Chi tiết</span>

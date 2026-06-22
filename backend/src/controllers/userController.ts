@@ -2414,7 +2414,14 @@ export const getUserTouristTickets = async (
              AND p.transaction_source = 'online_booking'
            ORDER BY p.payment_id DESC
            LIMIT 1
-         ) AS payment_status
+         ) AS payment_status,
+         (
+           SELECT p.invoice_code
+           FROM payments p
+           WHERE p.booking_id = b.booking_id
+           ORDER BY p.payment_id DESC
+           LIMIT 1
+         ) AS invoice_code
        FROM booking_tickets bt
        JOIN bookings b ON b.booking_id = bt.booking_id
        JOIN services s ON s.service_id = bt.service_id

@@ -401,6 +401,14 @@ Giai đoạn 2 sẽ được chia làm 4 bước để đảm bảo tiến độ
 - **Gọi API locations**: bắt buộc thêm `source: 'mobile'` vào params để Backend filter đúng `source IN ('owner','admin')` — nếu thiếu, API trả cả địa điểm OSM/tự do.
 
 ### Backend (cần làm trước khi code Mobile)
-- **`geoController.ts` — thêm Open-Meteo**: Sau khi Nominatim trả về địa danh, gọi thêm `GET https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,weathercode` (miễn phí, không cần API key). Gộp kết quả vào response với shape: `{ city, temperature, weather }`. Giá trị `weather` nên map `weathercode` sang text tiếng Việt (0 = Trời quang, 1–3 = Nhiều mây, v.v.).
-- **Confirm field `location_id` trong `/user/favorites`**: Đã xác nhận qua source code — response trả đúng `location_id` ✅.
-- **Confirm field `rating` / `total_reviews` trong `/locations`**: Đã xác nhận — Backend trả `rating` và `total_reviews` (không phải `avg_rating`/`review_count`) ✅. Type trong kế hoạch đã được sửa.
+- **`geoController.ts` – thêm Open-Meteo**: Sau khi Nominatim trả về địa danh, gọi thêm `GET https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,weathercode` (miễn phí, không cần API key). Gộp kết quả vào response với shape: `{ city, temperature, weather }`. Giá trị `weather` nên map `weathercode` sang text tiếng Việt (0 = Trời quang, 1–3 = Nhiều mây, v.v.).
+- **Confirm field `location_id` trong `/user/favorites`**: Đã xác nhận qua source code – response trả đúng `location_id` ✅.
+- **Confirm field `rating` / `total_reviews` trong `/locations`**: Đã xác nhận – Backend trả `rating` và `total_reviews` (không phải `avg_rating`/`review_count`) ✅. Type trong kế hoạch đã được sửa.
+
+---
+
+## 7. Ghi chú triển khai lại từ đầu
+
+- Folder `mobile/` cũ đã được xóa; Giai đoạn 2 này là đặc tả để dựng lại Home tab từ đầu.
+- Home mới không được dừng ở mức mockup hay shell: phải làm đủ GPS banner, thời tiết, thống kê nhanh, danh sách đề xuất, lọc category, ảnh thật từ backend và điều hướng sang các cụm phase sau.
+- Quick access, banner và các action nổi trên Home phải luôn nằm đúng vùng SafeArea, không bị che bởi notch hoặc thanh điều hướng ảo.
