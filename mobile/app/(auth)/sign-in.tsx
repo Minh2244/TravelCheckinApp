@@ -1,11 +1,18 @@
+import { Ionicons } from "@expo/vector-icons";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View, Image, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
-import { z } from "zod";
-import { Ionicons } from "@expo/vector-icons";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
 import { FormField } from "../../src/components/form-field";
@@ -75,52 +82,59 @@ export default function SignInScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      className="flex-1 bg-slate-50"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <ScrollView 
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 40, paddingBottom: Math.max(insets.bottom, 24) + 24 }]}
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: "center",
+          paddingHorizontal: 24,
+          paddingTop: insets.top + 40,
+          paddingBottom: Math.max(insets.bottom, 24) + 24,
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Header / Mascot Area */}
-        <View style={styles.header}>
-          <View style={styles.iconCircle}>
+        <View className="mb-8 items-center">
+          <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-teal-100">
             <Ionicons name="planet" size={48} color="#0d9488" />
           </View>
-          <Text style={styles.title}>Chào mừng trở lại!</Text>
-          <Text style={styles.subtitle}>
+          <Text className="mb-2 text-[28px] font-black text-slate-900">Chào mừng trở lại!</Text>
+          <Text className="px-5 text-center text-[15px] leading-[22px] text-slate-500">
             Đăng nhập để khám phá hàng ngàn điểm đến hấp dẫn.
           </Text>
         </View>
 
-        {/* Bảng Form (Panel) */}
-        <View style={styles.formPanel}>
+        <View className="rounded-3xl border border-slate-100 bg-white p-6 shadow-soft">
           {notice ? (
-            <Pressable style={styles.noticeBox} onPress={clearNotice}>
+            <Pressable
+              className="mb-5 flex-row items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3.5"
+              onPress={clearNotice}
+            >
               <Ionicons name="information-circle" size={20} color="#1d4ed8" />
-              <View style={styles.flex1}>
-                <Text style={styles.noticeText}>{notice}</Text>
-                <Text style={styles.noticeHint}>Chạm để ẩn thông báo này</Text>
+              <View className="flex-1">
+                <Text className="font-semibold leading-5 text-blue-700">{notice}</Text>
+                <Text className="mt-0.5 text-xs text-blue-500">Chạm để ẩn thông báo này</Text>
               </View>
             </Pressable>
           ) : null}
 
           {submitError ? (
-            <View style={styles.errorBox}>
+            <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5">
               <Ionicons name="alert-circle" size={20} color="#be123c" />
-              <Text style={styles.errorText}>{submitError}</Text>
+              <Text className="flex-1 leading-5 text-rose-700">{submitError}</Text>
             </View>
           ) : null}
 
           {warning ? (
-            <View style={styles.warningBox}>
+            <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-orange-200 bg-orange-50 p-3.5">
               <Ionicons name="warning" size={20} color="#9a3412" />
-              <Text style={styles.warningText}>{warning}</Text>
+              <Text className="flex-1 leading-5 text-orange-700">{warning}</Text>
             </View>
           ) : null}
 
-          <View style={styles.formGroup}>
+          <View className="gap-5">
             <Controller
               control={control}
               name="email"
@@ -158,13 +172,13 @@ export default function SignInScreen() {
             />
           </View>
 
-          <View style={styles.forgotPasswordRow}>
+          <View className="mb-6 mt-3 items-end">
             <Pressable onPress={() => router.push("/forgot-password")}>
-              <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
+              <Text className="text-sm font-bold text-brand-600">Quên mật khẩu?</Text>
             </Pressable>
           </View>
 
-          <View style={styles.actionGroup}>
+          <View className="gap-4">
             <ActionButton
               label="Đăng nhập"
               loadingLabel="Đang xử lý..."
@@ -173,211 +187,35 @@ export default function SignInScreen() {
               loading={isSubmitting}
             />
 
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>hoặc</Text>
-              <View style={styles.dividerLine} />
+            <View className="my-1 flex-row items-center">
+              <View className="h-px flex-1 bg-slate-200" />
+              <Text className="px-3 text-sm font-medium text-slate-400">hoặc</Text>
+              <View className="h-px flex-1 bg-slate-200" />
             </View>
 
-            <Pressable 
-              style={[styles.googleButton, (isSubmitting || googleBusy) && styles.googleButtonDisabled]}
+            <Pressable
+              className={[
+                "h-[54px] flex-row items-center justify-center gap-3 rounded-2xl border border-slate-300 bg-white",
+                isSubmitting || googleBusy ? "opacity-60" : "",
+              ].join(" ")}
               onPress={handleGoogleLogin}
               disabled={isSubmitting || googleBusy}
             >
               <Ionicons name="logo-google" size={20} color="#ea4335" />
-              <Text style={styles.googleButtonText}>
+              <Text className="text-base font-bold text-slate-700">
                 {googleBusy ? "Đang mở Google..." : "Đăng nhập bằng Google"}
               </Text>
             </Pressable>
           </View>
         </View>
 
-        {/* Chuyển hướng Đăng ký */}
-        <View style={styles.signUpRow}>
-          <Text style={styles.signUpText}>Chưa có tài khoản?</Text>
+        <View className="mt-8 flex-row items-center justify-center gap-2">
+          <Text className="text-[15px] text-slate-500">Chưa có tài khoản?</Text>
           <Pressable onPress={() => router.push("/sign-up")}>
-            <Text style={styles.signUpLink}>Đăng ký ngay</Text>
+            <Text className="text-[15px] font-extrabold text-brand-600">Đăng ký ngay</Text>
           </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    justifyContent: "center",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 32,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#ccfbf1",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-    shadowColor: "#0d9488",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#0f172a",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: "#64748b",
-    textAlign: "center",
-    paddingHorizontal: 20,
-    lineHeight: 22,
-  },
-  formPanel: {
-    backgroundColor: "#ffffff",
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: "#cbd5e1",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  formGroup: {
-    gap: 20,
-  },
-  forgotPasswordRow: {
-    alignItems: "flex-end",
-    marginTop: 12,
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    color: "#0d9488",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  actionGroup: {
-    gap: 16,
-  },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 4,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#e2e8f0",
-  },
-  dividerText: {
-    color: "#94a3b8",
-    paddingHorizontal: 12,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  googleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 16,
-    height: 54,
-    gap: 12,
-  },
-  googleButtonDisabled: {
-    opacity: 0.6,
-  },
-  googleButtonText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#334155",
-  },
-  signUpRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 32,
-    gap: 8,
-  },
-  signUpText: {
-    color: "#64748b",
-    fontSize: 15,
-  },
-  signUpLink: {
-    color: "#0d9488",
-    fontWeight: "800",
-    fontSize: 15,
-  },
-  flex1: {
-    flex: 1,
-  },
-  errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff1f2",
-    borderWidth: 1,
-    borderColor: "#fecdd3",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    gap: 8,
-  },
-  errorText: {
-    flex: 1,
-    color: "#be123c",
-    lineHeight: 20,
-  },
-  warningBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff7ed",
-    borderWidth: 1,
-    borderColor: "#fed7aa",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    gap: 8,
-  },
-  warningText: {
-    flex: 1,
-    color: "#9a3412",
-    lineHeight: 20,
-  },
-  noticeBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#eff6ff",
-    borderWidth: 1,
-    borderColor: "#bfdbfe",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    gap: 10,
-  },
-  noticeText: {
-    color: "#1d4ed8",
-    lineHeight: 20,
-    fontWeight: "600",
-  },
-  noticeHint: {
-    color: "#3b82f6",
-    fontSize: 12,
-    marginTop: 2,
-  },
-});

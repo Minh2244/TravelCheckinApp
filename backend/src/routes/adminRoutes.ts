@@ -82,6 +82,7 @@ import {
   markCommissionsPaid,
   getCommissionPaymentRequests,
   confirmCommissionPaymentRequest,
+  cancelCommissionPaymentRequest,
   getReports,
   getReportById,
   resolveReport,
@@ -231,6 +232,11 @@ router.post(
   "/commission-payment-requests/:id/confirm",
   confirmCommissionPaymentRequest,
 );
+router.post(
+  "/commission-payment-requests/:id/cancel",
+  cancelCommissionPaymentRequest,
+);
+
 
 // Quản lý Reports
 router.get("/reports", getReports);

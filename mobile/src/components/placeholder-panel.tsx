@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 type PlaceholderPanelProps = {
   title: string;
@@ -14,45 +14,17 @@ export function PlaceholderPanel({
   onAction,
 }: PlaceholderPanelProps) {
   return (
-    <View style={styles.panel}>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.description}>{description}</Text>
+    <View className="gap-3 rounded-xl border border-line bg-white p-5">
+      <Text className="text-lg font-extrabold text-slate-900">{title}</Text>
+      <Text className="leading-6 text-slate-600">{description}</Text>
       {actionLabel && onAction ? (
-        <Pressable style={styles.button} onPress={() => void onAction()}>
-          <Text style={styles.buttonText}>{actionLabel}</Text>
+        <Pressable
+          className="self-start rounded-xl bg-brand-600 px-4 py-3"
+          onPress={() => void onAction()}
+        >
+          <Text className="font-extrabold text-white">{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  panel: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    backgroundColor: "#ffffff",
-    padding: 18,
-    gap: 12,
-  },
-  title: {
-    color: "#111827",
-    fontWeight: "800",
-    fontSize: 18,
-  },
-  description: {
-    color: "#475569",
-    lineHeight: 22,
-  },
-  button: {
-    alignSelf: "flex-start",
-    borderRadius: 10,
-    backgroundColor: "#0f766e",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  buttonText: {
-    color: "#ffffff",
-    fontWeight: "800",
-  },
-});

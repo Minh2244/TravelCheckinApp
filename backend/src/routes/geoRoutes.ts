@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { geoReverse, geoSearch } from "../controllers/geoController";
+import { geoReverse, geoRoute, geoSearch } from "../controllers/geoController";
 
 const router = Router();
 
@@ -8,5 +8,8 @@ router.get("/search", geoSearch);
 
 // GET /api/geo/reverse?lat=&lng=
 router.get("/reverse", geoReverse);
+
+// GET /api/geo/route?startLat=&startLng=&endLat=&endLng=&profile=
+router.get("/route", geoRoute);
 
 export default router;

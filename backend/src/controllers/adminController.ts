@@ -6765,7 +6765,7 @@ export const confirmCommissionPaymentRequest = async (
            paid_amount = total_due,
            paid_at = NOW()
        WHERE commission_id IN (${placeholders})
-         AND status IN ('pending','overdue')`,
+         AND status IN ('pending','overdue','payment_submitted')`,
       commissionIds,
     );
 
@@ -6795,6 +6795,83 @@ export const confirmCommissionPaymentRequest = async (
       success: false,
       message: "Lỗi server khi xác nhận yêu cầu thanh toán",
     });
+  }
+};
+
+export const cancelCommissionPaymentRequest = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const adminId = req.userId;
+    if (!adminId) {
+      res.status(401).json({ success: false, message: "Chưa xác thực" });
+      return;
+    }
+
+    const requestId = Number(req.params.id);
+    if (!Number.isFinite(requestId)) {
+      res.status(400).json({ success: false, message: "request_id không hợp lệ" });
+      return;
+    }
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT log_id, user_id, details
+       FROM audit_logs
+       WHERE log_id = ? AND action = 'COMMISSION_PAYMENT_REQUEST'
+       LIMIT 1`,
+      [requestId],
+    );
+    if (!rows[0]) {
+      res.status(404).json({ success: false, message: "Không tìm thấy yêu cầu" });
+      return;
+    }
+
+    let details: any = null;
+    try {
+      details = rows[0].details ? JSON.parse(String(rows[0].details)) : null;
+    } catch {
+      details = null;
+    }
+
+    const commissionIds = Array.isArray(details?.commission_ids)
+      ? details.commission_ids.map((x: any) => Number(x)).filter(Number.isFinite)
+      : [];
+
+    if (commissionIds.length === 0) {
+      res.status(400).json({ success: false, message: "Yêu cầu không có commission_ids hợp lệ" });
+      return;
+    }
+
+    const placeholders = commissionIds.map(() => "?").join(",");
+    const [result] = await pool.query<ResultSetHeader>(
+      `UPDATE commissions
+       SET status = 'pending'
+       WHERE commission_id IN (${placeholders})
+         AND status = 'payment_submitted'`,
+      commissionIds,
+    );
+
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
+      [
+        adminId,
+        "COMMISSION_PAYMENT_CANCELLED",
+        JSON.stringify({
+          request_id: requestId,
+          owner_id: Number(rows[0].user_id),
+          commission_ids: commissionIds,
+        }),
+      ],
+    );
+
+    // Xóa audit_log tạo request để không hiện trong danh sách nữa
+    await pool.query(`DELETE FROM audit_logs WHERE log_id = ?`, [requestId]);
+
+    res.json({ success: true, message: "Đã hủy yêu cầu thanh toán", data: { updated: result.affectedRows } });
+  } catch (error: any) {
+    console.error("Lỗi hủy yêu cầu thanh toán:", error);
+    res.status(500).json({ success: false, message: "Lỗi server" });
   }
 };
 

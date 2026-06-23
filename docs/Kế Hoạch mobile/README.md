@@ -53,11 +53,14 @@ Ghi chú bắt buộc:
 
 ## 5. Thư viện tính năng (Feature Dependencies)
 - **Xác thực (OAuth)**: `expo-auth-session`, `expo-crypto`, `expo-web-browser` cho luồng Google mobile redirect hoặc social-login thống nhất với backend.
-- **Bản đồ & Chỉ đường (OSM + Routing)**: 
-  - Sử dụng `react-native-maps` kết hợp với `<UrlTile />` để tải bản đồ OpenStreetMap.
-  - **Lưu ý hiệu năng**: Thiết lập thuộc tính `mapType="none"` trên `<MapView>` để vô hiệu hóa bản đồ nền mặc định của thiết bị (Google/Apple Maps), chỉ tải duy nhất OSM Tiles nhằm tiết kiệm RAM, pin và tránh giật lag.
-  - Tích hợp gọi API của **OSRM (Open Source Routing Machine)** để vẽ mượt mà lên bản đồ thông qua `<Polyline>`.
-  - Đảm bảo 100% khả thi và không cần cài thêm Google Maps API Key phức tạp.
+- **Bản đồ & Chỉ đường (Google native map + Routing)**:
+  - Sử dụng `react-native-maps` với nền Google native trên Android/Expo Go để GPS, marker và polyline bám tọa độ ổn định.
+  - Không chồng OpenStreetMap/Leaflet và Google Map lên nhau trong app mobile, vì hai lớp map dễ lệch tile, lệch gesture và khó ổn định.
+  - Không truyền ảnh remote trực tiếp vào custom marker của `react-native-maps`; Android có thể snapshot marker sai làm ảnh bị cắt, trắng hoặc lag.
+  - Ảnh địa điểm owner trên map phải đi qua mobile cache: lấy `first_image` hoặc `images[0]` từ backend, chuẩn hóa URL, tải về local, crop/resize thumbnail rồi mới render marker.
+  - Cài thêm khi triển khai marker ảnh: `npx expo install expo-file-system expo-image-manipulator`.
+  - Tích hợp gọi API route qua backend/OSRM để vẽ đường bằng `<Polyline>`.
+  - Nếu cần tái tạo 100% map website bằng Leaflet/HTML, WebView route embed từ website chỉ được xem là phương án dự phòng sau MVP, không phải hướng chính của Phase 3.
 - **Nút điều hướng & Bảo mật luồng giao dịch**:
   - Expo Router (File-based routing).
   - Khi đặt phòng/bàn/vé thành công và chuyển sang màn hình thành công (Success Screen), bắt buộc sử dụng `router.replace()` hoặc xóa bỏ Stack lịch sử điều hướng (`router.dismissAll()`). Điều này ngăn việc người dùng nhấn phím Back vật lý trên Android hoặc vuốt Back trên iOS quay ngược lại trang thanh toán/nhập thông tin, tránh tình trạng trùng lặp yêu cầu đặt dịch vụ.
@@ -149,7 +152,7 @@ Phạm vi Website User hiện tại cần được phủ đủ trên Mobile:
 |---|---|---|
 | Đăng nhập / đăng ký / quên mật khẩu / Google login | `pages/Auth/*` | Giai đoạn 1 |
 | Trang chủ / thống kê nhanh / danh sách đề xuất | `pages/User/UserDashboard.tsx` | Giai đoạn 2 |
-| Bản đồ OSM / marker / route / detail địa điểm / review / chat entry | `pages/User/UserMap.tsx`, `LocationDetail.tsx` | Giai đoạn 3 |
+| Bản đồ native / marker ảnh cache / route / detail địa điểm / review / chat entry | `pages/User/UserMap.tsx`, `LocationDetail.tsx` | Giai đoạn 3 |
 | Đặt vé / đặt bàn / đặt phòng / VietQR / ví vé / pass / cart | `BookingPage.tsx`, `TicketCart.tsx`, `MyTickets.tsx`, `TableBookingPass.tsx`, `RoomBookingPass.tsx` | Giai đoạn 4 |
 | Hồ sơ / địa điểm đã lưu / check-in / nhật ký hành trình / lịch sử / voucher / nhắc lịch / thông báo / SOS | `Profile.tsx`, `SavedLocations.tsx`, `Checkins.tsx`, `History.tsx`, `Vouchers.tsx`, `BookingReminders.tsx`, `Sos.tsx` | Giai đoạn 5 |
 | AI chat / chat với địa điểm / itineraries / itinerary editor | `AiChat.tsx`, `LocationChatBubble.tsx`, `Itineraries.tsx`, `ItineraryEditor.tsx` | Giai đoạn 6 |

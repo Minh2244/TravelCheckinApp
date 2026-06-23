@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { parseGoogleAuthResultUrl } from "../../src/modules/auth/google";
 import { useAuthStore } from "../../src/modules/auth/store";
@@ -68,10 +69,12 @@ export default function AuthCallbackScreen() {
   }, [finishGoogleSignIn, params.accessToken, params.error, params.refreshToken, params.user, router, setNotice]);
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.title}>Đang hoàn tất đăng nhập</Text>
-      <Text style={styles.text}>Ứng dụng đang nhận lại phiên Google và kiểm tra tài khoản.</Text>
-    </View>
+    <SafeAreaView style={styles.screen} edges={["top", "left", "right", "bottom"]}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Đang hoàn tất đăng nhập</Text>
+        <Text style={styles.text}>Ứng dụng đang nhận lại phiên Google và kiểm tra tài khoản.</Text>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -79,6 +82,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#eef2f3",
+  },
+  content: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,

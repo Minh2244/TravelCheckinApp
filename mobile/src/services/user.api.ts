@@ -20,4 +20,17 @@ export const userApi = {
     const response = await api.get<ApiResponse<unknown[]>>("/user/vouchers/saved");
     return response.data;
   },
+  async toggleFavorite(locationId: string | number, isFavorite: boolean) {
+    if (isFavorite) {
+      const response = await api.patch<ApiResponse<unknown>>(`/user/favorites/${locationId}`);
+      return response.data;
+    } else {
+      const response = await api.delete<ApiResponse<unknown>>(`/user/favorites/${locationId}`);
+      return response.data;
+    }
+  },
+  async createReview(data: { location_id: string | number; rating: number; review_text: string }) {
+    const response = await api.post<ApiResponse<unknown>>("/user/reviews", data);
+    return response.data;
+  },
 };

@@ -1,11 +1,15 @@
+import "../global.css";
+
+import * as NavigationBar from "expo-navigation-bar";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useAuthStore } from "../src/modules/auth/store";
+import { ToastHost } from "../src/modules/ui/toast-host";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -23,19 +27,33 @@ export default function RootLayout() {
     }
   }, [hydrated]);
 
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      void NavigationBar.setStyle("dark");
+    }
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="dark" backgroundColor="#eef2f3" />
+      <ToastHost />
       {hydrated ? (
-        <Stack screenOptions={{ headerShown: false, contentStyle: styles.stackContent }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: "#eef2f3" },
+          }}
+        >
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />
         </Stack>
       ) : (
-        <View style={styles.loadingScreen}>
-          <Text style={styles.loadingTitle}>Đang chuẩn bị ứng dụng</Text>
-          <Text style={styles.loadingText}>
+        <View className="flex-1 items-center justify-center gap-3 bg-surface px-6">
+          <Text className="text-center text-xl font-bold text-ink">
+            Đang chuẩn bị ứng dụng
+          </Text>
+          <Text className="max-w-[280px] text-center leading-6 text-slate-600">
             Mình đang khôi phục phiên đăng nhập và kiểm tra kết nối.
           </Text>
         </View>
@@ -43,29 +61,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  stackContent: {
-    backgroundColor: "#eef2f3",
-  },
-  loadingScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    backgroundColor: "#eef2f3",
-    gap: 12,
-  },
-  loadingTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-    textAlign: "center",
-  },
-  loadingText: {
-    maxWidth: 280,
-    textAlign: "center",
-    color: "#475569",
-    lineHeight: 22,
-  },
-});

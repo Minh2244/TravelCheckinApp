@@ -2,11 +2,6 @@
 
 ### Hệ thống quản lý và trải nghiệm du lịch đa vai trò tích hợp trí tuệ nhân tạo
 
-[![Copyright](https://img.shields.io/badge/Copyright-©%202026%20Mai%20Nhut%20Minh-blue)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-v20+-339933)](https://nodejs.org/)
-[![MySQL](https://img.shields.io/badge/MySQL-v8.0+-4479A1)](https://mysql.com/)
-[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev/)
-
 A comprehensive full-stack travel ecosystem connecting tourists with service providers through integrated POS (Point of Sale), PMS (Property Management System), Smart Check-in, and AI-powered features. Built as a graduation thesis at Tay Do University.
 
 ---
@@ -36,7 +31,7 @@ This project is a full-stack travel ecosystem consisting of three main component
 |-----------|-------------|------------|
 | **Backend API** | RESTful server with real-time capabilities | Node.js, Express 5, TypeScript |
 | **Web Dashboard** | Admin, Owner, and User management panels | React 19, Vite 7, Ant Design, TypeScript |
-| **Mobile App** | Tourist client for check-ins, maps, and service bookings | Expo (React Native), TypeScript, OSM Maps |
+| **Mobile App** | Tourist client (Currently in development) | Expo (React Native), TypeScript |
 
 The system enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, plan itineraries, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations. The platform integrates Google Gemini AI for intelligent chatbot assistance and personalized recommendations.
 
@@ -107,24 +102,9 @@ The system enables tourists to discover locations, book services (hotel rooms, r
 9. **Push Notifications** — Broadcast announcements to all users or specific segments
 10. **AI Settings** — Configure AI chatbot behavior and view chat history
 
-### G. Mobile App (Tourist Experience & Bookings)
+### G. Mobile App
 
-1. **Interactive Compass Map**:
-   - Integrated OpenStreetMap (OSM) rendering with Expo React Native Maps.
-   - Real-time compass-driven user orientation arrow with a Low-Pass Filter to eliminate sensor noise, and native-driven animation values to ensure smooth, lag-free rotations.
-   - Intelligent routing (OSRM Polyline decoding) with GPS Drift filtration to prevent redundant API calls for movements under 15 meters.
-2. **Multi-Service Booking UI**:
-   - **Restaurant/Cafe**: Support booking single or multiple tables. Pre-ordering meals is allowed for single table reservations, requiring online prepayment.
-   - **Hotel PMS Stays**: Book hotel rooms (up to 20 rooms per transaction) with auto check-out date calculation.
-   - **Tourist Tickets**: Custom quantity booking with an enforced transaction limit of 50 tickets maximum.
-3. **Dynamic VietQR Prepayment Gateway**:
-   - Backend automatically fetches owner-specific bank details (`bank_name`, `bank_account`, `account_holder`) from the `owner_profiles` database table based on location.
-   - The Mobile app displays billing details completely dynamically from the API response to avoid hardcoded bank credentials on the frontend, with a "one-tap to copy" feature to copy credentials into the clipboard.
-4. **Token Lifecycle & Security**:
-   - Auto Access Token injection and automatic Silent Refresh via Axios interceptors utilizing Expo SecureStore, avoiding user log-out during active transactions.
-5. **Offline Ticket Wallet & Push Notifications**:
-   - Offline ticket visualization using AsyncStorage cache for seamless check-in at locations with poor network coverage.
-   - Expo/FCM push notifications integration to notify users about booking updates, confirmations, or check-in schedules.
+The Mobile App component is currently under active development.
 
 ---
 
@@ -510,7 +490,7 @@ The system uses a relational **MySQL** database with **56 tables** organized acr
 ### 2. Clone the Repository
 
 ```bash
-git clone https://github.com/Minh2244/TravelCheckinApp.git
+git clone <repository_url>
 cd TravelCheckinApp
 ```
 
@@ -657,8 +637,7 @@ curl -X POST http://localhost:3000/api/bookings \
 - [x] **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
 - [x] **Phase 2** — Web Dashboard for Admin & Owner management module
 - [x] **Phase 3** — Complete database schema (56 tables) and restore full functionality
-- [x] **Phase 4** — Mobile App Phase 3 Planning (UI Shell, API Client, Custom Hooks design & Dynamic VietQR specification)
-- [ ] **Phase 5** — Mobile App Implementation (OSM Maps, Stays/POS Booking Flow, and Payment integration)
+- [ ] **Phase 4** — Mobile App Development (Currently in progress)
 - [ ] **Phase 6** — Hotel PMS and Restaurant POS drag-and-drop refinement
 - [ ] **Phase 7** — AI Chat Integration with Google Gemini
 
@@ -668,7 +647,6 @@ curl -X POST http://localhost:3000/api/bookings \
 
 **Mai Nhut Minh**
 
-- GitHub: [@Minh2244](https://github.com/Minh2244)
 - Email: minhmap3367@gmail.com
 - Institution: Tay Do University
 - Class: CNTT17A
@@ -718,7 +696,6 @@ Law of Vietnam (Law No. 50/2005/QH11, amended by Law No. 36/2009/QH12) and
 applicable international copyright treaties.
 
 For permissions or inquiries, contact the author at:
-  GitHub:  https://github.com/Minh2244
   Email:   minhmap3367@gmail.com
 ```
 

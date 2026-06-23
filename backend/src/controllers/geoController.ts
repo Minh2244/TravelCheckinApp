@@ -83,6 +83,24 @@ const removeDiacritics = (value: string): string => {
 
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
 
+const haversineMeters = (
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) => {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(to.lat - from.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(from.lat)) *
+      Math.cos(toRad(to.lat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusM * c;
+};
+
 const nominatimHeaders = () => {
   const ua =
     process.env.NOMINATIM_USER_AGENT ||
@@ -249,4 +267,130 @@ export const geoReverse = async (req: Request, res: Response) => {
   } catch {
     res.status(502).json({ message: "Reverse-geocoding upstream error" });
   }
+};
+
+export const geoRoute = async (req: Request, res: Response) => {
+  const ip = getClientIp(req);
+  if (!takeToken(`route:${ip}`)) {
+    res.status(429).json({ message: "Rate limited" });
+    return;
+  }
+
+  const startLat = Number(req.query.startLat);
+  const startLng = Number(req.query.startLng);
+  const endLat = Number(req.query.endLat);
+  const endLng = Number(req.query.endLng);
+  const profileRaw = String(req.query.profile ?? "driving").trim().toLowerCase();
+  const profile = ["driving", "cycling", "walking"].includes(profileRaw)
+    ? profileRaw
+    : "driving";
+
+  if (
+    !Number.isFinite(startLat) ||
+    !Number.isFinite(startLng) ||
+    !Number.isFinite(endLat) ||
+    !Number.isFinite(endLng)
+  ) {
+    res.status(400).json({ message: "Invalid route coordinates" });
+    return;
+  }
+
+  const cacheKey = `route:${profile}:${startLat.toFixed(5)}:${startLng.toFixed(5)}:${endLat.toFixed(5)}:${endLng.toFixed(5)}`;
+  const cached = cacheGet<unknown>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
+  const fallbackDistance = haversineMeters(
+    { lat: startLat, lng: startLng },
+    { lat: endLat, lng: endLng },
+  );
+
+  const routingCluster =
+    profile === "driving" ? "car" : profile === "walking" ? "foot" : profile;
+  const upstreamUrls = [
+    `https://router.project-osrm.org/route/v1/${profile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=true`,
+    `https://routing.openstreetmap.de/routed-${routingCluster}/route/v1/${profile}/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=true`,
+  ];
+
+  let lastError: string | null = null;
+
+  for (const url of upstreamUrls) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await axios.get(url, {
+          timeout: 8000,
+          headers: {
+            Accept: "application/json",
+            "User-Agent":
+              process.env.ROUTING_USER_AGENT ||
+              "TravelCheckinApp/1.0 (routing proxy; contact: set ROUTING_USER_AGENT)",
+          },
+        });
+
+        const data = response.data;
+        const routes = Array.isArray(data?.routes) ? data.routes : [];
+        const route = routes[0];
+
+        if (!route?.geometry?.coordinates?.length) {
+          lastError = "NoRoute";
+          break;
+        }
+
+        const payload = {
+          distance: Number(route.distance ?? fallbackDistance),
+          duration: Number(route.duration ?? 0),
+          coordinates: routes
+            .slice(0, 3)
+            .flatMap((entry: any, index: number) =>
+              index === 0
+                ? entry.geometry.coordinates.map(([lng, lat]: [number, number]) => ({
+                    latitude: lat,
+                    longitude: lng,
+                  }))
+                : [],
+            ),
+          alternatives: routes.length,
+          source: "osrm",
+          hasNoRoute: false,
+        };
+
+        cacheSet(cacheKey, payload, 5 * 60 * 1000);
+        res.json(payload);
+        return;
+      } catch (error: any) {
+        const status = Number(error?.response?.status ?? 0);
+        const code = String(error?.response?.data?.code ?? "");
+
+        if (status === 400 || status === 422 || code === "NoRoute") {
+          lastError = "NoRoute";
+          break;
+        }
+
+        lastError = error?.message || `HTTP ${status || 500}`;
+        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      }
+    }
+
+    if (lastError === "NoRoute") {
+      break;
+    }
+  }
+
+  const fallbackPayload = {
+    distance: fallbackDistance,
+    duration: 0,
+    coordinates: [
+      { latitude: startLat, longitude: startLng },
+      { latitude: endLat, longitude: endLng },
+    ],
+    alternatives: 0,
+    source: "haversine",
+    hasNoRoute: lastError === "NoRoute",
+    error: lastError,
+  };
+
+  cacheSet(cacheKey, fallbackPayload, 60 * 1000);
+  res.json(fallbackPayload);
 };

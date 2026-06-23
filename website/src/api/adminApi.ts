@@ -533,6 +533,13 @@ const adminApi = {
     return response.data;
   },
 
+  cancelCommissionPaymentRequest: async (requestId: number) => {
+    const response = await axiosClient.post(
+      `/admin/commission-payment-requests/${requestId}/cancel`,
+    );
+    return response.data;
+  },
+
   // Quản lý Reports
   getReports: async (params?: QueryParams) => {
     const response = await axiosClient.get("/admin/reports", { params });

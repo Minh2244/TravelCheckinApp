@@ -10,7 +10,15 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-navigation-bar",
+        {
+          "style": "dark",
+          "hidden": false,
+          "enforceContrast": false
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
@@ -27,6 +35,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
     "experiments": {
