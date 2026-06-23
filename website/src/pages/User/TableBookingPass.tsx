@@ -287,9 +287,6 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                                 Hóa đơn: {pass.invoiceCode}
                               </span>
                             )}
-                            <span className="text-base font-bold text-slate-800 tracking-tight font-mono">
-                              Mã vé: {pass.secureCode || `#DI-${bookingId}`}
-                            </span>
                           </div>
                           <span className={`rounded-md px-3 py-1 text-xs font-bold uppercase tracking-wider ${badge}`}>
                             {label}
@@ -342,7 +339,7 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                       </div>
 
                       {/* Right: QR Code Block */}
-                      <div className="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6 shrink-0 w-full md:w-[180px]">
+                      <div className="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6 shrink-0 w-full md:w-[200px]">
                         {pass.paymentStatus === "completed" && (
                           <div className="flex justify-center mb-2">
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider text-center shadow-sm">
@@ -356,9 +353,9 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                         {pass.bookingStatus === "pending" ? (
                           <div className="relative p-2 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-center overflow-hidden">
                             <img
-                              src={buildQrUrl(qrPayload, 110)}
+                              src={buildQrUrl(qrPayload, 130)}
                               alt="QR pending"
-                              className="w-28 h-28 opacity-10 blur-[3px] select-none pointer-events-none"
+                              className="w-32 h-32 opacity-10 blur-[3px] select-none pointer-events-none"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/70 p-2 text-center">
@@ -373,42 +370,37 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                         ) : pass.bookingStatus === "confirmed" ? (
                           <div className="p-2 rounded-xl border-2 border-emerald-400 bg-white shadow-sm flex flex-col items-center justify-center">
                             <img
-                              src={buildQrUrl(qrPayload, 110)}
+                              src={buildQrUrl(qrPayload, 130)}
                               alt="QR code"
-                              className="w-28 h-28"
+                              className="w-32 h-32"
                               loading="lazy"
                             />
                           </div>
                         ) : pass.bookingStatus === "completed" ? (
                           <div className="relative p-2 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-center overflow-hidden opacity-60">
                             <img
-                              src={buildQrUrl(qrPayload, 110)}
+                              src={buildQrUrl(qrPayload, 130)}
                               alt="QR completed"
-                              className="w-28 h-28 opacity-10 blur-[3.5px] select-none pointer-events-none"
+                              className="w-32 h-32 opacity-30 blur-[2px] select-none pointer-events-none"
                               loading="lazy"
                             />
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 p-2 text-center">
-                              <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                                ĐÃ DÙNG
-                              </span>
-                            </div>
                           </div>
                         ) : (
                           <div className="relative p-2 rounded-xl border border-slate-200 bg-white shadow-sm flex items-center justify-center overflow-hidden opacity-60">
                             <img
-                              src={buildQrUrl(qrPayload, 110)}
+                              src={buildQrUrl(qrPayload, 130)}
                               alt="QR cancelled"
-                              className="w-28 h-28 opacity-10 blur-[3.5px] select-none pointer-events-none"
+                              className="w-32 h-32 opacity-30 blur-[2px] select-none pointer-events-none"
                               loading="lazy"
                             />
-                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 p-2 text-center">
-                              <span className="text-xs font-extrabold text-rose-700 uppercase tracking-wider">
-                                ĐÃ HỦY
-                              </span>
-                            </div>
                           </div>
                         )}
-
+                        
+                        <div className="mt-3 text-center">
+                          <span className="text-sm font-bold text-slate-800 tracking-tight font-mono block">
+                            Mã vé: {pass.secureCode || `#DI-${bookingId}`}
+                          </span>
+                        </div>
                       </div>
 
                     </div>

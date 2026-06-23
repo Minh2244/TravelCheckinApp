@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { FlatList, Image, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { FlatList, Image, RefreshControl, Text, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ScreenShell } from "../../../src/components/screen-shell";
 import { resolveBackendUrl } from "../../../src/lib/url";
 import { userApi } from "../../../src/services/user.api";
 import type { LocationItem } from "../../../src/types/location";
 
 export default function SavedScreen() {
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<LocationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,25 +33,38 @@ export default function SavedScreen() {
   }, []);
 
   return (
-    <ScreenShell
-      title="Đã lưu"
-      framed={false}
-      scrollable={false}
-    >
+    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right", "bottom"]}>
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.location_id)}
-        contentContainerStyle={styles.savedList}
+        contentContainerStyle={{
+          paddingTop: 14,
+          paddingHorizontal: 20,
+          paddingBottom: Math.max(insets.bottom, 16) + 12,
+          gap: 14,
+        }}
+        overScrollMode="never"
+        bounces={false}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <View className="gap-2 pb-4 pt-1">
+            <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
+              Đã lưu
+            </Text>
+            <Text className="text-[15px] leading-[23px] text-slate-600">
+              Mở lại các địa điểm bạn đã thích từ website và mobile.
+            </Text>
+          </View>
+        }
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void loadFavorites(true)} />
         }
         ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyTitle}>
+          <View className="gap-2.5 rounded-xl border border-line bg-white p-[18px]">
+            <Text className="text-lg font-extrabold text-slate-900">
               {loading ? "Đang tải địa điểm đã lưu" : "Bạn chưa lưu địa điểm nào"}
             </Text>
-            <Text style={styles.emptyText}>
+            <Text className="leading-6 text-slate-600">
               Khi bạn thích một địa điểm trên website hoặc mobile, danh sách đó sẽ hiện ở đây.
             </Text>
           </View>
@@ -59,21 +73,21 @@ export default function SavedScreen() {
           const imageUrl = resolveBackendUrl(item.first_image || item.images?.[0] || null);
 
           return (
-            <View style={styles.savedCard}>
-              <View style={styles.savedImageWrap}>
+            <View className="overflow-hidden rounded-xl border border-line bg-white">
+              <View className="aspect-video w-full bg-slate-200">
                 {imageUrl ? (
-                  <Image source={{ uri: imageUrl }} style={styles.savedImage} resizeMode="cover" />
+                  <Image source={{ uri: imageUrl }} className="h-full w-full" resizeMode="cover" />
                 ) : (
-                  <View style={styles.savedImagePlaceholder}>
-                    <Text style={styles.savedImagePlaceholderText}>Chưa có ảnh</Text>
+                  <View className="flex-1 items-center justify-center">
+                    <Text className="font-bold text-slate-500">Chưa có ảnh</Text>
                   </View>
                 )}
               </View>
 
-              <View style={styles.savedBody}>
-                <Text style={styles.savedName}>{item.location_name}</Text>
-                <Text style={styles.savedMeta}>{getTypeLabel(item.location_type)}</Text>
-                <Text style={styles.savedAddress} numberOfLines={2}>
+              <View className="gap-1.5 p-4">
+                <Text className="text-lg font-extrabold text-slate-900">{item.location_name}</Text>
+                <Text className="font-bold text-brand-600">{getTypeLabel(item.location_type)}</Text>
+                <Text className="leading-[21px] text-slate-600" numberOfLines={2}>
                   {item.address}
                 </Text>
               </View>
@@ -81,7 +95,7 @@ export default function SavedScreen() {
           );
         }}
       />
-    </ScreenShell>
+    </SafeAreaView>
   );
 }
 
@@ -94,69 +108,3 @@ function getTypeLabel(value: string) {
   if (normalized === "tourist") return "Du lịch";
   return "Địa điểm";
 }
-
-const styles = StyleSheet.create({
-  savedList: {
-    paddingBottom: 118,
-    gap: 14,
-  },
-  emptyBox: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    backgroundColor: "#ffffff",
-    padding: 18,
-    gap: 10,
-  },
-  emptyTitle: {
-    color: "#111827",
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  emptyText: {
-    color: "#475569",
-    lineHeight: 22,
-  },
-  savedCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    backgroundColor: "#ffffff",
-    overflow: "hidden",
-  },
-  savedImageWrap: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    backgroundColor: "#e2e8f0",
-  },
-  savedImage: {
-    width: "100%",
-    height: "100%",
-  },
-  savedImagePlaceholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  savedImagePlaceholderText: {
-    color: "#64748b",
-    fontWeight: "700",
-  },
-  savedBody: {
-    padding: 16,
-    gap: 6,
-  },
-  savedName: {
-    color: "#111827",
-    fontWeight: "800",
-    fontSize: 18,
-  },
-  savedMeta: {
-    color: "#0f766e",
-    fontWeight: "700",
-  },
-  savedAddress: {
-    color: "#475569",
-    lineHeight: 21,
-  },
-});

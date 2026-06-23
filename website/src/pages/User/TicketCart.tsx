@@ -472,9 +472,6 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                             <span className="font-bold text-emerald-700">{priceLabel}</span>
                           </div>
                           <div className="flex items-center gap-2 pt-1 flex-wrap justify-center sm:justify-start">
-                            <span className="bg-slate-100/80 text-slate-700 px-3.5 py-1 rounded-xl font-mono text-[13.5px] font-bold border border-slate-200/70 shadow-sm">
-                              Mã vé: {ticket.ticket_code}
-                            </span>
                             {ticket.invoice_code && (
                               <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-3.5 py-1 rounded-xl font-mono text-[13.5px] font-bold shadow-sm">
                                 Hóa đơn: {ticket.invoice_code}
@@ -499,16 +496,16 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                       </div>
 
                       {/* Right: Trạng thái vé & Mã QR */}
-                      <div className="flex flex-col items-center justify-center gap-2 w-[110px]">
+                      <div className="flex flex-col items-center justify-center gap-2 w-[130px]">
                         <span className={`rounded-full px-3 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${badge}`}>
                           {label}
                         </span>
                         {ticket.status === "pending" ? (
                           <div className="relative p-1 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-center overflow-hidden">
                             <img
-                              src={buildTicketQrUrl(ticket.ticket_code, 100)}
+                              src={buildTicketQrUrl(ticket.ticket_code, 120)}
                               alt="QR vé chờ duyệt"
-                              className="w-20 h-20 opacity-20 blur-[2.5px] select-none pointer-events-none"
+                              className="w-28 h-28 opacity-10 blur-[2.5px] select-none pointer-events-none"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/20 backdrop-blur-[1px] p-1 text-center">
@@ -518,22 +515,29 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                             </div>
                           </div>
                         ) : ticket.status === "unused" ? (
-                          <div className="p-1 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-center">
+                          <div className="p-1 rounded-2xl border border-slate-100 bg-white shadow-sm flex flex-col items-center justify-center">
                             <img
-                              src={buildTicketQrUrl(ticket.ticket_code, 100)}
+                              src={buildTicketQrUrl(ticket.ticket_code, 120)}
                               alt="QR vé"
-                              className="w-20 h-20"
+                              className="w-28 h-28"
                               loading="lazy"
                             />
                           </div>
                         ) : (
-                          <div className="w-20 h-20 rounded-2xl bg-slate-100/50 border border-slate-200 flex flex-col items-center justify-center text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-400 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                            ĐÃ DÙNG
+                          <div className="relative p-1 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-center overflow-hidden opacity-60">
+                            <img
+                              src={buildTicketQrUrl(ticket.ticket_code, 120)}
+                              alt="QR vé"
+                              className="w-28 h-28 opacity-30 blur-[2px] select-none pointer-events-none"
+                              loading="lazy"
+                            />
                           </div>
                         )}
+                        <div className="mt-1 text-center">
+                          <span className="text-xs font-bold text-slate-800 tracking-tight font-mono block">
+                            Mã vé: {ticket.ticket_code}
+                          </span>
+                        </div>
                       </div>
 
                     </div>

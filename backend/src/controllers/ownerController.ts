@@ -3009,6 +3009,18 @@ export const createOwnerCommissionPaymentRequest = async (
       ],
     );
 
+    // Mark commissions as payment_submitted so owner UI shows 0 (waiting admin approval)
+    if (commissionIds.length > 0) {
+      const placeholders = commissionIds.map(() => "?").join(",");
+      await pool.query(
+        `UPDATE commissions
+         SET status = 'payment_submitted'
+         WHERE commission_id IN (${placeholders})
+           AND status IN ('pending', 'overdue')`,
+        commissionIds,
+      );
+    }
+
     res.json({
       success: true,
       message:
@@ -17650,6 +17662,8 @@ export const reconcileOwnerCommissionsManually = async (
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+
+      // Removed GUARD: Allow multiple reconcile even if unpaid commission exists
 
       const now = new Date();
       const thisMonth = now.getMonth() + 1;

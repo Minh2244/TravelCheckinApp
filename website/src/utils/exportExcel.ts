@@ -105,7 +105,7 @@ export const handleExportBatchExcel = async (
 
   sheet.mergeCells("A2:I2");
   const subtitleCell = sheet.getCell("A2");
-  subtitleCell.value = `Khoảng thời gian: từ ${dateRange[0].format("DD/MM/YYYY")} đến ${dateRange[1].format("DD/MM/YYYY")}`;
+  subtitleCell.value = `Khoảng thời gian: từ ${dateRange[0].format("DD/MM/YYYY")} đến ${dateRange[1].format("DD/MM/YYYY")} | Tổng số đơn: ${data.length}`;
   subtitleCell.alignment = { horizontal: "center" };
 
   // 4. Headers

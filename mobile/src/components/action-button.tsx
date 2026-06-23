@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, Text } from "react-native";
 
 type ActionButtonProps = {
   label: string;
@@ -24,60 +24,23 @@ export function ActionButton({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
-      style={({ pressed }) => [
-        styles.base,
-        variant === "primary" ? styles.primary : styles.secondary,
-        isDisabled ? styles.disabled : null,
-        pressed && !isDisabled ? styles.pressed : null,
-      ]}
+      className={[
+        "min-h-14 w-full items-center justify-center rounded-2xl border px-5 py-4",
+        variant === "primary"
+          ? "border-brand-600 bg-brand-600"
+          : "border-slate-300 bg-slate-50",
+        isDisabled ? "opacity-60" : "",
+      ].join(" ")}
+      style={({ pressed }) => (pressed && !isDisabled ? { opacity: 0.92 } : null)}
     >
-      <Text style={[styles.text, variant === "primary" ? styles.primaryText : styles.secondaryText]}>
+      <Text
+        className={[
+          "text-center text-base font-bold",
+          variant === "primary" ? "text-white" : "text-slate-900",
+        ].join(" ")}
+      >
         {currentLabel}
       </Text>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    width: "100%",
-    minHeight: 56,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderWidth: 1,
-  },
-  primary: {
-    backgroundColor: "#0f766e",
-    borderColor: "#0f766e",
-    shadowColor: "#0f766e",
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  secondary: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#cbd5e1",
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-  pressed: {
-    transform: [{ scale: 0.99 }],
-  },
-  text: {
-    fontSize: 16,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  primaryText: {
-    color: "#ffffff",
-  },
-  secondaryText: {
-    color: "#0f172a",
-  },
-});

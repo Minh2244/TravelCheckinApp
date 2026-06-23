@@ -1,30 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as Location from "expo-location";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   FlatList,
   Image,
   Pressable,
   RefreshControl,
-  StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
-  ScrollView,
-  Dimensions,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveBackendUrl } from "../../../src/lib/url";
 import { useAuthStore } from "../../../src/modules/auth/store";
 import { useLocations } from "../../../src/modules/locations/use-locations";
+import { useLocationPermissionStore } from "../../../src/modules/location-permission/store";
 import { geoApi } from "../../../src/services/geo.api";
 import { userApi } from "../../../src/services/user.api";
 import type { LocationItem } from "../../../src/types/location";
-
-const { width } = Dimensions.get("window");
 
 type GeoState =
   | { status: "idle" | "loading" }
@@ -39,49 +36,81 @@ type StatsState = {
 
 const quickActions: Array<{
   label: string;
+  description: string;
   action: "food" | "stay" | "saved" | "itinerary";
-  icon: "restaurant" | "bed" | "bookmark" | "calendar";
-  color: string;
-  bgColor: string;
+  icon: "restaurant-outline" | "bed-outline" | "bookmark-outline" | "calendar-outline";
+  iconBackground: string;
+  cardBackground: string;
 }> = [
   {
     label: "Ăn uống",
+    description: "Xem nhà hàng và quán cafe",
     action: "food",
-    icon: "restaurant",
-    color: "#f59e0b",
-    bgColor: "#fef3c7",
+    icon: "restaurant-outline",
+    iconBackground: "#f97316",
+    cardBackground: "#fff7ed",
   },
   {
     label: "Lưu trú",
+    description: "Xem khách sạn và resort",
     action: "stay",
-    icon: "bed",
-    color: "#3b82f6",
-    bgColor: "#dbeafe",
+    icon: "bed-outline",
+    iconBackground: "#0f766e",
+    cardBackground: "#f0fdfa",
   },
   {
     label: "Đã lưu",
+    description: "Mở lại địa điểm bạn đã thích",
     action: "saved",
-    icon: "bookmark",
-    color: "#ec4899",
-    bgColor: "#fce7f3",
+    icon: "bookmark-outline",
+    iconBackground: "#7c3aed",
+    cardBackground: "#f5f3ff",
   },
   {
     label: "Lịch trình",
+    description: "Quản lý kế hoạch chuyến đi",
     action: "itinerary",
-    icon: "calendar",
-    color: "#8b5cf6",
-    bgColor: "#ede9fe",
+    icon: "calendar-outline",
+    iconBackground: "#2563eb",
+    cardBackground: "#eff6ff",
   },
 ];
 
 const categories = ["Tất cả", "Ẩm thực", "Lưu trú", "Du lịch"] as const;
+const statItems: Array<{
+  key: "checkins" | "favorites" | "vouchers";
+  label: string;
+  icon: "location-outline" | "bookmark-outline" | "ticket-outline";
+  tint: string;
+}> = [
+  {
+    key: "checkins",
+    label: "Check-in",
+    icon: "location-outline",
+    tint: "#0f766e",
+  },
+  {
+    key: "favorites",
+    label: "Đã lưu",
+    icon: "bookmark-outline",
+    tint: "#7c3aed",
+  },
+  {
+    key: "vouchers",
+    label: "Voucher",
+    icon: "ticket-outline",
+    tint: "#2563eb",
+  },
+];
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((state) => state.user);
+  const refreshLocationStatus = useLocationPermissionStore((state) => state.refreshStatus);
+  const ensureLocationAccess = useLocationPermissionStore((state) => state.ensureAccess);
   const [searchText, setSearchText] = useState("");
-  const [gpsGranted, setGpsGranted] = useState<boolean | null>(null);
   const [geoState, setGeoState] = useState<GeoState>({ status: "idle" });
   const [stats, setStats] = useState<StatsState>({
     checkins: 0,
@@ -110,6 +139,7 @@ export default function HomeScreen() {
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
+
     if (hour < 12) return "Chào buổi sáng";
     if (hour < 18) return "Chào buổi chiều";
     return "Chào buổi tối";
@@ -153,16 +183,48 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const loadGeoData = useCallback(async () => {
+  // Ref to prevent concurrent geo fetches
+  const geoRunningRef = useRef(false);
+
+  const fetchGeo = useCallback(async () => {
+    // Prevent double-call (AppState or concurrent triggers)
+    if (geoRunningRef.current) return;
+    geoRunningRef.current = true;
+    setGeoState({ status: "loading" });
+
     try {
-      setGeoState({ status: "loading" });
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const geo = await geoApi.reverse(
-        position.coords.latitude,
-        position.coords.longitude,
-      );
+      // 1. Check if device location service is on
+      const serviceOn = await Location.hasServicesEnabledAsync();
+      if (!serviceOn) {
+        setGeoState({ status: "error", message: "GPS/Dịch vụ vị trí đang tắt trên thiết bị." });
+        return;
+      }
+
+      // 2. Try last-known position (instant, no GPS lock needed)
+      const cached = await Location.getLastKnownPositionAsync({ maxAge: 30 * 60 * 1000 });
+
+      let coords: { latitude: number; longitude: number } | null = cached
+        ? { latitude: cached.coords.latitude, longitude: cached.coords.longitude }
+        : null;
+
+      // 3. If no cache, request fresh fix with 6s timeout using Low accuracy (WiFi/cell)
+      if (!coords) {
+        const fresh = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }),
+          new Promise<null>((res) => setTimeout(() => res(null), 6000)),
+        ]);
+        if (fresh) {
+          coords = { latitude: fresh.coords.latitude, longitude: fresh.coords.longitude };
+        }
+      }
+
+      if (!coords) {
+        setGeoState({ status: "error", message: "Không lấy được vị trí. Thử lại hoặc di chuyển ra ngoài trời." });
+        return;
+      }
+
+      // 4. Call backend geo API
+      const geo = await geoApi.reverse(coords.latitude, coords.longitude);
       setGeoState({
         status: "ready",
         city: geo.city,
@@ -170,245 +232,379 @@ export default function HomeScreen() {
         weather: geo.weather,
       });
     } catch {
-      setGeoState({
-        status: "error",
-        message: "Không thể lấy thời tiết.",
-      });
+      setGeoState({ status: "error", message: "Lỗi lấy thời tiết. Thử lại sau." });
+    } finally {
+      geoRunningRef.current = false;
     }
   }, []);
 
-  const ensureGpsStatus = useCallback(async () => {
-    try {
-      const current = await Location.getForegroundPermissionsAsync();
+  useEffect(() => {
+    void loadStats();
 
-      if (current.status === "granted") {
-        setGpsGranted(true);
-        await loadGeoData();
+    const init = async () => {
+      const ready = await ensureLocationAccess("ứng dụng");
+
+      if (ready) {
+        await fetchGeo();
         return;
       }
 
-      const requested = await Location.requestForegroundPermissionsAsync();
-      const granted = requested.status === "granted";
-      setGpsGranted(granted);
+      setGeoState({ status: "idle" });
+    };
 
-      if (granted) {
-        await loadGeoData();
-      } else {
-        setGeoState({
-          status: "error",
-          message: "Bạn chưa cấp quyền vị trí.",
-        });
-      }
-    } catch {
-      setGpsGranted(false);
-      setGeoState({
-        status: "error",
-        message: "Lỗi kiểm tra vị trí.",
-      });
+    void init();
+  }, [loadStats, ensureLocationAccess, fetchGeo]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      const syncGeoOnFocus = async () => {
+        const ready = await ensureLocationAccess("ứng dụng");
+
+        if (!active) {
+          return;
+        }
+
+        if (ready) {
+          await fetchGeo();
+          return;
+        }
+
+        setGeoState({ status: "idle" });
+      };
+
+      void syncGeoOnFocus();
+
+      return () => {
+        active = false;
+      };
+    }, [ensureLocationAccess, fetchGeo]),
+  );
+
+  const onRefresh = useCallback(async () => {
+    const jobs = [refetch(true), loadStats()];
+    const snapshot = await refreshLocationStatus();
+
+    if (snapshot.granted && snapshot.servicesEnabled) {
+      jobs.push(fetchGeo());
     }
-  }, [loadGeoData]);
+
+    await Promise.all(jobs);
+  }, [fetchGeo, loadStats, refreshLocationStatus, refetch]);
 
   useEffect(() => {
-    void ensureGpsStatus();
-    void loadStats();
-
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        void ensureGpsStatus();
+      if (state !== "active") {
+        return;
       }
+
+      void (async () => {
+        const ready = await ensureLocationAccess("ứng dụng");
+
+        if (ready) {
+          await fetchGeo();
+        } else {
+          setGeoState({ status: "error", message: "Vui lòng cấp quyền và bật vị trí để sử dụng ứng dụng." });
+        }
+      })();
     });
 
     return () => subscription.remove();
-  }, [ensureGpsStatus, loadStats]);
+  }, [fetchGeo, ensureLocationAccess]);
 
-  const onRefresh = useCallback(async () => {
-    await Promise.all([refetch(true), loadStats(), ensureGpsStatus()]);
-  }, [ensureGpsStatus, loadStats, refetch]);
+  const shellWidth = useMemo(() => Math.min(Math.max(width - 40, 0), 560), [width]);
+  const gridGap = 12;
+  const cardWidth = useMemo(
+    () => Math.max(Math.floor((shellWidth - gridGap) / 2), 148),
+    [gridGap, shellWidth],
+  );
 
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      {/* Lời chào & Thời tiết */}
-      <View style={styles.heroSection}>
-        <View>
-          <Text style={styles.greeting}>
-            {greeting},{"\n"}
-            <Text style={styles.firstName}>{firstName}!</Text>
-          </Text>
-          <Text style={styles.dateText}>{dateLabel}</Text>
-        </View>
+  const headerNode = useMemo(
+    () => (
+      <View className="gap-6 pb-5 pt-2.5">
+      <View className="gap-2">
+        <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
+          {greeting}, {firstName}
+        </Text>
+        <Text className="text-base text-slate-500">{dateLabel}</Text>
 
         {geoState.status === "ready" ? (
-          <View style={styles.weatherBadge}>
-            <Ionicons name="partly-sunny" size={20} color="#0d9488" />
-            <Text style={styles.weatherBadgeText}>
-              {geoState.temperature != null ? `${Math.round(geoState.temperature)}°C` : "--"} • {geoState.city}
+          <View className="rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-3">
+            <Text className="text-[17px] font-bold leading-5 text-brand-800">
+              {geoState.temperature != null ? `${Math.round(geoState.temperature)}\u00b0C` : "--"} |{" "}
+              {geoState.city} | {geoState.weather ?? "Th\u1eddi ti\u1ebft \u0111ang c\u1eadp nh\u1eadt"}
             </Text>
           </View>
         ) : geoState.status === "loading" ? (
-          <View style={styles.weatherBadge}>
-            <Text style={styles.weatherBadgeText}>Đang lấy thời tiết...</Text>
+          <View className="rounded-xl border border-cyan-100 bg-cyan-50 px-3.5 py-3">
+            <Text className="text-[15px] text-slate-400">Đang lấy vị trí và thời tiết...</Text>
           </View>
         ) : null}
       </View>
 
-      {/* Truy cập nhanh */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Khám phá</Text>
-        <View style={styles.quickActionGrid}>
+      <View className="gap-3.5">
+        <Text className="text-[18px] font-extrabold text-slate-900">Truy cập nhanh</Text>
+        <View className="flex-row flex-wrap justify-between gap-y-3">
           {quickActions.map((item) => (
             <Pressable
               key={item.label}
+              hitSlop={{ top: 10, left: 10, right: 10, bottom: 10 }}
+              accessibilityRole="button"
               onPress={() => {
-                if (item.action === "food") setCategory("Ẩm thực");
-                else if (item.action === "stay") setCategory("Lưu trú");
-                else if (item.action === "saved") router.push("/saved");
-                else router.push("/itineraries");
+                if (item.action === "food") {
+                  setCategory("Ẩm thực");
+                  return;
+                }
+
+                if (item.action === "stay") {
+                  setCategory("Lưu trú");
+                  return;
+                }
+
+                if (item.action === "saved") {
+                  router.push("/saved");
+                  return;
+                }
+
+                router.push("/itineraries");
               }}
-              style={styles.quickActionItem}
+              className="min-h-[112px] justify-between rounded-2xl border border-line p-4"
+              style={{ width: cardWidth, backgroundColor: item.cardBackground }}
             >
-              <View style={[styles.quickActionIconWrap, { backgroundColor: item.bgColor }]}>
-                <Ionicons name={item.icon} size={24} color={item.color} />
+              <View className="gap-2.5">
+                <View
+                  className="h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ backgroundColor: item.iconBackground }}
+                >
+                  <Ionicons name={item.icon} size={18} color="#ffffff" />
+                </View>
+                <Text className="text-[16px] font-extrabold text-slate-900">{item.label}</Text>
               </View>
-              <Text style={styles.quickActionLabel}>{item.label}</Text>
+              <Text className="text-[13px] leading-[18px] text-slate-600">{item.description}</Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      {/* Thống kê cá nhân */}
-      <View style={[styles.section, styles.statsContainer]}>
-        <Text style={styles.sectionTitle}>Hoạt động của bạn</Text>
-        <View style={styles.statsRow}>
-          <StatTile icon="location" label="Check-in" value={stats.checkins} loading={statsLoading} color="#14b8a6" />
-          <View style={styles.statDivider} />
-          <StatTile icon="heart" label="Đã lưu" value={stats.favorites} loading={statsLoading} color="#f43f5e" />
-          <View style={styles.statDivider} />
-          <StatTile icon="ticket" label="Voucher" value={stats.vouchers} loading={statsLoading} color="#f59e0b" />
+      <View className="gap-3.5">
+        <Text className="text-[18px] font-extrabold text-slate-900">Hoạt động của bạn</Text>
+        <View
+          className="flex-row rounded-2xl border border-line bg-white px-1 py-1.5"
+          style={{
+            shadowColor: "#0f172a",
+            shadowOpacity: 0.06,
+            shadowRadius: 14,
+            shadowOffset: {
+              width: 0,
+              height: 8,
+            },
+            elevation: 3,
+          }}
+        >
+          {statItems.map((item, index) => (
+            <StatTile
+              key={item.key}
+              label={item.label}
+              value={stats[item.key]}
+              loading={statsLoading}
+              icon={item.icon}
+              tint={item.tint}
+              bordered={index < statItems.length - 1}
+            />
+          ))}
         </View>
       </View>
 
-      {/* GPS Banner */}
-      {gpsGranted === false && (
-        <View style={styles.gpsBanner}>
-          <Ionicons name="warning" size={24} color="#b45309" />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.gpsBannerTitle}>Vị trí đang tắt</Text>
-            <Text style={styles.gpsBannerText}>Bật GPS để tìm đường và dùng check-in thông minh.</Text>
+      <View className="gap-3.5">
+        <View className="flex-row items-start justify-between gap-3">
+          <View className="flex-1 gap-1">
+            <Text className="text-[18px] font-extrabold text-slate-900">Đề xuất cho bạn</Text>
+            <Text className="leading-5 text-slate-500">
+              Chọn nhóm phù hợp để xem đúng nơi ăn uống, lưu trú hoặc tham quan.
+            </Text>
           </View>
-        </View>
-      )}
-
-      {/* Bộ lọc Đề xuất */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Gợi ý hôm nay</Text>
-          <Pressable onPress={() => setCategory("Tất cả")}>
-            <Text style={styles.textLink}>Xem tất cả</Text>
+          <Pressable
+            onPress={() => setCategory("Tất cả")}
+            className="pt-0.5"
+            hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}
+            accessibilityRole="button"
+          >
+            <Text className="font-extrabold text-brand-600">Xem tất cả</Text>
           </Pressable>
         </View>
+
+
 
         <TextInput
           value={searchText}
           onChangeText={setSearchText}
-          placeholder="Tìm địa điểm, nhà hàng, khách sạn..."
+          placeholder="Tìm địa điểm, nhà hàng, khách sạn"
           placeholderTextColor="#94a3b8"
-          style={styles.searchInput}
+          className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-slate-900"
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-          {categories.map((cat) => (
+        <FlatList
+          data={categories}
+          horizontal
+          bounces={false}
+          overScrollMode="never"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 10, paddingRight: 4 }}
+          keyExtractor={(item) => item}
+          renderItem={({ item }) => (
             <Pressable
-              key={cat}
-              onPress={() => setCategory(cat)}
-              style={[styles.categoryChip, category === cat && styles.categoryChipActive]}
+              hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}
+              accessibilityRole="button"
+              onPress={() => setCategory(item)}
+              className={[
+                "min-h-[38px] items-center justify-center rounded-full border px-4",
+                category === item
+                  ? "border-brand-600 bg-brand-600"
+                  : "border-slate-300 bg-white",
+              ].join(" ")}
             >
-              <Text style={[styles.categoryText, category === cat && styles.categoryTextActive]}>
-                {cat}
+              <Text
+                className={[
+                  "font-bold",
+                  category === item ? "text-white" : "text-slate-700",
+                ].join(" ")}
+              >
+                {item}
               </Text>
             </Pressable>
-          ))}
-        </ScrollView>
+          )}
+        />
       </View>
     </View>
+    ),
+    [
+      cardWidth,
+      category,
+      dateLabel,
+      firstName,
+      geoState,
+      greeting,
+      router,
+      searchText,
+      setCategory,
+      stats,
+      statsLoading,
+    ],
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right"]}>
       <FlatList
         data={locations}
         numColumns={2}
+        style={{ flex: 1 }}
         keyExtractor={(item) => String(item.location_id)}
-        columnWrapperStyle={styles.columnWrap}
-        contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom, 24) + 64 }]}
+        columnWrapperStyle={{ justifyContent: "space-between", marginBottom: 12 }}
+        contentContainerStyle={{
+          paddingTop: 12,
+          paddingHorizontal: 20,
+          paddingBottom: Math.max(insets.bottom, 12),
+        }}
+        overScrollMode="never"
+        bounces={false}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={renderHeader}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={headerNode}
         ListEmptyComponent={
           loading ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Đang tải danh sách địa điểm...</Text>
-            </View>
+            <Text className="py-6 text-center leading-[22px] text-slate-500">
+              Đang tải danh sách địa điểm
+            </Text>
           ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Chưa có địa điểm nào phù hợp.</Text>
-            </View>
+            <Text className="py-6 text-center leading-[22px] text-slate-500">
+              Chưa có địa điểm phù hợp. Hãy thử lại với nhóm khác hoặc bỏ từ khóa tìm kiếm.
+            </Text>
           )
         }
-        renderItem={({ item }) => <LocationCard item={item} />}
+        renderItem={({ item }) => <LocationCard item={item} width={cardWidth} />}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor="#0d9488" />
+          <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
         }
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
-function StatTile({ icon, label, value, loading, color }: { icon: any; label: string; value: number; loading: boolean; color: string }) {
+function StatTile({
+  label,
+  value,
+  loading,
+  icon,
+  tint,
+  bordered,
+}: {
+  label: string;
+  value: number;
+  loading: boolean;
+  icon: "location-outline" | "bookmark-outline" | "ticket-outline";
+  tint: string;
+  bordered: boolean;
+}) {
   return (
-    <View style={styles.statTile}>
-      <View style={[styles.statIconBox, { backgroundColor: color + "1a" }]}>
-        <Ionicons name={icon} size={20} color={color} />
+    <View
+      className="flex-1 items-center gap-2 px-2 py-4"
+      style={bordered ? { borderRightWidth: 1, borderRightColor: "#e2e8f0" } : undefined}
+    >
+      <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tint}18` }}>
+        <Ionicons name={icon} size={18} color={tint} />
       </View>
-      <Text style={[styles.statValue, { color }]}>{loading ? "-" : value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text className="text-2xl font-extrabold" style={{ color: tint }}>
+        {loading ? "..." : String(value)}
+      </Text>
+      <Text className="text-[13px] font-bold text-slate-500">{label}</Text>
     </View>
   );
 }
 
-function LocationCard({ item }: { item: LocationItem }) {
+function LocationCard({
+  item,
+  width,
+}: {
+  item: LocationItem;
+  width: number;
+}) {
   const imageUrl = resolveBackendUrl(item.first_image || item.images?.[0] || null);
   const rating = Number(item.rating || 0);
+  const reviewCount = Number(item.total_reviews || 0);
   const typeLabel = getTypeLabel(item.location_type);
-  const cardWidth = (width - 48) / 2; // 2 columns with paddings
 
   return (
-    <Pressable style={[styles.locationCard, { width: cardWidth }]}>
-      <View style={styles.locationImageWrap}>
+    <Pressable
+      className="overflow-hidden rounded-2xl border border-line bg-white"
+      style={{ width }}
+      hitSlop={{ top: 6, left: 6, right: 6, bottom: 6 }}
+      accessibilityRole="button"
+    >
+      <View
+        className="w-full bg-slate-200"
+        style={{ height: Math.min(120, Math.round(width * 0.72)) }}
+      >
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.locationImage} resizeMode="cover" />
+          <Image source={{ uri: imageUrl }} className="h-full w-full" resizeMode="cover" />
         ) : (
-          <View style={styles.imagePlaceholder}>
-            <Ionicons name="image-outline" size={32} color="#cbd5e1" />
+          <View className="flex-1 items-center justify-center bg-slate-200">
+            <Text className="font-bold text-slate-500">Chưa có ảnh</Text>
           </View>
         )}
-        <View style={styles.locationTypeBadge}>
-          <Text style={styles.locationTypeBadgeText}>{typeLabel}</Text>
-        </View>
       </View>
 
-      <View style={styles.locationBody}>
-        <Text style={styles.locationName} numberOfLines={1}>
+      <View className="gap-1.5 p-3">
+        <Text className="text-[11px] font-bold text-brand-600">{typeLabel}</Text>
+        <Text className="text-sm font-extrabold text-slate-900" numberOfLines={1}>
           {item.location_name}
         </Text>
-        <Text style={styles.locationAddress} numberOfLines={1}>
-          <Ionicons name="location-outline" size={12} color="#64748b" /> {shortAddress(item.address)}
+        <Text className="text-xs text-slate-500">
+          {rating > 0 ? rating.toFixed(1) : "0"} điểm | {reviewCount} đánh giá
         </Text>
-        
-        <View style={styles.locationFooter}>
-          <View style={styles.ratingBox}>
-            <Ionicons name="star" size={12} color="#fbbf24" />
-            <Text style={styles.ratingText}>{rating > 0 ? rating.toFixed(1) : "Chưa có"}</Text>
-          </View>
-        </View>
+        <Text className="text-xs leading-[18px] text-slate-600" numberOfLines={2}>
+          {shortAddress(item.address)}
+        </Text>
       </View>
     </Pressable>
   );
@@ -416,12 +612,17 @@ function LocationCard({ item }: { item: LocationItem }) {
 
 function shortAddress(address: string) {
   const parts = address.split(",").map((item) => item.trim());
-  if (parts.length <= 2) return address;
+
+  if (parts.length <= 2) {
+    return address;
+  }
+
   return `${parts[0]}, ${parts[1]}`;
 }
 
 function getTypeLabel(value: string) {
   const normalized = String(value || "").toLowerCase();
+
   if (normalized === "restaurant") return "Nhà hàng";
   if (normalized === "cafe") return "Quán cafe";
   if (normalized === "hotel") return "Khách sạn";
@@ -429,275 +630,3 @@ function getTypeLabel(value: string) {
   if (normalized === "tourist") return "Du lịch";
   return "Địa điểm";
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8fafc", // Nền xám nhạt cao cấp
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-  },
-  headerContainer: {
-    gap: 28,
-    paddingBottom: 24,
-  },
-  heroSection: {
-    gap: 16,
-  },
-  greeting: {
-    fontSize: 24,
-    color: "#334155",
-    lineHeight: 32,
-  },
-  firstName: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: "#0f172a",
-  },
-  dateText: {
-    color: "#64748b",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  weatherBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#ccfbf1",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    alignSelf: "flex-start",
-    gap: 8,
-  },
-  weatherBadgeText: {
-    color: "#0f766e",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  section: {
-    gap: 14,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  textLink: {
-    color: "#0d9488",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  quickActionGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  quickActionItem: {
-    alignItems: "center",
-    gap: 8,
-    width: "22%",
-  },
-  quickActionIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quickActionLabel: {
-    color: "#334155",
-    fontWeight: "600",
-    fontSize: 12,
-  },
-  statsContainer: {
-    backgroundColor: "#ffffff",
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: "#cbd5e1",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 8,
-  },
-  statTile: {
-    flex: 1,
-    alignItems: "center",
-    gap: 6,
-  },
-  statIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  statValue: {
-    fontWeight: "800",
-    fontSize: 20,
-  },
-  statLabel: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: "#e2e8f0",
-  },
-  gpsBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fef3c7",
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#fde68a",
-    gap: 12,
-  },
-  gpsBannerTitle: {
-    color: "#92400e",
-    fontWeight: "800",
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  gpsBannerText: {
-    color: "#b45309",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  searchInput: {
-    height: 52,
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    shadowColor: "#e2e8f0",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  categoryScroll: {
-    gap: 10,
-    paddingVertical: 4,
-  },
-  categoryChip: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  categoryChipActive: {
-    backgroundColor: "#0d9488",
-    borderColor: "#0d9488",
-  },
-  categoryText: {
-    color: "#475569",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  categoryTextActive: {
-    color: "#ffffff",
-  },
-  columnWrap: {
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  locationCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    overflow: "hidden",
-    shadowColor: "#cbd5e1",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-  },
-  locationImageWrap: {
-    width: "100%",
-    height: 120,
-    backgroundColor: "#f1f5f9",
-    position: "relative",
-  },
-  locationImage: {
-    width: "100%",
-    height: "100%",
-  },
-  imagePlaceholder: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  locationTypeBadge: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  locationTypeBadgeText: {
-    color: "#ffffff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  locationBody: {
-    padding: 12,
-    gap: 4,
-  },
-  locationName: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-  locationAddress: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  locationFooter: {
-    marginTop: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  ratingBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#334155",
-  },
-  emptyContainer: {
-    paddingVertical: 40,
-    alignItems: "center",
-  },
-  emptyText: {
-    color: "#64748b",
-    fontSize: 15,
-  },
-});
-

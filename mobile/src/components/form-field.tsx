@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 
 type FormFieldProps = {
   label: string;
@@ -11,11 +11,7 @@ type FormFieldProps = {
   secureTextEntry?: boolean;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
   autoCorrect?: boolean;
-  keyboardType?:
-    | "default"
-    | "email-address"
-    | "number-pad"
-    | "phone-pad";
+  keyboardType?: "default" | "email-address" | "number-pad" | "phone-pad";
 };
 
 export function FormField({
@@ -33,9 +29,14 @@ export function FormField({
   const [revealed, setRevealed] = useState(false);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputWrap, error ? styles.inputWrapError : null]}>
+    <View className="gap-2">
+      <Text className="text-sm font-bold text-slate-800">{label}</Text>
+      <View
+        className={[
+          "min-h-[52px] flex-row items-center gap-3 rounded-xl border bg-white px-4",
+          error ? "border-rose-400" : "border-slate-300",
+        ].join(" ")}
+      >
         <TextInput
           value={value}
           onBlur={() => onBlur?.()}
@@ -46,56 +47,17 @@ export function FormField({
           autoCapitalize={autoCapitalize}
           autoCorrect={autoCorrect}
           keyboardType={keyboardType}
-          style={styles.input}
+          className="flex-1 py-3.5 text-[15px] text-slate-900"
         />
         {secureTextEntry ? (
-          <Text style={styles.toggle} onPress={() => setRevealed((current) => !current)}>
-            {revealed ? "Ẩn" : "Hiện"}
-          </Text>
+          <Pressable onPress={() => setRevealed((current) => !current)} hitSlop={10}>
+            <Text className="text-sm font-bold text-brand-600">
+              {revealed ? "Ẩn" : "Hiện"}
+            </Text>
+          </Pressable>
         ) : null}
       </View>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text className="text-[13px] leading-[18px] text-rose-700">{error}</Text> : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#1f2937",
-  },
-  inputWrap: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    backgroundColor: "#ffffff",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    gap: 12,
-  },
-  inputWrapError: {
-    borderColor: "#fb7185",
-  },
-  input: {
-    flex: 1,
-    color: "#111827",
-    fontSize: 15,
-    paddingVertical: 14,
-  },
-  toggle: {
-    color: "#0f766e",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  errorText: {
-    color: "#be123c",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-});

@@ -17,6 +17,8 @@ import ownerApi from "../../api/ownerApi";
 import { formatMoney } from "../../utils/formatMoney";
 import { statusToVi } from "../../utils/statusText";
 import { getErrorMessage } from "../../utils/safe";
+import { FileExcelOutlined } from "@ant-design/icons";
+import { exportOwnerCommissions } from "../../utils/exportOwnerCommissions";
 
 type CommissionRow = {
   commission_id: number;
@@ -111,15 +113,51 @@ const OwnerCommissions = () => {
         dataIndex: "status",
         render: (s: string) => (
           <Tag
-            color={s === "paid" ? "green" : s === "pending" ? "orange" : "red"}
+            color={
+              s === "paid" ? "green"
+              : s === "payment_submitted" ? "blue"
+              : s === "pending" ? "orange"
+              : "red"
+            }
           >
-            {statusToVi(s)}
+            {s === "payment_submitted" ? "Chờ admin duyệt" 
+             : s === "pending" ? "Chờ thanh toán" 
+             : statusToVi(s)}
           </Tag>
         ),
       },
     ],
     [],
   );
+
+  // Only pending/overdue items need payment (NOT payment_submitted - those are waiting admin)
+  const unpaidItems = useMemo(
+    () => items.filter((x) => ["pending", "overdue"].includes(String(x?.status || ""))),
+    [items],
+  );
+  
+  const groupedItems = useMemo(() => {
+    const result: CommissionRow[] = [];
+    const submittedItems = items.filter(x => String(x?.status || "") === "payment_submitted");
+    const otherItems = items.filter(x => String(x?.status || "") !== "payment_submitted");
+
+    if (submittedItems.length > 1) {
+      const totalAmount = submittedItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
+      result.push({
+        ...submittedItems[0],
+        commission_id: -999, // Virtual ID for grouped row
+        billing_period: `Yêu cầu thanh toán gộp (${submittedItems.length} kỳ)`,
+        commission_amount: totalAmount,
+      });
+    } else if (submittedItems.length === 1) {
+      result.push(submittedItems[0]);
+    }
+
+    result.push(...otherItems);
+    
+    // Sort logic to keep consistent order: group submitted first or follow original date
+    return result;
+  }, [items]);
 
   const filteredPendingItems = useMemo(() => {
     if (!filterMonth) return pendingItems;
@@ -132,14 +170,18 @@ const OwnerCommissions = () => {
       return t >= start && t <= end;
     });
   }, [pendingItems, filterMonth]);
-
-  const unpaidItems = useMemo(
-    () => items.filter((x) => String(x?.status || "") !== "paid"),
-    [items],
-  );
   const unpaidTotal = useMemo(() => {
     return unpaidItems.reduce((sum, x) => sum + Number(x?.total_due || 0), 0);
   }, [unpaidItems]);
+
+  // Items submitted by owner, waiting admin to confirm
+  const submittedItems = useMemo(
+    () => items.filter((x) => String(x?.status || "") === "payment_submitted"),
+    [items],
+  );
+  const submittedTotal = useMemo(() => {
+    return submittedItems.reduce((sum, x) => sum + Number(x?.total_due || 0), 0);
+  }, [submittedItems]);
 
   const pendingTotal = useMemo(() => {
     return pendingItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
@@ -276,11 +318,11 @@ const OwnerCommissions = () => {
   return (
     <MainLayout>
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className={`rounded-2xl text-white shadow-md border-none ${unpaidTotal > 0 ? 'bg-gradient-to-r from-orange-500 to-red-600' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>
             <div className="flex flex-col h-full justify-between gap-4">
               <div>
-                <div className="text-white/90 text-sm font-medium mb-1">Tổng tiền cần thanh toán (Đã chốt)</div>
+                <div className="text-white/90 text-sm font-medium mb-1">Cần thanh toán (Đã chốt)</div>
                 <div className="text-3xl font-bold">{formatMoney(unpaidTotal)}</div>
               </div>
               <div className="flex flex-wrap items-end justify-between gap-2 mt-2">
@@ -301,6 +343,21 @@ const OwnerCommissions = () => {
                 >
                   Thanh toán tất cả
                 </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Card: submitted, waiting admin approval */}
+          <Card className={`rounded-2xl text-white shadow-md border-none ${submittedTotal > 0 ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-gradient-to-r from-slate-400 to-slate-500'}`}>
+            <div className="flex flex-col h-full justify-between gap-4">
+              <div>
+                <div className="text-white/90 text-sm font-medium mb-1">Đã nộp – Chờ Admin duyệt</div>
+                <div className="text-3xl font-bold">{formatMoney(submittedTotal)}</div>
+              </div>
+              <div className="text-white/70 text-xs mt-2">
+                {submittedItems.length > 0
+                  ? `${submittedItems.length} kỳ đang chờ xác nhận từ Admin.`
+                  : 'Không có kỳ nào đang chờ duyệt.'}
               </div>
             </div>
           </Card>
@@ -330,11 +387,28 @@ const OwnerCommissions = () => {
         </div>
 
         <Card
-          title="Chi tiết các khoản hoa hồng đã chốt"
+          title={
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <span>Chi tiết các khoản hoa hồng đã chốt</span>
+              <Button
+                icon={<FileExcelOutlined />}
+                onClick={async () => {
+                  try {
+                    await exportOwnerCommissions(groupedItems, "Owner");
+                  } catch (err: any) {
+                    message.error(err.message || "Lỗi khi xuất Excel");
+                  }
+                }}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
+              >
+                Xuất file
+              </Button>
+            </div>
+          }
           loading={loading}
           className="rounded-2xl"
         >
-          <Table rowKey="commission_id" dataSource={items} columns={columns} pagination={false} />
+          <Table rowKey="commission_id" dataSource={groupedItems} columns={columns} pagination={false} />
         </Card>
 
         <Card

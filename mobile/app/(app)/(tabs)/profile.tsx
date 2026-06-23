@@ -1,28 +1,57 @@
 import { useRouter } from "expo-router";
+import { Pressable, Text, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ScreenShell } from "../../../src/components/screen-shell";
-import { PlaceholderPanel } from "../../../src/components/placeholder-panel";
 import { useAuthStore } from "../../../src/modules/auth/store";
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((state) => state.user);
   const signOut = useAuthStore((state) => state.signOut);
 
   return (
-    <ScreenShell
-      title="Hồ sơ"
-      framed={false}
-    >
-      <PlaceholderPanel
-        title={user?.full_name ?? "Tài khoản người dùng"}
-        description={`Email: ${user?.email ?? "Chưa có"}\nVai trò: ${user?.role ?? "user"}\nPhiên hiện tại sẽ yêu cầu đăng nhập lại khi bạn mở app lần sau.`}
-        actionLabel="Đăng xuất"
-        onAction={async () => {
-          await signOut();
-          router.replace("/sign-in");
-        }}
-      />
-    </ScreenShell>
+    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right", "bottom"]}>
+      <View
+        className="flex-1 px-5 pt-4"
+        style={{ paddingBottom: Math.max(insets.bottom, 16) + 12 }}
+      >
+        <View className="gap-2 pb-5">
+          <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
+            Hồ sơ
+          </Text>
+          <Text className="text-[15px] leading-[23px] text-slate-600">
+            Thông tin tài khoản người dùng và phiên đăng nhập hiện tại.
+          </Text>
+        </View>
+
+        <View className="gap-4 rounded-2xl border border-line bg-white p-5">
+          <View className="gap-2">
+            <Text className="text-2xl font-extrabold text-slate-900">
+              {user?.full_name ?? "Tài khoản người dùng"}
+            </Text>
+            <Text className="text-[15px] leading-6 text-slate-600">
+              Email: {user?.email ?? "Chưa có"}
+            </Text>
+            <Text className="text-[15px] leading-6 text-slate-600">
+              Vai trò: {user?.role ?? "user"}
+            </Text>
+            <Text className="text-[15px] leading-6 text-slate-600">
+              Mỗi lần mở app sẽ cần đăng nhập lại theo yêu cầu dự án hiện tại.
+            </Text>
+          </View>
+
+          <Pressable
+            className="min-h-[50px] items-center justify-center rounded-2xl bg-brand-600"
+            onPress={async () => {
+              await signOut();
+              router.replace("/sign-in");
+            }}
+          >
+            <Text className="text-base font-extrabold text-white">Đăng xuất</Text>
+          </Pressable>
+        </View>
+      </View>
+    </SafeAreaView>
   );
 }

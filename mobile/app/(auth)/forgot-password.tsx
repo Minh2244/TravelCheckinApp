@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
@@ -174,10 +174,10 @@ export default function ForgotPasswordScreen() {
 
   return (
     <ScreenShell title={screenCopy.title} subtitle={screenCopy.subtitle} onBack={goBack}>
-      <View style={styles.formGroup}>
+      <View className="gap-[18px]">
         {submitError ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{submitError}</Text>
+          <View className="rounded-xl border border-rose-200 bg-rose-50 p-3.5">
+            <Text className="leading-5 text-rose-700">{submitError}</Text>
           </View>
         ) : null}
 
@@ -229,10 +229,10 @@ export default function ForgotPasswordScreen() {
 
         {step === 2 ? (
           <>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoLabel}>Thông tin xác nhận</Text>
-              <Text style={styles.infoValue}>Email: {email}</Text>
-              <Text style={styles.infoValue}>Số điện thoại: {phone}</Text>
+            <View className="gap-1 rounded-xl border border-cyan-200 bg-cyan-50 p-3.5">
+              <Text className="text-[13px] font-bold text-brand-600">Thông tin xác nhận</Text>
+              <Text className="leading-6 text-cyan-900">Email: {email}</Text>
+              <Text className="leading-6 text-cyan-900">Số điện thoại: {phone}</Text>
             </View>
 
             <Controller
@@ -261,13 +261,13 @@ export default function ForgotPasswordScreen() {
               disabled={otpForm.formState.isSubmitting}
             />
 
-            <View style={styles.helperBox}>
+            <View className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
               {countdown > 0 ? (
-                <Text style={styles.helperText}>
+                <Text className="leading-5 text-slate-600">
                   Nếu chưa thấy email, hãy kiểm tra lại sau {countdown} giây.
                 </Text>
               ) : (
-                <Text style={styles.helperText}>
+                <Text className="leading-5 text-slate-600">
                   Backend hiện chưa có route gửi lại mã riêng. Bạn có thể quay lại bước đầu để yêu cầu lại.
                 </Text>
               )}
@@ -277,9 +277,9 @@ export default function ForgotPasswordScreen() {
 
         {step === 3 ? (
           <>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoLabel}>Email đang đổi mật khẩu</Text>
-              <Text style={styles.infoValue}>{email}</Text>
+            <View className="gap-1 rounded-xl border border-cyan-200 bg-cyan-50 p-3.5">
+              <Text className="text-[13px] font-bold text-brand-600">Email đang đổi mật khẩu</Text>
+              <Text className="leading-6 text-cyan-900">{email}</Text>
             </View>
 
             <Controller
@@ -331,48 +331,3 @@ export default function ForgotPasswordScreen() {
     </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  formGroup: {
-    gap: 18,
-  },
-  errorBox: {
-    backgroundColor: "#fff1f2",
-    borderWidth: 1,
-    borderColor: "#fecdd3",
-    borderRadius: 10,
-    padding: 14,
-  },
-  errorText: {
-    color: "#be123c",
-    lineHeight: 20,
-  },
-  infoBox: {
-    backgroundColor: "#ecfeff",
-    borderWidth: 1,
-    borderColor: "#a5f3fc",
-    borderRadius: 10,
-    padding: 14,
-    gap: 4,
-  },
-  infoLabel: {
-    color: "#0f766e",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  infoValue: {
-    color: "#164e63",
-    lineHeight: 22,
-  },
-  helperBox: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    padding: 14,
-  },
-  helperText: {
-    color: "#475569",
-    lineHeight: 20,
-  },
-});

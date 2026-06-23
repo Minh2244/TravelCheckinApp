@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
@@ -86,15 +86,15 @@ export default function VerifyEmailScreen() {
       subtitle="Nhập mã 6 số mà hệ thống vừa gửi tới email của bạn."
       onBack={() => router.back()}
     >
-      <View style={styles.formGroup}>
-        <View style={styles.infoBox}>
-          <Text style={styles.infoLabel}>Email nhận mã</Text>
-          <Text style={styles.infoValue}>{email || "Chưa có email hợp lệ"}</Text>
+      <View className="gap-[18px]">
+        <View className="gap-1 rounded-xl border border-cyan-200 bg-cyan-50 p-3.5">
+          <Text className="text-[13px] font-bold text-brand-600">Email nhận mã</Text>
+          <Text className="leading-6 text-cyan-900">{email || "Chưa có email hợp lệ"}</Text>
         </View>
 
         {submitError ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{submitError}</Text>
+          <View className="rounded-xl border border-rose-200 bg-rose-50 p-3.5">
+            <Text className="leading-5 text-rose-700">{submitError}</Text>
           </View>
         ) : null}
 
@@ -124,13 +124,13 @@ export default function VerifyEmailScreen() {
           disabled={isSubmitting || !email}
         />
 
-        <View style={styles.helperBox}>
+        <View className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
           {countdown > 0 ? (
-            <Text style={styles.helperText}>
+            <Text className="leading-5 text-slate-600">
               Bạn có thể quay lại màn đăng ký để gửi yêu cầu mới sau {countdown} giây.
             </Text>
           ) : (
-            <Text style={styles.helperText}>
+            <Text className="leading-5 text-slate-600">
               Backend hiện chưa có route gửi lại mã riêng. Nếu cần mã mới, hãy quay lại màn đăng ký.
             </Text>
           )}
@@ -139,48 +139,3 @@ export default function VerifyEmailScreen() {
     </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  formGroup: {
-    gap: 18,
-  },
-  infoBox: {
-    backgroundColor: "#ecfeff",
-    borderWidth: 1,
-    borderColor: "#a5f3fc",
-    borderRadius: 10,
-    padding: 14,
-    gap: 4,
-  },
-  infoLabel: {
-    color: "#0f766e",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  infoValue: {
-    color: "#164e63",
-    lineHeight: 22,
-  },
-  errorBox: {
-    backgroundColor: "#fff1f2",
-    borderWidth: 1,
-    borderColor: "#fecdd3",
-    borderRadius: 10,
-    padding: 14,
-  },
-  errorText: {
-    color: "#be123c",
-    lineHeight: 20,
-  },
-  helperBox: {
-    backgroundColor: "#f8fafc",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 10,
-    padding: 14,
-  },
-  helperText: {
-    color: "#475569",
-    lineHeight: 20,
-  },
-});

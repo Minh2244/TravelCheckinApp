@@ -1,4 +1,4 @@
-# Kế hoạch Triển khai Giai đoạn 3: Bản đồ Tương tác (OSM) & Màn Hình Chi Tiết
+# Kế hoạch Triển khai Giai đoạn 3: Bản đồ Tương tác, Marker Ảnh Mobile & Màn Hình Chi Tiết
 
 Tài liệu này chốt lại phạm vi chính thức của **Giai đoạn 3** cho nhánh Mobile User, tập trung vào trải nghiệm `Khám phá` trên bản đồ và `Chi tiết địa điểm`, bám sát chức năng Website nhưng không ôm luôn booking, thanh toán và tiện ích user khác.
 
@@ -6,7 +6,7 @@ Tài liệu này chốt lại phạm vi chính thức của **Giai đoạn 3** c
 
 Sau khi đối chiếu lại toàn bộ quyền `user` của Website, phạm vi chính thức của **Giai đoạn 3** được chốt như sau:
 - Tab `Khám phá` trên Mobile.
-- Bản đồ OSM, GPS, compass, marker, routing.
+- Bản đồ Google native qua `react-native-maps`, GPS, hướng di chuyển/compass, marker ảnh owner và routing.
 - Màn hình `Chi tiết địa điểm`.
 - Review của user tại địa điểm.
 - Nút `Yêu thích` ngay trong chi tiết địa điểm.
@@ -28,6 +28,24 @@ Lưu ý triển khai:
 - Nếu cần gắn nút đi sang booking từ `Chi tiết địa điểm`, chỉ dựng đúng entry-point và navigation contract.
 - Không nhúng logic VietQR, wallet, nhắc lịch, itinerary editor, push notification vào phase này.
 - Mobile luôn tái sử dụng **backend hiện tại**; không truy cập trực tiếp database `D:\app\My SQL Sever\bin`.
+
+## Quyết định kỹ thuật mới cho Map Mobile
+
+Sau khi kiểm thử thực tế trên Android/Expo Go, Phase 3 chốt hướng map như sau:
+
+- **Không dùng remote image trực tiếp bên trong custom marker của `react-native-maps`**. Trên Android, custom marker sẽ bị native map snapshot thành bitmap, dễ gây lỗi ảnh owner bị cắt nửa, trắng nửa, marker user méo hình hoặc lag khi compass cập nhật.
+- **Không dùng overlay tuyệt đối ngoài `<MapView>` cho marker chính**. Cách này làm marker "bay" khi user kéo/zoom bản đồ vì marker không còn thuộc hệ tọa độ native của map.
+- **Không chồng OSM/Leaflet và Google Map lên nhau**. Hai lớp map dễ lệch tile, lệch gesture và khó ổn định hơn trong app mobile.
+- **Nền bản đồ chính thức của Mobile Phase 3 là Google native qua `react-native-maps`** để GPS, pan/zoom, marker và polyline bám tọa độ ổn định.
+- **Ảnh owner vẫn phải hiển thị trên map**, nhưng mobile phải xử lý theo hướng:
+  - lấy `first_image` hoặc `images[0]` từ response backend;
+  - chuẩn hóa URL bằng `resolveBackendUrl`;
+  - tải ảnh về cache local bằng `expo-file-system`;
+  - crop/resize thành thumbnail vuông bằng `expo-image-manipulator`;
+  - dùng ảnh local đã chuẩn hóa cho marker, không dùng URL remote trực tiếp.
+- Nếu địa điểm không có ảnh hoặc ảnh tải lỗi, marker dùng fallback local theo `location_type` bằng màu/label đơn giản; backend không cần thay đổi.
+- User marker phải nằm trong `Marker` native để bám tọa độ, sử dụng GPS từ `expo-location`; hướng xoay lấy từ `watchHeadingAsync` hoặc `coords.heading`, có low-pass smoothing để giảm giật.
+- Backend và database giữ nguyên. Toàn bộ thay đổi xử lý ảnh marker, GPS marker và fallback marker chỉ nằm trong thư mục `mobile/`.
 
 ## Quy tắc bắt buộc cho Giai đoạn 3
 
@@ -110,14 +128,17 @@ Lưu ý triển khai:
 5. **Toán học / khoảng cách**: `npm install @turf/helpers @turf/distance @turf/bbox`
 6. **Polyline decode**: `npm install @mapbox/polyline`
 7. **Range Slider đánh giá**: `npx expo install @react-native-community/slider`
-8. **State + API**: tái dùng `zustand`, `axios` từ stack hiện tại
+8. **Cache ảnh marker**: `npx expo install expo-file-system expo-image-manipulator`
+9. **State + API**: tái dùng `zustand`, `axios` từ stack hiện tại
 
 ### Đánh giá công nghệ cho Phase 3
 
 - **Expo Router + React Native + TypeScript**: ổn, hợp với hướng chia màn hình theo flow của web.
 - **Zustand**: ổn cho location state, filters, selected marker, review draft; không cần nâng lên giải pháp nặng hơn.
-- **react-native-maps + OSM tiles**: dùng được, nhưng phải test máy thật sớm vì tile OSM + marker ảnh dễ lag nếu re-render nhiều.
-- **OSRM public API**: phù hợp để làm nhanh phase đầu; nếu traffic tăng hoặc bị rate-limit thì nên chuyển sang proxy qua backend sau.
+- **react-native-maps + Google native**: là hướng chính thức cho Mobile Phase 3 để giữ GPS, marker và polyline bám tọa độ ổn định trên Android/Expo Go.
+- **Marker ảnh owner**: không render remote image trực tiếp trong marker. Bắt buộc đi qua cache local + resize/crop thumbnail trước khi gắn vào marker.
+- **WebView/Leaflet từ website**: chỉ là phương án dự phòng nếu sau này cần tái tạo 100% trải nghiệm map website. Không dùng cho Phase 3 MVP vì phải xử lý auth, token, GPS bridge và responsive embed riêng.
+- **Routing qua backend/OSRM**: mobile ưu tiên gọi backend route proxy để lấy đường đi, backend mới quyết định dùng OSRM upstream hoặc fallback. Không để mobile phụ thuộc trực tiếp vào dịch vụ OSRM bên ngoài khi đã có backend tái sử dụng.
 - **Weather API**: nên đi qua backend giống định hướng ở `giai-doan-2-home.md`, ưu tiên `Open-Meteo` hoặc một provider miễn phí ổn định. Không nên để mobile tự ôm thêm key/API rời.
 
 ---
@@ -131,34 +152,47 @@ Lưu ý triển khai:
 - **Độ khó:** Rất cao
 
 #### Code ở đâu?
-- `mobile/app/(tabs)/explore.tsx`
-- `mobile/hooks/useLocation.ts`
-- `mobile/hooks/useCompass.ts`
-- `mobile/components/Map/UserMarker.tsx`
+- `mobile/app/(app)/(tabs)/explore.tsx`
+- `mobile/src/modules/location-permission/store.ts`
+- `mobile/src/hooks/useCompass.ts` hoặc hook heading riêng dùng `expo-location`
+- `mobile/src/components/map/UserHeadingMarker.tsx`
 
 #### Hướng xử lý chi tiết
-- Dùng `<MapView>` + `<UrlTile>` và đặt `mapType="none"` để không tải nền Google/Apple Map phía sau.
+- Dùng `<MapView provider={PROVIDER_DEFAULT}>` với nền Google native trên Android/Expo Go.
+- Không dùng `<UrlTile>` OSM trong Phase 3 MVP để tránh rủi ro tile bị chặn/rate-limit và tránh lệch khi phối hợp với native marker.
 - Xin quyền `FOREGROUND_LOCATION` ngay khi vào tab `Khám phá`.
 - Nếu user từ chối quyền vị trí thì vẫn cho xem map và marker, chỉ khóa nút định vị / routing theo vị trí thật.
-- `Magnetometer.setUpdateInterval(100)` và lọc low-pass để mũi tên đỡ rung.
-- Rotation của user marker nên cập nhật bằng `Animated` hoặc Reanimated-style transform, tránh đẩy state lên cha liên tục.
+- User marker:
+  - lấy vị trí bằng `Location.watchPositionAsync`;
+  - lấy hướng bằng `Location.watchHeadingAsync`;
+  - fallback sang `coords.heading` khi thiết bị không trả heading ổn định;
+  - dùng low-pass smoothing để tránh mũi tên rung;
+  - marker phải là child của `<Marker>` native, không dùng overlay ngoài map.
+- Nếu mũi tên định hướng gây lỗi trên một số máy Expo Go, giữ chấm vị trí native/local đơn giản trước, không để phần compass làm hỏng toàn bộ map.
 
-### 3.2. Phân hệ 2: Render Địa điểm của Owner (Markers)
+### 3.2. Phân hệ 2: Render Địa điểm của Owner (Markers Ảnh Local Cache)
 - **Độ ưu tiên:** 2
 - **Độ khó:** Trung bình
 
 #### Code ở đâu?
-- `mobile/api/locationApi.ts`
-- `mobile/store/locationStore.ts`
-- `mobile/components/Map/CustomMarker.tsx`
-- `mobile/components/Map/BottomSheetSummary.tsx`
+- `mobile/src/services/location.api.ts`
+- `mobile/src/modules/locations/use-locations.ts`
+- `mobile/src/modules/map/marker-image-cache.ts`
+- `mobile/src/components/map/OwnerCachedMarker.tsx`
+- `mobile/src/components/map/BottomSheetSummary.tsx`
 
 #### Hướng xử lý chi tiết
 - Gọi đúng endpoint `GET /api/locations`.
 - Tái sử dụng shape dữ liệu location từ web, tránh tạo DTO mobile lệch tên field nếu không thật sự cần.
-- `CustomMarker` phải bọc ảnh bằng `View` cố định kích thước + `overflow: 'hidden'` để tránh lỗi ảnh chỉ hiện 1 góc.
-- Marker cần `React.memo()` để không re-render theo GPS/compass state.
-- Bottom sheet tóm tắt cần có 3 hành động ngắn: `Chỉ đường`, `Xem chi tiết`, `Yêu thích`.
+- Ảnh marker lấy theo thứ tự:
+  1. `location.first_image`
+  2. `location.images?.[0]`
+  3. fallback marker local theo `location_type`
+- Không truyền URL remote trực tiếp vào custom marker.
+- Mobile tạo cache key theo `location_id + image_url` để khi owner đổi ảnh thì app tự tải lại.
+- Ảnh sau khi tải về phải được crop/resize thành thumbnail nhỏ, ví dụ `72x72` hoặc `96x96`, rồi dùng URI local cho marker.
+- Marker cần `React.memo()` và hạn chế `tracksViewChanges`; chỉ bật khi ảnh vừa tải/chưa ổn định, sau đó tắt để giảm lag Android.
+- Bottom sheet tóm tắt vẫn hiển thị ảnh lớn từ backend hoặc ảnh cache local, có 3 hành động ngắn: `Chỉ đường`, `Xem chi tiết`, `Yêu thích`.
 
 ### 3.3. Phân hệ 3: Màn hình Chi tiết Địa điểm (Đồng bộ Web)
 - **Độ ưu tiên:** 3
@@ -185,11 +219,11 @@ Lưu ý triển khai:
 - **Độ khó:** Rất cao
 
 #### Code ở đâu?
-- `mobile/api/osrmApi.ts`
-- `mobile/components/Map/RoutePolyline.tsx`
+- `mobile/src/services/osrm.api.ts`
+- `mobile/src/components/map/RoutePolyline.tsx`
 
 #### Hướng xử lý chi tiết
-- OSRM trả về theo chuẩn `[longitude, latitude]`, cần chuyển về `{ latitude, longitude }` cho React Native Maps.
+- Backend route proxy / OSRM trả về theo chuẩn `[longitude, latitude]` hoặc GeoJSON, cần chuyển về `{ latitude, longitude }` cho React Native Maps tại đúng một lớp service.
 - Polyline dùng `strokeWidth={5}` trở lên, `lineCap="round"`, `lineJoin="round"`.
 - Chỉ fetch lại route khi user lệch đáng kể khỏi vị trí bắt đầu, ví dụ trên `15m`, để tránh GPS drift gây spam request.
 - Khi vào mode routing, UI phải có trạng thái thoát rõ ràng: `Huỷ chỉ đường`.
@@ -200,8 +234,9 @@ Lưu ý triển khai:
 
 - **Cấp độ khó tổng thể**: 5/5
 - **Rủi ro lớn nhất**:
-  - Marker nhiều ảnh gây lag.
-  - Compass rung và xoay sai hướng.
+  - Custom marker có ảnh remote trực tiếp bị Android snapshot lỗi.
+  - Marker ảnh nhiều gây lag nếu không cache/resize/tắt `tracksViewChanges`.
+  - Compass rung, xoay sai hướng hoặc không có heading trên một số máy.
   - Polyline sai hệ tọa độ.
   - Layout detail bị che bởi notch / bottom inset.
   - Location detail bị phình phạm vi do cố nhét booking và tiện ích phase sau.
@@ -209,14 +244,18 @@ Lưu ý triển khai:
 ### 4.1. Giải pháp kỹ thuật phòng ngừa
 
 #### 1. Khắc phục giật lag Bản đồ
+- Cache và resize ảnh marker ở mobile trước khi render.
+- Không dùng remote image trực tiếp trong marker.
 - Memo marker.
 - Tách compass animation khỏi state cha.
-- Chỉ load tile và marker trong vùng cần thiết, không render các khối detail nặng ngay trên tab map.
+- Chỉ render marker trong vùng cần thiết nếu số lượng địa điểm tăng mạnh.
+- Không render các khối detail nặng ngay trên tab map.
 
 #### 2. Khắc phục đơ la bàn hoặc xoay sai hướng
 - Dùng low-pass filter.
 - Cleanup sensor listeners đúng vòng đời tab.
 - Ưu tiên trải nghiệm ổn định hơn tần số update quá cao.
+- Có fallback: nếu heading không ổn định, hiển thị chấm vị trí user hoặc mũi tên cố định theo hướng di chuyển gần nhất, không làm marker biến mất.
 
 #### 3. Khắc phục route sai lệch
 - Chuẩn hóa transform toạ độ ở đúng một chỗ.
@@ -324,8 +363,10 @@ Giao diện bám website nhưng tối ưu cho mobile. Màn hình chia theo tab c
 
 ### Definition of Done cho Giai đoạn 3
 
-- Tab `Khám phá` chạy ổn với OSM tile, GPS, compass.
-- Marker địa điểm owner hiển thị đúng và bấm được.
+- Tab `Khám phá` chạy ổn với Google native map, GPS, compass/heading và polyline.
+- Marker địa điểm owner hiển thị đúng tọa độ, bấm được, có ảnh local cache khi backend có ảnh.
+- Địa điểm không có ảnh phải có fallback marker local rõ ràng, không để marker trắng/vỡ.
+- User marker bám đúng vị trí; mũi tên định hướng có fallback ổn định nếu thiết bị không trả heading tốt.
 - `Location Detail` bám đúng cấu trúc website user.
 - Review list + review submit flow được nối backend hoặc ít nhất khóa UI shell đúng contract.
 - Favorite tại location detail đồng bộ được với backend hiện tại.

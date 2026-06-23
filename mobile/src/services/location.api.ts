@@ -17,4 +17,12 @@ export const locationApi = {
     const response = await api.get<LocationListResponse>("/locations", { params });
     return response.data;
   },
+  async getLocationById(id: string | number) {
+    const response = await api.get<{ success: boolean; data: LocationItem }>(`/locations/${id}`);
+    return response.data;
+  },
+  async getReviews(id: string | number) {
+    const response = await api.get<{ success: boolean; data: any[] }>(`/locations/${id}/reviews`);
+    return response.data;
+  },
 };

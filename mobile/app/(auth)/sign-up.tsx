@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
@@ -76,10 +76,10 @@ export default function SignUpScreen() {
       subtitle="Tạo tài khoản mới để tiếp tục hành trình trên mobile."
       onBack={() => router.back()}
     >
-      <View style={styles.formGroup}>
+      <View className="gap-[18px]">
         {submitError ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{submitError}</Text>
+          <View className="rounded-xl border border-rose-200 bg-rose-50 p-3.5">
+            <Text className="leading-5 text-rose-700">{submitError}</Text>
           </View>
         ) : null}
 
@@ -176,46 +176,13 @@ export default function SignUpScreen() {
           disabled={isSubmitting}
         />
 
-        <View style={styles.switchRow}>
-          <Text style={styles.switchText}>Đã có tài khoản?</Text>
+        <View className="flex-row items-center justify-center gap-2 pt-1.5">
+          <Text className="text-sm text-slate-600">Đã có tài khoản?</Text>
           <Pressable onPress={() => router.replace("/sign-in")}>
-            <Text style={styles.switchLink}>Đăng nhập ngay</Text>
+            <Text className="text-sm font-bold text-brand-600">Đăng nhập ngay</Text>
           </Pressable>
         </View>
       </View>
     </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  formGroup: {
-    gap: 18,
-  },
-  errorBox: {
-    backgroundColor: "#fff1f2",
-    borderWidth: 1,
-    borderColor: "#fecdd3",
-    borderRadius: 10,
-    padding: 14,
-  },
-  errorText: {
-    color: "#be123c",
-    lineHeight: 20,
-  },
-  switchRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 6,
-  },
-  switchText: {
-    color: "#475569",
-    fontSize: 14,
-  },
-  switchLink: {
-    color: "#0f766e",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-});

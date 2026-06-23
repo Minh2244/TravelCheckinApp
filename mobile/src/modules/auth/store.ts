@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { configureApiAuthBridge } from "../../lib/api";
 import {
   clearStoredSession,
+  loadStoredSession,
+  persistSession,
 } from "../../lib/storage";
 import { authApi } from "./auth.api";
 import type { AuthUser, SocialSession } from "./types";
@@ -38,6 +40,8 @@ async function applySession({
     throw new Error("Ứng dụng mobile hiện chỉ mở cho tài khoản người dùng.");
   }
 
+  await persistSession({ accessToken, refreshToken, user });
+
   useAuthStore.setState({
     status: "authenticated",
     user,
@@ -67,15 +71,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshToken: null,
   notice: null,
   bootstrap: async () => {
-    await clearStoredSession();
-    set({
-      hydrated: true,
-      status: "guest",
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      notice: null,
-    });
+    try {
+      const stored = await loadStoredSession();
+      if (stored) {
+        set({
+          hydrated: true,
+          status: "authenticated",
+          user: stored.user,
+          accessToken: stored.accessToken,
+          refreshToken: stored.refreshToken,
+          notice: null,
+        });
+      } else {
+        set({
+          hydrated: true,
+          status: "guest",
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          notice: null,
+        });
+      }
+    } catch {
+      set({
+        hydrated: true,
+        status: "guest",
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        notice: null,
+      });
+    }
   },
   signIn: async (email, password) => {
     const response = await authApi.login({

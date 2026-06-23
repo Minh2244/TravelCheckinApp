@@ -1,14 +1,13 @@
 import { ReactNode } from "react";
 import {
-  StyleProp,
-  ViewStyle,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
+  StyleProp,
   Text,
   View,
+  ViewStyle,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -36,63 +35,89 @@ export function ScreenShell({
   const insets = useSafeAreaInsets();
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right", "bottom"]}>
       <KeyboardAvoidingView
-        style={styles.flex}
+        className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {scrollable ? (
           <ScrollView
-            style={styles.flex}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: 24 },
-            ]}
+            className="flex-1"
+            bounces={false}
+            overScrollMode="never"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              flexGrow: 1,
+              paddingTop: 12,
+              paddingHorizontal: 20,
+              paddingBottom: Math.max(insets.bottom, 18) + 18,
+            }}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={[styles.container, contentStyle]}>
+            <View className="flex-1 w-full max-w-[560px] self-center gap-[18px]" style={contentStyle}>
               {onBack ? (
-                <Pressable onPress={onBack} style={styles.backButton}>
-                  <Text style={styles.backLabel}>Quay lại</Text>
+                <Pressable onPress={onBack} className="self-start py-2 pr-4">
+                  <Text className="text-[15px] font-bold text-brand-600">Quay lại</Text>
                 </Pressable>
               ) : null}
 
               {!hideHeader ? (
-                <View style={styles.header}>
-                  <Text style={styles.title}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                <View className="gap-2 pt-2">
+                  <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
+                    {title}
+                  </Text>
+                  {subtitle ? (
+                    <Text className="text-[15px] leading-[23px] text-slate-600">{subtitle}</Text>
+                  ) : null}
                 </View>
               ) : null}
 
-              {framed ? <View style={styles.panel}>{children}</View> : children}
+              {framed ? (
+                <View className="gap-4 rounded-xl border border-line bg-white p-[18px]">
+                  {children}
+                </View>
+              ) : (
+                children
+              )}
             </View>
           </ScrollView>
         ) : (
           <View
+            className="flex-1 px-5 pt-3"
             style={[
-              styles.flex,
-              styles.nonScrollableContent,
               {
-                paddingBottom: 24,
+                paddingBottom: Math.max(insets.bottom, 12),
               },
               contentStyle,
             ]}
           >
-            <View style={styles.container}>
+            <View className="flex-1 w-full max-w-[560px] self-center gap-[18px]">
               {onBack ? (
-                <Pressable onPress={onBack} style={styles.backButton}>
-                  <Text style={styles.backLabel}>Quay lại</Text>
+                <Pressable onPress={onBack} className="self-start py-2 pr-4">
+                  <Text className="text-[15px] font-bold text-brand-600">Quay lại</Text>
                 </Pressable>
               ) : null}
 
               {!hideHeader ? (
-                <View style={styles.header}>
-                  <Text style={styles.title}>{title}</Text>
-                  {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                <View className="gap-2 pt-2">
+                  <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
+                    {title}
+                  </Text>
+                  {subtitle ? (
+                    <Text className="text-[15px] leading-[23px] text-slate-600">{subtitle}</Text>
+                  ) : null}
                 </View>
               ) : null}
 
-              <View style={styles.flex}>{framed ? <View style={styles.panel}>{children}</View> : children}</View>
+              <View className="flex-1">
+                {framed ? (
+                  <View className="gap-4 rounded-xl border border-line bg-white p-[18px]">
+                    {children}
+                  </View>
+                ) : (
+                  children
+                )}
+              </View>
             </View>
           </View>
         )}
@@ -100,62 +125,3 @@ export function ScreenShell({
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#eef2f3",
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  container: {
-    width: "100%",
-    maxWidth: 560,
-    alignSelf: "center",
-    gap: 18,
-    flex: 1,
-  },
-  nonScrollableContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  backButton: {
-    alignSelf: "flex-start",
-    paddingVertical: 8,
-    paddingRight: 16,
-  },
-  backLabel: {
-    color: "#0f766e",
-    fontWeight: "700",
-    fontSize: 15,
-  },
-  header: {
-    gap: 8,
-    paddingTop: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#111827",
-    lineHeight: 34,
-  },
-  subtitle: {
-    color: "#475569",
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  panel: {
-    backgroundColor: "#ffffff",
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    borderRadius: 12,
-    padding: 18,
-    gap: 16,
-  },
-});

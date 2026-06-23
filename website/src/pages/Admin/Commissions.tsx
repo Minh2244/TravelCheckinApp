@@ -637,7 +637,9 @@ const Commissions = () => {
                     </Button>
 
                     <Popconfirm
-                      title="Xác nhận đã nhận tiền và đánh dấu các khoản nợ là đã thanh toán?"
+                      title="Xác nhận thanh toán?"
+                      description="Đánh dấu các khoản hoa hồng trong yêu cầu này là đã thanh toán."
+                      placement="topRight"
                       onConfirm={async () => {
                         try {
                           const res = await adminApi.confirmCommissionPaymentRequest(r.request_id);
@@ -661,6 +663,37 @@ const Commissions = () => {
                         style={{ borderRadius: 8 }}
                       >
                         Xác nhận
+                      </Button>
+                    </Popconfirm>
+
+                    <Popconfirm
+                      title="Từ chối yêu cầu?"
+                      description="Yêu cầu thanh toán sẽ bị hủy và các khoản hoa hồng sẽ trở về trạng thái Chờ thanh toán."
+                      placement="topRight"
+                      onConfirm={async () => {
+                        try {
+                          const res = await adminApi.cancelCommissionPaymentRequest(r.request_id);
+                          if (res?.success) {
+                            message.success("Đã hủy yêu cầu thanh toán");
+                            fetchCommissions();
+                            fetchPaymentRequests();
+                          }
+                        } catch (err: unknown) {
+                          message.error(getApiErrorMessage(err, "Lỗi hủy yêu cầu"));
+                        }
+                      }}
+                      okText="Từ chối"
+                      cancelText="Đóng"
+                      okButtonProps={{ danger: true }}
+                      disabled={r.is_fully_paid}
+                    >
+                      <Button
+                        size="small"
+                        danger
+                        disabled={r.is_fully_paid}
+                        style={{ borderRadius: 8 }}
+                      >
+                        Từ chối
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -801,6 +834,7 @@ const Commissions = () => {
                     <Popconfirm
                       title={`Gửi thông báo quá hạn đến ${r.owner_name}?`}
                       description="Owner sẽ nhận thông báo nhắc hoa hồng quá hạn."
+                      disabled={r.status === 'paid'}
                       onConfirm={async () => {
                         try {
                           const res = await adminApi.createPushNotification({
@@ -821,10 +855,11 @@ const Commissions = () => {
                       <Button
                         size="small"
                         icon={<WarningOutlined />}
+                        disabled={r.status === 'paid'}
                         style={{
                           borderRadius: 8,
-                          borderColor: '#ef4444',
-                          color: '#dc2626',
+                          borderColor: r.status === 'paid' ? undefined : '#ef4444',
+                          color: r.status === 'paid' ? undefined : '#dc2626',
                         }}
                       >
                         Quá hạn
@@ -835,6 +870,7 @@ const Commissions = () => {
                     <Popconfirm
                       title={`Gửi nhắc nhở hết hạn đến ${r.owner_name}?`}
                       description="Owner sẽ nhận thông báo nhắc kỳ đối soát sắp đến hạn."
+                      disabled={r.status === 'paid'}
                       onConfirm={async () => {
                         try {
                           const res = await adminApi.createPushNotification({
@@ -854,10 +890,11 @@ const Commissions = () => {
                       <Button
                         size="small"
                         icon={<ClockCircleOutlined />}
+                        disabled={r.status === 'paid'}
                         style={{
                           borderRadius: 8,
-                          borderColor: '#f59e0b',
-                          color: '#d97706',
+                          borderColor: r.status === 'paid' ? undefined : '#f59e0b',
+                          color: r.status === 'paid' ? undefined : '#d97706',
                         }}
                       >
                         Hết hạn
