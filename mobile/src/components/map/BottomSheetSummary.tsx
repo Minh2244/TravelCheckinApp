@@ -7,35 +7,40 @@ import { resolveBackendUrl } from "../../lib/url";
 import type { LocationItem } from "../../types/location";
 
 export function BottomSheetSummary({
+  isFavorite,
   location,
   onClose,
   onRoute,
+  onToggleFavorite,
 }: {
+  isFavorite: boolean;
   location: LocationItem;
   onClose: () => void;
   onRoute: () => void;
+  onToggleFavorite: () => void;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const imageUrl = resolveBackendUrl(location.first_image || location.images?.[0] || null);
+  const imageUrl = resolveBackendUrl(
+    location.first_image || location.images?.[0] || null,
+  );
   const rating = Number(location.rating || 0);
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View style={styles.header}>
         <View style={styles.dragHandle} />
         <Pressable onPress={onClose} style={styles.closeButton} hitSlop={10}>
-          <Ionicons name="close" size={24} color="#64748b" />
+          <Ionicons name="close" size={22} color="#64748b" />
         </Pressable>
       </View>
 
       <View style={styles.content}>
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.image} />
+          <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="cover" />
         ) : (
           <View style={[styles.image, styles.imagePlaceholder]}>
-            <Ionicons name="image-outline" size={24} color="#94a3b8" />
+            <Ionicons name="image-outline" size={22} color="#94a3b8" />
           </View>
         )}
 
@@ -51,21 +56,34 @@ export function BottomSheetSummary({
             <Text style={styles.ratingText}>
               {rating > 0 ? rating.toFixed(1) : "Chưa có"}
             </Text>
-            <Text style={styles.reviewCount}>({location.total_reviews || 0})</Text>
+            <Text style={styles.reviewCount}>
+              ({location.total_reviews || 0} đánh giá)
+            </Text>
           </View>
         </View>
       </View>
 
       <View style={styles.actions}>
-        <Pressable style={styles.actionBtnSecondary} onPress={onRoute}>
-          <Ionicons name="navigate" size={18} color="#0f766e" />
-          <Text style={styles.actionTextSecondary}>Chỉ đường</Text>
+        <Pressable style={styles.actionButton} onPress={onRoute}>
+          <Ionicons name="navigate-outline" size={19} color="#0f766e" />
+          <Text style={styles.actionText}>Chỉ đường</Text>
         </Pressable>
-        <Pressable 
-          style={styles.actionBtnPrimary}
+        <Pressable
+          style={styles.actionButton}
           onPress={() => router.push(`/location/${location.location_id}`)}
         >
-          <Text style={styles.actionTextPrimary}>Xem chi tiết</Text>
+          <Ionicons name="information-circle-outline" size={19} color="#0f766e" />
+          <Text style={styles.actionText}>Chi tiết</Text>
+        </Pressable>
+        <Pressable style={styles.actionButton} onPress={onToggleFavorite}>
+          <Ionicons
+            name={isFavorite ? "heart" : "heart-outline"}
+            size={19}
+            color={isFavorite ? "#dc2626" : "#0f766e"}
+          />
+          <Text style={[styles.actionText, isFavorite && styles.favoriteText]}>
+            {isFavorite ? "Đã lưu" : "Lưu"}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -78,42 +96,38 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "white",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -10 },
+    backgroundColor: "#ffffff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 9,
     elevation: 20,
     zIndex: 20,
   },
   header: {
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 10,
   },
   dragHandle: {
-    width: 40,
+    width: 38,
     height: 4,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#cbd5e1",
     borderRadius: 2,
   },
   closeButton: {
     position: "absolute",
     right: 0,
-    top: -4,
+    top: -5,
   },
   content: {
     flexDirection: "row",
-    gap: 16,
-    marginBottom: 20,
+    gap: 13,
+    marginBottom: 14,
   },
   image: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
+    width: 72,
+    height: 72,
+    borderRadius: 12,
     backgroundColor: "#f1f5f9",
   },
   imagePlaceholder: {
@@ -123,63 +137,54 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
     justifyContent: "center",
-    gap: 4,
+    gap: 3,
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800",
     color: "#0f172a",
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#64748b",
-    lineHeight: 20,
+    lineHeight: 18,
   },
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 4,
   },
   ratingText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#334155",
   },
   reviewCount: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#94a3b8",
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
+    gap: 8,
   },
-  actionBtnSecondary: {
+  actionButton: {
     flex: 1,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#f0fdfa",
+    gap: 5,
   },
-  actionTextSecondary: {
-    fontSize: 15,
+  actionText: {
+    fontSize: 13,
     fontWeight: "700",
     color: "#0f766e",
   },
-  actionBtnPrimary: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#0f766e",
-  },
-  actionTextPrimary: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "white",
+  favoriteText: {
+    color: "#dc2626",
   },
 });

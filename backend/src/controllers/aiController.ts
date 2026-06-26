@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { processChat } from "../services/ai-services/customer-assistant/chat.service";
 
 interface AuthenticatedRequest extends Request {
   userId?: number;
@@ -8,9 +9,9 @@ interface AuthenticatedRequest extends Request {
 
 interface AiChatBody {
   prompt?: string;
+  conversationId?: number;
 }
 
-// Vì sao: hiện chưa kết nối AI Service nên chỉ lưu log và trả trạng thái bảo trì
 export const chatWithAi = async (
   req: Request,
   res: Response,
@@ -28,22 +29,20 @@ export const chatWithAi = async (
       return;
     }
 
-    const responseText = "AI đang bảo trì, vui lòng thử lại sau.";
-
-    await pool.query<ResultSetHeader>(
-      `INSERT INTO ai_chat_history (user_id, ai_model, prompt, response)
-       VALUES (?, ?, ?, ?)`,
-      [userId, "Gemini", body.prompt.trim(), responseText],
-    );
+    const result = await processChat({
+      userId,
+      prompt: body.prompt.trim(),
+      conversationId: body.conversationId
+    });
 
     res.json({
       success: true,
-      message: "AI tạm thời chưa sẵn sàng",
-      data: { response: responseText },
+      message: "Thành công",
+      data: result,
     });
   } catch (error) {
     console.error("Lỗi chat AI:", error);
-    res.status(500).json({ success: false, message: "Lỗi server" });
+    res.status(500).json({ success: false, message: "Lỗi server nội bộ" });
   }
 };
 
@@ -59,10 +58,10 @@ export const getAiHistory = async (
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT history_id, prompt, response, created_at
+      `SELECT history_id, conversation_id, prompt, response, response_type, metadata, created_at
        FROM ai_chat_history
        WHERE user_id = ?
-       ORDER BY created_at DESC`,
+       ORDER BY created_at ASC`,
       [userId],
     );
 

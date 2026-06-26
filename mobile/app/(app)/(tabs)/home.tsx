@@ -569,6 +569,7 @@ function LocationCard({
   item: LocationItem;
   width: number;
 }) {
+  const router = useRouter();
   const imageUrl = resolveBackendUrl(item.first_image || item.images?.[0] || null);
   const rating = Number(item.rating || 0);
   const reviewCount = Number(item.total_reviews || 0);
@@ -580,6 +581,7 @@ function LocationCard({
       style={{ width }}
       hitSlop={{ top: 6, left: 6, right: 6, bottom: 6 }}
       accessibilityRole="button"
+      onPress={() => router.push(`/location/${item.location_id}`)}
     >
       <View
         className="w-full bg-slate-200"

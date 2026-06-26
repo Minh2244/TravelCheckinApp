@@ -21,6 +21,7 @@ interface UserLayoutProps {
 
 // Dùng để đọc dữ liệu user lưu trong sessionStorage
 type StoredUser = {
+  user_id?: number;
   full_name?: string;
   email?: string;
   avatar_url?: string | null;
@@ -34,6 +35,7 @@ const parseStoredUser = (value: string | null): StoredUser | null => {
     if (!parsed || typeof parsed !== "object") return null;
     const obj = parsed as Record<string, unknown>;
     return {
+      user_id: typeof obj.user_id === "number" ? obj.user_id : undefined,
       full_name: typeof obj.full_name === "string" ? obj.full_name : undefined,
       email: typeof obj.email === "string" ? obj.email : undefined,
       avatar_url:
@@ -82,11 +84,13 @@ const UserLayout = ({
   const [deletingNotifications, setDeletingNotifications] = useState(false);
 
   const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [isAiChatExpanded, setIsAiChatExpanded] = useState(false);
   const [aiHistory, setAiHistory] = useState<AiChatHistoryItem[]>([]);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const aiScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollAi = useRef(true);
 
   const [user, setUser] = useState<StoredUser | null>(() => {
     const stored = sessionStorage.getItem("user");
@@ -130,8 +134,19 @@ const UserLayout = ({
   }, [aiChatOpen]);
 
   useEffect(() => {
-    if (aiScrollRef.current) {
-      aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+    if (aiChatOpen) {
+      shouldAutoScrollAi.current = true;
+    }
+  }, [aiChatOpen]);
+
+  useEffect(() => {
+    if (aiScrollRef.current && shouldAutoScrollAi.current) {
+      // Use setTimeout to allow DOM to render before scrolling
+      setTimeout(() => {
+        if (aiScrollRef.current) {
+          aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+        }
+      }, 50);
     }
   }, [aiHistory, aiChatOpen]);
 
@@ -139,16 +154,37 @@ const UserLayout = ({
     if (!aiPrompt.trim()) return;
     const promptText = aiPrompt.trim();
     setAiPrompt("");
+
+    const tempId = Date.now();
+    setAiHistory(prev => [
+      ...prev,
+      {
+        history_id: tempId,
+        conversation_id: prev.length > 0 ? prev[prev.length - 1].conversation_id : 0,
+        user_id: user?.user_id || 0,
+        prompt: promptText,
+        response: "",
+        response_type: "text",
+        metadata: null,
+        created_at: new Date().toISOString()
+      }
+    ]);
+
+    // Force scroll when user sends a message
+    shouldAutoScrollAi.current = true;
+
     setAiLoading(true);
     setAiError(null);
     try {
-      await aiApi.chat({ prompt: promptText });
+      const conversationId = aiHistory.length > 0 ? aiHistory[aiHistory.length - 1].conversation_id : undefined;
+      await aiApi.chat({ prompt: promptText, conversationId });
       const res = await aiApi.getHistory();
       if (res.success) {
         setAiHistory(res.data || []);
       }
     } catch {
-      setAiError("Không thể gửi tin nhắn tới AI.");
+      setAiError("Không thể gửi tin nhắn.");
+      setAiHistory(prev => prev.filter(m => m.history_id !== tempId));
     } finally {
       setAiLoading(false);
     }
@@ -796,7 +832,7 @@ const UserLayout = ({
           <div className="fixed bottom-6 right-6 z-40 font-sans">
             <button
               type="button"
-              className="flex h-12 w-12 items-center justify-center rounded-full text-white bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-lg shadow-teal-500/30 transition-transform duration-300 hover:scale-110 active:scale-95"
+              className="flex h-14 w-14 items-center justify-center rounded-full text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-xl shadow-indigo-500/30 transition-all duration-300 hover:scale-110 active:scale-95 border-2 border-white"
               onClick={() => setAiChatOpen((prev) => !prev)}
               aria-label="Trợ lý ảo AI"
             >
@@ -805,58 +841,78 @@ const UserLayout = ({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               ) : (
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 21l5.096-.813a8.959 8.959 0 003.58-.889A9 9 0 103.07 9.814a8.96 8.96 0 00.89 3.58L3 18.5l5.096-.813a8.96 8.96 0 003.58.889z" />
+                <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 01-.923 1.785A5.969 5.969 0 006 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337z" />
+                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 13.5a3 3 0 006 0" />
+                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 10.5h.01M14.25 10.5h.01" />
                 </svg>
               )}
             </button>
 
             {aiChatOpen && (
-              <div className="absolute bottom-16 right-0 w-[330px] sm:w-[360px] h-[450px] rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden animate-fade-in">
+              <div className={`fixed bg-white rounded-2xl shadow-2xl border border-indigo-100 flex flex-col z-40 overflow-hidden transition-all duration-300 origin-bottom-right ${isAiChatExpanded ? 'bottom-6 right-6 w-[92vw] sm:w-[80vw] md:w-[65vw] lg:w-[50vw] h-[90vh]' : 'bottom-24 right-6 w-80 md:w-96 h-[500px] max-h-[80vh]'}`}>
                 {/* Header */}
-                <div className="p-4 text-white bg-gradient-to-r from-teal-500 to-emerald-500 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">🤖</span>
+                <div className="p-4 text-white bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-between shadow-md z-10 relative">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <img src="/ai-avatar.png" className="w-14 h-14 rounded-full object-cover shadow-sm border-2 border-white/20 bg-white" alt="AI" />
+                      <span className="absolute bottom-1 right-1 w-3.5 h-3.5 bg-green-400 border-2 border-indigo-600 rounded-full"></span>
+                    </div>
                     <div>
                       <h4 className="text-xs font-bold font-heading uppercase tracking-wider">Trợ lý ảo AI</h4>
                       <p className="text-[9px] opacity-80 font-semibold">Tự động trả lời nhanh</p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="text-white/80 hover:text-white transition"
-                    onClick={() => setAiChatOpen(false)}
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setIsAiChatExpanded(p => !p)} className="text-white hover:bg-white/20 p-1.5 rounded-full transition-colors active:scale-95" title={isAiChatExpanded ? "Thu nhỏ" : "Phóng to"}>
+                      {isAiChatExpanded ? (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9L5 5m4 4v-4m0 4H5m10 0l4-4m-4 4v-4m0 4h4M9 15l-4 4m4-4v4m0-4H5m10 0l4 4m-4-4v4m0-4h4" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                        </svg>
+                      )}
+                    </button>
+                    <button onClick={() => setAiChatOpen(false)} className="text-white hover:bg-white/20 p-1.5 rounded-full transition-colors active:scale-95">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Message List */}
                 <div
                   ref={aiScrollRef}
+                  onScroll={() => {
+                    if (aiScrollRef.current) {
+                      const { scrollTop, scrollHeight, clientHeight } = aiScrollRef.current;
+                      shouldAutoScrollAi.current = scrollHeight - scrollTop - clientHeight < 100;
+                    }
+                  }}
                   className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fafbfc]/50"
                 >
                   {aiLoading && aiHistory.length === 0 && (
                     <div className="text-center text-xs text-slate-400 py-8 font-medium">
-                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent mb-1" />
-                      <p>Trợ lý AI đang tải cuộc trò chuyện...</p>
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mb-1" />
+                      <p>Đang kết nối với Trợ lý AI...</p>
                     </div>
                   )}
 
                   {aiError && (
-                    <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5 text-center text-[10px] text-rose-600">
+                    <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5 text-center text-[10px] text-rose-600 shadow-sm">
                       {aiError}
                     </div>
                   )}
 
                   {!aiLoading && aiHistory.length === 0 && (
-                    <div className="text-center text-xs text-slate-400 py-12 space-y-2">
-                      <span className="text-xl">🤖</span>
-                      <p className="font-bold text-slate-500">Xin chào</p>
-                      <p className="text-[10px] text-slate-400 max-w-[200px] mx-auto leading-relaxed">
-                        Tôi là trợ lý AI của bạn. Hãy gửi tin nhắn để hỏi bất kỳ thông tin nào về chuyến hành trình nhé.
+                    <div className="text-center text-xs text-slate-400 py-12 space-y-3 flex flex-col items-center justify-center">
+                      <img src="/ai-avatar.png" className="w-16 h-16 rounded-full object-cover shadow-md mb-2 bg-slate-100" alt="AI" />
+                      <p className="font-bold text-slate-600 text-sm">Travel Assistant</p>
+                      <p className="text-[10px] text-slate-400 max-w-[220px] mx-auto leading-relaxed">
+                        Chào bạn! Mình có thể giúp bạn lên kế hoạch chuyến đi, tìm phòng khách sạn, hoặc gợi ý các nhà hàng tuyệt ngon.
                       </p>
                     </div>
                   )}
@@ -865,40 +921,87 @@ const UserLayout = ({
                     <div key={item.history_id} className="space-y-3">
                       {/* User Prompt */}
                       <div className="flex flex-col max-w-[75%] ml-auto items-end">
-                        <div className="rounded-2xl px-3 py-2 text-xs leading-relaxed break-words font-medium shadow-sm bg-teal-600 text-white rounded-br-none">
+                        <div className={`rounded-2xl px-3.5 py-2.5 ${isAiChatExpanded ? 'text-sm' : 'text-xs'} leading-relaxed break-words font-medium shadow-sm bg-indigo-600 text-white rounded-br-none`}>
                           {item.prompt}
                         </div>
                       </div>
                       {/* AI Response */}
-                      <div className="flex flex-col max-w-[75%] mr-auto items-start">
-                        <span className="text-[9px] font-bold text-slate-500 mb-0.5 ml-1 flex items-center gap-1">
-                          <span>🤖</span> Trợ lý AI
-                        </span>
-                        <div className="rounded-2xl px-3 py-2 text-xs leading-relaxed break-words font-medium shadow-sm bg-white text-slate-800 border border-slate-100 rounded-bl-none">
-                          {item.response}
+                      {item.response ? (
+                        <div className="flex flex-col max-w-[85%] mr-auto items-start">
+                          <span className="text-[11px] font-bold text-slate-500 mb-1 ml-1 flex items-center gap-2">
+                            <img src="/ai-avatar.png" className="w-6 h-6 rounded-full object-cover shadow-sm bg-slate-100" alt="AI" />
+                            Trợ lý AI
+                          </span>
+                          <div className={`rounded-2xl px-3.5 py-2.5 ${isAiChatExpanded ? 'text-sm' : 'text-xs'} leading-relaxed break-words font-medium shadow-sm bg-white text-slate-700 border border-slate-100 rounded-bl-none`}>
+                            {item.response}
+                          </div>
+                          {/* Location Cards from Gemini */}
+                          {(() => {
+                            let parsedMeta = null;
+                            try {
+                              parsedMeta = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+                            } catch (e) {}
+                            const locs = parsedMeta?.locations || [];
+                            if (locs.length === 0) return null;
+                            return (
+                              <div className="mt-2 space-y-2 w-full pr-2">
+                                {locs.map((loc: any, idx: number) => (
+                                  <div key={idx} className="bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm flex flex-col hover:border-teal-200 transition">
+                                    {loc.first_image && (
+                                      <img src={loc.first_image.startsWith('http') ? loc.first_image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/images/${loc.first_image}`} alt={loc.location_name || "Location"} className="h-24 w-full object-cover" />
+                                    )}
+                                    <div className="p-2.5">
+                                      {loc.location_name ? (
+                                        <h5 className="font-bold text-xs text-slate-800 line-clamp-1">{loc.location_name}</h5>
+                                      ) : null}
+                                      <div className="flex items-center gap-1 text-[10px] text-amber-500 my-1">
+                                          <span>⭐</span> <span>{loc.rating || 0}</span> <span className="text-slate-400">({loc.total_reviews || 0} đánh giá)</span>
+                                      </div>
+                                      {loc.address ? (
+                                        <p className="text-[10px] text-slate-500 line-clamp-1 mb-1.5 flex items-center gap-1">
+                                          <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                          {loc.address}
+                                        </p>
+                                      ) : null}
+                                      <div className="bg-indigo-50/50 text-indigo-700 text-[10px] p-2 rounded-lg mb-2 leading-relaxed border border-indigo-50">
+                                          💡 {loc.reason}
+                                      </div>
+                                      <div className="flex gap-2 mt-auto">
+                                        <button onClick={() => navigate(`/user/location/${loc.location_id}`)} className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white py-1.5 rounded-lg text-[10px] font-semibold transition shadow-sm">Xem chi tiết</button>
+                                        <button onClick={() => navigate(`/user/map?locationId=${loc.location_id}`)} className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-600 py-1.5 rounded-lg text-[10px] font-semibold transition border border-slate-200">Bản đồ</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })()}
                         </div>
-                      </div>
+                      ) : null}
                     </div>
                   ))}
 
                   {aiLoading && aiHistory.length > 0 && (
-                    <div className="flex flex-col max-w-[75%] mr-auto items-start">
-                      <span className="text-[9px] font-bold text-slate-500 mb-0.5 ml-1">🤖 Trợ lý AI</span>
-                      <div className="rounded-2xl px-3 py-2 text-xs bg-white text-slate-400 border border-slate-100 rounded-bl-none flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce" />
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.2s]" />
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0.4s]" />
+                    <div className="flex flex-col max-w-[85%] mr-auto items-start">
+                      <span className="text-[11px] font-bold text-slate-500 mb-1 ml-1 flex items-center gap-2">
+                        <img src="/ai-avatar.png" className="w-6 h-6 rounded-full object-cover shadow-sm bg-slate-100" alt="AI" />
+                        Trợ lý AI
+                      </span>
+                      <div className={`rounded-2xl px-4 py-3 ${isAiChatExpanded ? 'text-sm' : 'text-xs'} bg-white text-slate-400 border border-slate-100 rounded-bl-none flex items-center gap-1.5 shadow-sm`}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.2s]" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:0.4s]" />
                       </div>
                     </div>
                   )}
                 </div>
 
                 {/* Footer Input */}
-                <div className="p-3 border-t border-slate-100 bg-white flex items-center gap-2">
+                <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center gap-2">
                   <input
                     type="text"
-                    className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs transition duration-200 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 focus:outline-none"
-                    placeholder="Hỏi trợ lý AI..."
+                    className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs transition duration-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none shadow-inner"
+                    placeholder="Gửi tin nhắn..."
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
                     onKeyDown={(e) => {
@@ -908,7 +1011,7 @@ const UserLayout = ({
                   />
                   <button
                     type="button"
-                    className="h-8 w-8 rounded-full flex items-center justify-center text-white bg-teal-600 hover:bg-teal-700 shadow-sm transition hover:scale-105 active:scale-95 shrink-0 disabled:opacity-60"
+                    className="h-9 w-9 rounded-full flex items-center justify-center text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all hover:scale-105 active:scale-95 shrink-0 disabled:opacity-60"
                     onClick={() => void handleSendAiMessage()}
                     disabled={aiLoading}
                   >

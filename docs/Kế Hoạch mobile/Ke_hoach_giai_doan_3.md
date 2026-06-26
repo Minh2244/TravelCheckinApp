@@ -363,12 +363,19 @@ Giao diện bám website nhưng tối ưu cho mobile. Màn hình chia theo tab c
 
 ### Definition of Done cho Giai đoạn 3
 
-- Tab `Khám phá` chạy ổn với Google native map, GPS, compass/heading và polyline.
-- Marker địa điểm owner hiển thị đúng tọa độ, bấm được, có ảnh local cache khi backend có ảnh.
-- Địa điểm không có ảnh phải có fallback marker local rõ ràng, không để marker trắng/vỡ.
-- User marker bám đúng vị trí; mũi tên định hướng có fallback ổn định nếu thiết bị không trả heading tốt.
-- `Location Detail` bám đúng cấu trúc website user.
-- Review list + review submit flow được nối backend hoặc ít nhất khóa UI shell đúng contract.
-- Favorite tại location detail đồng bộ được với backend hiện tại.
-- Routing từ user tới location chạy ổn trong điều kiện máy thật cơ bản.
-- Không còn lẫn booking/payment/push/token refresh vào file phase 3.
+**Trạng thái ngày 24/06/2026: Đã hoàn thành ở mức chức năng và bundle Android.**
+
+- [x] Tab `Khám phá` chạy với Google native map, GPS, compass/heading và polyline.
+- [x] Marker địa điểm owner hiển thị đúng tọa độ, bấm được và dùng ảnh PNG local cache theo DPI thiết bị.
+- [x] Địa điểm không có ảnh có fallback marker native theo loại địa điểm.
+- [x] User marker bám vị trí, có mũi tên heading native và fallback chấm vị trí Google trong lúc khởi tạo.
+- [x] Tìm kiếm địa điểm trên map hoạt động, không làm bàn phím tự đóng khi nhập.
+- [x] Bottom sheet có `Chỉ đường`, `Chi tiết`, `Lưu` và đồng bộ favorite với backend.
+- [x] `Location Detail` bám cấu trúc website: ảnh, tổng quan, đánh giá, giới thiệu, chia sẻ và thời tiết; không nhúng danh sách dịch vụ dài vào màn chi tiết.
+- [x] CTA từ chi tiết mở màn `location/[id]/services` riêng để đọc dịch vụ thật; luồng đặt dịch vụ được dành cho Giai đoạn 4.
+- [x] Review list + review submit dùng đúng contract backend (`comment`, `user_name`).
+- [x] Favorite tại map và location detail đồng bộ với backend hiện tại.
+- [x] Routing từ user tới location chạy qua backend route proxy và có trạng thái hủy rõ ràng.
+- [x] Entry-point chat địa điểm và AI hiển thị trạng thái phase tiếp theo, không nhúng logic phase 6.
+- [x] Không lẫn booking/payment/wallet vào Giai đoạn 3; màn dịch vụ riêng chỉ đọc dữ liệu và giữ navigation contract cho Giai đoạn 4.
+- [x] `npx tsc --noEmit` và Android Expo export vượt qua kiểm tra.

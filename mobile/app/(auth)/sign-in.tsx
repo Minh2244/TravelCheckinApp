@@ -31,7 +31,6 @@ export default function SignInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const signIn = useAuthStore((state) => state.signIn);
-  const notice = useAuthStore((state) => state.notice);
   const clearNotice = useAuthStore((state) => state.clearNotice);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -107,18 +106,6 @@ export default function SignInScreen() {
         </View>
 
         <View className="rounded-3xl border border-slate-100 bg-white p-6 shadow-soft">
-          {notice ? (
-            <Pressable
-              className="mb-5 flex-row items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3.5"
-              onPress={clearNotice}
-            >
-              <Ionicons name="information-circle" size={20} color="#1d4ed8" />
-              <View className="flex-1">
-                <Text className="font-semibold leading-5 text-blue-700">{notice}</Text>
-                <Text className="mt-0.5 text-xs text-blue-500">Chạm để ẩn thông báo này</Text>
-              </View>
-            </Pressable>
-          ) : null}
 
           {submitError ? (
             <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5">

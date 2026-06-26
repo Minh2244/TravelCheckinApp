@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Image } from "antd";
 import UserLayout from "../../layouts/UserLayout";
 import userApi from "../../api/userApi";
 import type { CheckinItem, DiaryItem } from "../../types/user.types";
@@ -60,8 +61,8 @@ const Checkins = () => {
   const [customLocName, setCustomLocName] = useState("");
   const [diaryNotes, setDiaryNotes] = useState("");
   const [diaryMood, setDiaryMood] = useState<"happy" | "excited" | "neutral" | "sad" | "angry" | "tired">("happy");
-  const [diaryPhoto, setDiaryPhoto] = useState<File | null>(null);
-  const [diaryPhotoPreview, setDiaryPhotoPreview] = useState<string | null>(null);
+  const [diaryPhotos, setDiaryPhotos] = useState<File[]>([]);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
   const [savingDiary, setSavingDiary] = useState(false);
 
   const navigate = useNavigate();
@@ -301,21 +302,28 @@ const Checkins = () => {
     if (existingDiary) {
       setDiaryNotes(existingDiary.notes ?? "");
       setDiaryMood(existingDiary.mood ?? "happy");
-      setDiaryPhoto(null);
-      setDiaryPhotoPreview(existingDiary.images && existingDiary.images.length > 0 ? resolveBackendUrl(existingDiary.images[0]) : null);
+      setDiaryPhotos([]);
+      setExistingImages(existingDiary.images && Array.isArray(existingDiary.images) ? existingDiary.images : []);
     } else {
       setDiaryNotes("");
       setDiaryMood("happy");
-      setDiaryPhoto(null);
-      setDiaryPhotoPreview(null);
+      setDiaryPhotos([]);
+      setExistingImages([]);
     }
   };
 
   const handleDiaryPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setDiaryPhoto(file);
-      setDiaryPhotoPreview(URL.createObjectURL(file));
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      setDiaryPhotos((prev) => [...prev, ...files]);
+    }
+  };
+
+  const handleRemovePhoto = (isExisting: boolean, index: number) => {
+    if (isExisting) {
+      setExistingImages(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setDiaryPhotos(prev => prev.filter((_, i) => i !== index));
     }
   };
 
@@ -323,19 +331,13 @@ const Checkins = () => {
     if (!diaryNotes.trim() || !writingCheckin) return;
     setSavingDiary(true);
     try {
-      let imageUrls: string[] | null = null;
-      if (diaryPhoto) {
-        const uploadRes = await userApi.uploadReviewImage(diaryPhoto);
-        if (uploadRes.success && uploadRes.data?.image_url) {
-          imageUrls = [uploadRes.data.image_url];
-        }
-      } else if (diaryPhotoPreview && !diaryPhoto) {
-        // Keep old image if editing and not uploaded a new one
-        const matched = diaries.find(
-          (d) => d.location_id === writingCheckin.location_id || d.location_name === writingCheckin.location_name
-        );
-        if (matched?.images) {
-          imageUrls = matched.images;
+      let imageUrls: string[] = [...existingImages];
+      if (diaryPhotos.length > 0) {
+        for (const file of diaryPhotos) {
+          const uploadRes = await userApi.uploadReviewImage(file);
+          if (uploadRes.success && uploadRes.data?.image_url) {
+            imageUrls.push(uploadRes.data.image_url);
+          }
         }
       }
 
@@ -352,8 +354,8 @@ const Checkins = () => {
       setWritingCheckin(null);
       setDiaryNotes("");
       setDiaryMood("happy");
-      setDiaryPhoto(null);
-      setDiaryPhotoPreview(null);
+      setDiaryPhotos([]);
+      setExistingImages([]);
       setCustomLocName("");
     } catch {
       alert("Không thể lưu kỷ niệm hành trình");
@@ -432,13 +434,21 @@ const Checkins = () => {
             <div className="max-h-[78vh] overflow-y-auto pr-4 sleek-scrollbar pb-6">
               <div className="relative border-l border-dashed border-teal-200/70 ml-8 pl-6 space-y-5 py-2 text-left">
                 {groupedCheckins.map((group) => {
-                  const imageUrl = resolveBackendUrl(group.first_image);
+                  let imageUrl = resolveBackendUrl(group.first_image);
                   const latestRecord = group.records[0];
 
                   // Match diaries related to this location
                   const matchedDiary = diaries.find(
                     (d) => d.location_id === group.location_id || d.location_name === group.location_name
                   );
+
+                  // Fallback to diary image if no location image exists (especially for custom locations)
+                  if (!imageUrl && matchedDiary) {
+                    const diaryImages = getDiaryImages(matchedDiary);
+                    if (diaryImages.length > 0) {
+                      imageUrl = resolveBackendUrl(diaryImages[0]);
+                    }
+                  }
 
                   return (
                     <div
@@ -550,7 +560,7 @@ const Checkins = () => {
                               <div className="flex flex-wrap gap-2 pt-1.5">
                                 {getDiaryImages(matchedDiary).map((img, idx) => (
                                   <div key={idx} className="h-20 w-20 rounded-xl overflow-hidden border border-white/80 bg-white flex-shrink-0 shadow-sm transition hover:scale-105">
-                                    <img src={resolveBackendUrl(img) || ""} alt="memories" className="h-full w-full object-cover" />
+                                    <Image src={resolveBackendUrl(img) || ""} alt="memories" className="h-full w-full object-cover" preview={{ mask: <span className="text-[10px]">Xem</span> }} />
                                   </div>
                                 ))}
                               </div>
@@ -767,19 +777,32 @@ const Checkins = () => {
               {/* Memories photo upload */}
               <div>
                 <label className="text-[11px] font-black text-slate-600 uppercase tracking-wider">Thêm ảnh kỷ niệm chuyến đi (không bắt buộc)</label>
-                <div className="mt-2 h-36 w-full rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center overflow-hidden relative group">
-                  {diaryPhotoPreview ? (
-                    <>
-                      <img src={diaryPhotoPreview} alt="memories-preview" className="h-full w-full object-cover" />
-                      <label className="absolute bottom-3 right-3 bg-slate-900/60 hover:bg-slate-900 text-white rounded-xl px-3 py-1.5 text-[9px] font-bold cursor-pointer transition">
-                        Đổi ảnh
-                        <input type="file" accept="image/*" className="hidden" onChange={handleDiaryPhotoChange} />
+                <div className="mt-2 w-full rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 p-4 relative group">
+                  {(existingImages.length > 0 || diaryPhotos.length > 0) ? (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-wrap gap-2">
+                        {existingImages.map((img, i) => (
+                          <div key={`existing-${i}`} className="h-16 w-16 rounded-xl overflow-hidden border border-white/80 bg-white flex-shrink-0 shadow-sm relative group/item">
+                            <img src={resolveBackendUrl(img) || ""} alt="memories-preview" className="h-full w-full object-cover" />
+                            <button type="button" onClick={() => handleRemovePhoto(true, i)} className="absolute top-0.5 right-0.5 bg-rose-500 text-white rounded-full h-4 w-4 flex items-center justify-center text-[8px] opacity-0 group-hover/item:opacity-100 transition shadow-md">✕</button>
+                          </div>
+                        ))}
+                        {diaryPhotos.map((file, i) => (
+                          <div key={`new-${i}`} className="h-16 w-16 rounded-xl overflow-hidden border border-white/80 bg-white flex-shrink-0 shadow-sm relative group/item">
+                            <img src={URL.createObjectURL(file)} alt="memories-preview" className="h-full w-full object-cover" />
+                            <button type="button" onClick={() => handleRemovePhoto(false, i)} className="absolute top-0.5 right-0.5 bg-rose-500 text-white rounded-full h-4 w-4 flex items-center justify-center text-[8px] opacity-0 group-hover/item:opacity-100 transition shadow-md">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                      <label className="self-end bg-teal-600 hover:bg-teal-700 text-white rounded-xl px-3 py-1.5 text-[9px] font-bold cursor-pointer transition inline-block">
+                        Thêm ảnh
+                        <input type="file" accept="image/*" multiple className="hidden" onChange={handleDiaryPhotoChange} />
                       </label>
-                    </>
+                    </div>
                   ) : (
                     <label className="cursor-pointer flex flex-col items-center justify-center p-4 space-y-1.5 text-center text-slate-400 hover:text-slate-600 transition">
-                      <span className="text-[11px] font-bold">Chọn ảnh lưu trữ kỷ niệm</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleDiaryPhotoChange} />
+                      <span className="text-[11px] font-bold">Bấm để chọn một hoặc nhiều ảnh kỷ niệm</span>
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleDiaryPhotoChange} />
                     </label>
                   )}
                 </div>

@@ -9,6 +9,7 @@ interface ApiResponse<T> {
 
 export interface AiChatPayload {
   prompt: string;
+  conversationId?: number;
 }
 
 const aiApi = {

@@ -17,6 +17,8 @@ import { formatMoney } from "../../utils/formatMoney";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import { FiTrendingUp, FiCreditCard, FiPercent, FiCheckCircle } from "react-icons/fi";
+import { FaMoneyBillWave } from "react-icons/fa";
 
 type RangeKey = "day" | "week" | "month" | "year" | "all";
 
@@ -948,7 +950,12 @@ export default function FrontOfficePaymentsHistory() {
             return (
               <div className="flex flex-col gap-1 items-start">
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || (
+                  {row.invoice_code ? (
+                    <>
+                      {row.invoice_code}
+                      {vcTag}
+                    </>
+                  ) : (
                     <>
                       #RS-BATCH{vcTag}
                       <br />
@@ -957,6 +964,9 @@ export default function FrontOfficePaymentsHistory() {
                       </span>
                     </>
                   )}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -967,7 +977,10 @@ export default function FrontOfficePaymentsHistory() {
             return (
               <div>
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || <>#RS-{singleId}{vcTag}</>}
+                  {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#RS-{singleId}{vcTag}</>}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -976,7 +989,10 @@ export default function FrontOfficePaymentsHistory() {
           return (
             <div>
               <span className="font-semibold text-blue-700">
-                {row.invoice_code || <>#RS-POS-{row.payment_id}{vcTag}</>}
+                {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#RS-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              <span className="mt-1">
+                <Tag color="orange" className="ml-1 px-1 py-0 text-[10px]">Tại quầy</Tag>
               </span>
               {cancelTag}
             </div>
@@ -1120,15 +1136,25 @@ export default function FrontOfficePaymentsHistory() {
           const vcTag = row.voucher_code ? <Tag color="purple" className="ml-1">VC</Tag> : null;
           if (row.booking_id != null && Number(row.booking_id) > 0) {
             return (
-              <span className="font-semibold text-blue-700">
-                {row.invoice_code || <>#DI-{row.booking_id}{vcTag}</>}
-              </span>
+              <div>
+                <span className="font-semibold text-blue-700">
+                  {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#DI-{row.booking_id}{vcTag}</>}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
+                </span>
+              </div>
             );
           }
           return (
-            <span className="font-semibold text-blue-700">
-              {row.invoice_code || <>#DI-POS-{row.payment_id}{vcTag}</>}
-            </span>
+            <div>
+              <span className="font-semibold text-blue-700">
+                {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#DI-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              <span className="mt-1">
+                <Tag color="orange" className="ml-1 px-1 py-0 text-[10px]">Tại quầy</Tag>
+              </span>
+            </div>
           );
         },
       },
@@ -1231,61 +1257,82 @@ export default function FrontOfficePaymentsHistory() {
       onBack={() => navigate(frontOfficePath, { replace: true })}
     >
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-        <Card>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Segmented
-              options={segmentedOptions}
-              value={range}
-              onChange={(v) => setRange(v as RangeKey)}
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+          <Segmented
+            options={segmentedOptions}
+            value={range}
+            onChange={(v) => setRange(v as RangeKey)}
+            className="shadow-sm p-1 bg-gray-50/50"
+          />
+          <div className="flex flex-wrap items-center gap-3 justify-end">
+            <DatePicker
+              value={dayjs(pickedDate, "YYYY-MM-DD") as any}
+              format={DATE_UI_FORMAT}
+              onChange={(_d: any, dateString: string | null) => {
+                if (!dateString) return;
+                const next = dayjs(dateString, DATE_UI_FORMAT);
+                if (!next.isValid()) return;
+                setPickedDate(next.format("YYYY-MM-DD"));
+              }}
+              allowClear={false}
+              className="rounded-lg shadow-sm"
             />
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <DatePicker
-                value={dayjs(pickedDate, "YYYY-MM-DD") as any}
-                format={DATE_UI_FORMAT}
-                onChange={(_d: any, dateString: string | null) => {
-                  if (!dateString) return;
-                  const next = dayjs(dateString, DATE_UI_FORMAT);
-                  if (!next.isValid()) return;
-                  setPickedDate(next.format("YYYY-MM-DD"));
-                }}
-                allowClear={false}
-              />
-              <Button onClick={() => void loadHistory()} loading={loading}>
-                Tải lại
-              </Button>
-            </div>
+            <Button type="primary" onClick={() => void loadHistory()} loading={loading} className="rounded-lg shadow-sm">
+              Tải lại
+            </Button>
           </div>
-        </Card>
+        </div>
 
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tổng doanh thu</div>
-            <div className="text-lg font-bold">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-blue-100 text-sm font-medium">Tổng doanh thu</div>
+              <div className="p-2 bg-blue-400/30 rounded-lg"><FiTrendingUp className="text-white text-lg" /></div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight">
               {formatMoney(summary.total)}
             </div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tiền mặt</div>
-            <div className="text-lg font-bold">{formatMoney(summary.cash)}</div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Chuyển khoản</div>
-            <div className="text-lg font-bold">
+          </div>
+
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-500 p-4 text-white shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-emerald-100 text-sm font-medium">Tiền mặt</div>
+              <div className="p-2 bg-emerald-600/30 rounded-lg"><FaMoneyBillWave className="text-white text-lg" /></div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight">
+              {formatMoney(summary.cash)}
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-400 to-indigo-500 p-4 text-white shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-indigo-100 text-sm font-medium">Chuyển khoản</div>
+              <div className="p-2 bg-indigo-600/30 rounded-lg"><FiCreditCard className="text-white text-lg" /></div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight">
               {formatMoney(summary.transfer)}
             </div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Hoa hồng ({summary.commission_rate}%)</div>
-            <div className="text-lg font-bold text-amber-600">
+          </div>
+
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 p-4 text-white shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-amber-100 text-sm font-medium">Hoa hồng ({summary.commission_rate}%)</div>
+              <div className="p-2 bg-orange-600/30 rounded-lg"><FiPercent className="text-white text-lg" /></div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight">
               {formatMoney(summary.commission_amount)}
             </div>
-          </Card>
-          <Card size="small">
-            <div className="text-xs text-gray-500">Tổng nhận</div>
-            <div className="text-lg font-bold text-emerald-600">
+          </div>
+
+          <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600 p-4 text-white shadow-md hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-teal-100 text-sm font-medium">Tổng nhận</div>
+              <div className="p-2 bg-emerald-800/30 rounded-lg"><FiCheckCircle className="text-white text-lg" /></div>
+            </div>
+            <div className="text-2xl font-bold tracking-tight">
               {formatMoney(summary.owner_receivable)}
             </div>
-          </Card>
+          </div>
         </div>
 
         <Card title="Biểu đồ doanh thu">
