@@ -1,14 +1,28 @@
+import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import Slider from "@react-native-community/slider";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
+import { showToast } from "../../modules/ui/toast-store";
 import { locationApi } from "../../services/location.api";
 import { userApi } from "../../services/user.api";
-import { showToast } from "../../modules/ui/toast-store";
+import type { LocationReview } from "../../types/location";
 
-export function LocationReviews({ locationId }: { locationId: string }) {
-  const [reviews, setReviews] = useState<any[]>([]);
+export function LocationReviews({
+  locationId,
+  onSubmitted,
+}: {
+  locationId: string;
+  onSubmitted?: () => void;
+}) {
+  const [reviews, setReviews] = useState<LocationReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [rating, setRating] = useState(5);
@@ -17,8 +31,8 @@ export function LocationReviews({ locationId }: { locationId: string }) {
   const loadReviews = async () => {
     try {
       setLoading(true);
-      const res = await locationApi.getReviews(locationId);
-      setReviews(res.data || []);
+      const response = await locationApi.getReviews(locationId);
+      setReviews(response.data || []);
     } catch {
       showToast("Không thể tải đánh giá");
     } finally {
@@ -41,36 +55,36 @@ export function LocationReviews({ locationId }: { locationId: string }) {
       await userApi.createReview({
         location_id: locationId,
         rating,
-        review_text: text.trim(),
+        comment: text.trim(),
       });
-      showToast("Gửi đánh giá thành công");
       setText("");
       setRating(5);
       await loadReviews();
+      onSubmitted?.();
+      showToast("Gửi đánh giá thành công");
     } catch {
-      showToast("Lỗi khi gửi đánh giá");
+      showToast("Không thể gửi đánh giá");
     } finally {
       setSubmitting(false);
     }
   };
 
   if (loading) {
-    return <ActivityIndicator style={{ marginTop: 20 }} color="#0f766e" />;
+    return <ActivityIndicator style={styles.loader} color="#0f766e" />;
   }
 
   return (
     <View style={styles.container}>
-      {/* Form viết đánh giá */}
       <View style={styles.formCard}>
         <Text style={styles.formTitle}>Viết đánh giá của bạn</Text>
-        
+
         <View style={styles.ratingRow}>
           <Text style={styles.ratingText}>{rating} sao</Text>
           <Slider
-            style={{ flex: 1, height: 40 }}
+            style={styles.slider}
             minimumValue={1}
             maximumValue={5}
-            step={1}
+            step={0.5}
             value={rating}
             onValueChange={setRating}
             minimumTrackTintColor="#0f766e"
@@ -82,15 +96,15 @@ export function LocationReviews({ locationId }: { locationId: string }) {
         <TextInput
           style={styles.textInput}
           placeholder="Chia sẻ trải nghiệm của bạn..."
+          placeholderTextColor="#94a3b8"
           multiline
-          numberOfLines={3}
           value={text}
           onChangeText={setText}
         />
 
         <Pressable
-          style={[styles.submitButton, submitting && { opacity: 0.7 }]}
-          onPress={handleSubmit}
+          style={[styles.submitButton, submitting && styles.disabled]}
+          onPress={() => void handleSubmit()}
           disabled={submitting}
         >
           <Text style={styles.submitButtonText}>
@@ -99,30 +113,37 @@ export function LocationReviews({ locationId }: { locationId: string }) {
         </Pressable>
       </View>
 
-      {/* Danh sách đánh giá */}
       <View style={styles.listContainer}>
         <Text style={styles.listTitle}>
           Đánh giá từ cộng đồng ({reviews.length})
         </Text>
-        
+
         {reviews.length === 0 ? (
           <Text style={styles.emptyText}>Chưa có đánh giá nào.</Text>
         ) : (
-          reviews.map((rev, idx) => (
-            <View key={rev.review_id || idx} style={styles.reviewItem}>
+          reviews.map((review) => (
+            <View key={review.review_id} style={styles.reviewItem}>
               <View style={styles.reviewHeader}>
                 <Text style={styles.reviewerName}>
-                  {rev.User?.full_name || "Người dùng ẩn danh"}
+                  {review.user_name || "Người dùng"}
                 </Text>
                 <View style={styles.reviewStars}>
-                  <Text style={styles.reviewRatingText}>{rev.rating}</Text>
+                  <Text style={styles.reviewRatingText}>{review.rating}</Text>
                   <Ionicons name="star" size={12} color="#eab308" />
                 </View>
               </View>
               <Text style={styles.reviewDate}>
-                {new Date(rev.created_at).toLocaleDateString("vi-VN")}
+                {new Date(review.created_at).toLocaleDateString("vi-VN")}
               </Text>
-              <Text style={styles.reviewText}>{rev.review_text}</Text>
+              <Text style={styles.reviewText}>
+                {review.comment || "Người dùng chưa để lại nội dung."}
+              </Text>
+              {review.reply_content ? (
+                <View style={styles.ownerReply}>
+                  <Text style={styles.ownerReplyTitle}>Phản hồi từ địa điểm</Text>
+                  <Text style={styles.ownerReplyText}>{review.reply_content}</Text>
+                </View>
+              ) : null}
             </View>
           ))
         )}
@@ -132,13 +153,16 @@ export function LocationReviews({ locationId }: { locationId: string }) {
 }
 
 const styles = StyleSheet.create({
+  loader: {
+    marginTop: 20,
+  },
   container: {
-    gap: 24,
+    gap: 22,
   },
   formCard: {
     backgroundColor: "#f8fafc",
-    padding: 16,
-    borderRadius: 16,
+    padding: 14,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
@@ -146,45 +170,53 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#0f172a",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 10,
   },
   ratingText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#0f766e",
-    width: 48,
+    width: 52,
+  },
+  slider: {
+    flex: 1,
+    height: 38,
   },
   textInput: {
-    backgroundColor: "white",
+    backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#cbd5e1",
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 8,
+    padding: 11,
     fontSize: 15,
-    minHeight: 80,
+    minHeight: 86,
     textAlignVertical: "top",
-    marginBottom: 16,
+    marginBottom: 12,
+    color: "#0f172a",
   },
   submitButton: {
     backgroundColor: "#0f766e",
     height: 44,
-    borderRadius: 22,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
   },
+  disabled: {
+    opacity: 0.65,
+  },
   submitButtonText: {
-    color: "white",
+    color: "#ffffff",
     fontWeight: "700",
     fontSize: 15,
   },
   listContainer: {
-    gap: 16,
+    gap: 14,
   },
   listTitle: {
     fontSize: 18,
@@ -194,22 +226,21 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: "#64748b",
-    fontStyle: "italic",
   },
   reviewItem: {
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    paddingBottom: 16,
+    borderBottomColor: "#e2e8f0",
+    paddingBottom: 14,
   },
   reviewHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   reviewerName: {
     fontSize: 15,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#334155",
   },
   reviewStars: {
@@ -219,7 +250,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef9c3",
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   reviewRatingText: {
     fontSize: 12,
@@ -229,11 +260,29 @@ const styles = StyleSheet.create({
   reviewDate: {
     fontSize: 12,
     color: "#94a3b8",
-    marginBottom: 8,
+    marginBottom: 7,
   },
   reviewText: {
     fontSize: 14,
     color: "#475569",
-    lineHeight: 22,
+    lineHeight: 21,
+  },
+  ownerReply: {
+    marginTop: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: "#0f766e",
+    backgroundColor: "#f0fdfa",
+    padding: 10,
+  },
+  ownerReplyTitle: {
+    color: "#0f766e",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 3,
+  },
+  ownerReplyText: {
+    color: "#334155",
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

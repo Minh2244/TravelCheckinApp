@@ -7081,7 +7081,7 @@ export const getOwnerReviews = async (
       JOIN users u ON u.user_id = r.user_id
       JOIN locations l ON l.location_id = r.location_id
       LEFT JOIN review_replies rr ON rr.review_id = r.review_id
-      WHERE 1=1
+      WHERE r.status != 'deleted'
     `;
 
     if (auth.role === "owner") {
@@ -14713,7 +14713,7 @@ export const payPosOrder = async (
            ORDER BY payment_id DESC
            LIMIT 1
            FOR UPDATE`,
-          [locationId, `POS_ORDER:${orderId}`],
+          [locationId, `POS_ORDER:${orderId}:{"service_type":"food"}`],
         );
 
         let paymentId: number;
@@ -14830,7 +14830,7 @@ export const payPosOrder = async (
             vatAmount,
             ownerReceivable,
             JSON.stringify(qrData),
-            `POS_ORDER:${orderId}`,
+            `POS_ORDER:${orderId}:{"service_type":"food"}`,
           ];
 
           if (support.hasTransactionSource) {
@@ -14917,8 +14917,8 @@ export const payPosOrder = async (
         }
 
         const notesRaw = String(pRows[0].notes || "");
-        const marker = `POS_ORDER:${orderId}`;
-        let matchOrder = notesRaw === marker;
+        const marker = `POS_ORDER:${orderId}:{"service_type":"food"}`;
+        let matchOrder = notesRaw === marker || notesRaw === `POS_ORDER:${orderId}`;
         if (!matchOrder) {
           try {
             const parsed = JSON.parse(notesRaw);

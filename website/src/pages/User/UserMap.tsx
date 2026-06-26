@@ -18,6 +18,7 @@ import { useLocations } from "../../hooks/useLocations";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getPinIconByKind } from "../../utils/leafletPinIcons";
 import userApi from "../../api/userApi";
+import type { DiaryItem } from "../../types/user.types";
 import locationApi from "../../api/locationApi";
 import geoApi from "../../api/geoApi";
 import {
@@ -1066,9 +1067,20 @@ const UserMap = () => {
     }
   }, []);
 
+  const [diaries, setDiaries] = useState<DiaryItem[]>([]);
+  const loadDiaries = useCallback(async () => {
+    try {
+      const res = await userApi.getDiaries();
+      if (res?.data) {
+        setDiaries(res.data);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     void loadFavoriteLocationIds();
-  }, [loadFavoriteLocationIds]);
+    void loadDiaries();
+  }, [loadFavoriteLocationIds, loadDiaries]);
 
   // Tu dong lay vi tri khi vao trang + watchPosition + device orientation
   useEffect(() => {
@@ -3270,10 +3282,18 @@ const UserMap = () => {
                   <>
                     {/* Anh lon */}
                     {(() => {
-                      const img = resolveBackendUrl(
+                      let img = resolveBackendUrl(
                         selected.first_image ??
                           (Array.isArray(selected.images) ? selected.images[0] : null),
                       );
+                      
+                      if (!img && selected.description === "User created location") {
+                        const matchedDiary = diaries.find(d => d.location_id === selected.location_id || d.location_name === selected.location_name);
+                        if (matchedDiary && matchedDiary.images && matchedDiary.images.length > 0) {
+                          img = resolveBackendUrl(matchedDiary.images[0]);
+                        }
+                      }
+                      
                       return img ? (
                         <div className="relative w-full aspect-[16/10] rounded-xl overflow-hidden">
                           <img

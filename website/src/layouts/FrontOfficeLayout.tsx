@@ -29,7 +29,7 @@ const FrontOfficeLayout = ({
   return (
     <Layout className="min-h-screen">
       <Header
-        className="flex items-center justify-between gap-3 border-b border-slate-100"
+        className="flex items-center justify-between gap-3 border-b border-slate-100 !h-auto !leading-normal py-3 px-4 sm:px-6"
         style={{ background: "#fff" }}
       >
         <div className="flex items-center gap-3">
@@ -43,11 +43,11 @@ const FrontOfficeLayout = ({
             />
           ) : null}
           {onBack ? (
-            <Button icon={<ArrowLeftOutlined />} onClick={onBack} />
+            <Button icon={<ArrowLeftOutlined />} onClick={onBack} className="rounded-xl" />
           ) : null}
-          <div>
-            <div className="font-semibold text-gray-900">{title}</div>
-            <div className="text-xs text-gray-500">
+          <div className="flex flex-col justify-center">
+            <div className="font-bold text-gray-900 text-lg leading-tight">{title}</div>
+            <div className="text-xs text-gray-500 mt-0.5">
               {subtitle
                 ? subtitle
                 : locationName

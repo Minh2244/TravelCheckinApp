@@ -1560,8 +1560,8 @@ export default function FrontOfficeRestaurant(props: {
                   className={
                     "grid gap-4 pr-2 w-full min-w-0 overflow-y-auto overflow-x-hidden " +
                     (inDrawer
-                      ? "grid-cols-2"
-                      : "grid-cols-2 lg:grid-cols-3")
+                      ? "grid-cols-2 sm:grid-cols-3"
+                      : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3")
                   }
                   style={{ maxHeight: inDrawer ? "54vh" : "66vh" }}
                 >
@@ -2437,7 +2437,7 @@ export default function FrontOfficeRestaurant(props: {
           </Space>
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-[520px_1fr] xl:grid-cols-[520px_1fr_360px] gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] xl:grid-cols-[380px_1fr_340px] 2xl:grid-cols-[480px_1fr_360px] gap-4">
           <div className="min-w-0">
             <div className="mb-4 flex items-center justify-between gap-3 p-1 bg-slate-100/80 rounded-2xl border border-slate-200/50">
               <button

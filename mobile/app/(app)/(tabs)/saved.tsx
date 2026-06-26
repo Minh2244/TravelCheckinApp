@@ -1,5 +1,13 @@
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { FlatList, Image, RefreshControl, Text, View } from "react-native";
+import {
+  FlatList,
+  Image,
+  Pressable,
+  RefreshControl,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveBackendUrl } from "../../../src/lib/url";
@@ -7,6 +15,7 @@ import { userApi } from "../../../src/services/user.api";
 import type { LocationItem } from "../../../src/types/location";
 
 export default function SavedScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [items, setItems] = useState<LocationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +82,11 @@ export default function SavedScreen() {
           const imageUrl = resolveBackendUrl(item.first_image || item.images?.[0] || null);
 
           return (
-            <View className="overflow-hidden rounded-xl border border-line bg-white">
+            <Pressable
+              className="overflow-hidden rounded-xl border border-line bg-white"
+              accessibilityRole="button"
+              onPress={() => router.push(`/location/${item.location_id}`)}
+            >
               <View className="aspect-video w-full bg-slate-200">
                 {imageUrl ? (
                   <Image source={{ uri: imageUrl }} className="h-full w-full" resizeMode="cover" />
@@ -91,7 +104,7 @@ export default function SavedScreen() {
                   {item.address}
                 </Text>
               </View>
-            </View>
+            </Pressable>
           );
         }}
       />

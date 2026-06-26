@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import MapView, {
@@ -18,11 +19,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomSheetSummary } from "../../../src/components/map/BottomSheetSummary";
 import { OwnerCachedMarker } from "../../../src/components/map/OwnerCachedMarker";
-import { UserHeadingMarker } from "../../../src/components/map/UserHeadingMarker";
+import { OwnerMarkerBitmapFactory } from "../../../src/components/map/OwnerMarkerBitmapFactory";
+import {
+  UserLocationMarker,
+  UserMarkerBitmapFactory,
+} from "../../../src/components/map/UserLocationMarker";
 import { useLocations } from "../../../src/modules/locations/use-locations";
 import { useLocationPermissionStore } from "../../../src/modules/location-permission/store";
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { osrmApi, type RouteInfo } from "../../../src/services/osrm.api";
+import { userApi } from "../../../src/services/user.api";
 import type { LocationItem } from "../../../src/types/location";
 
 function getLocationCoordinate(location: LocationItem) {
@@ -46,38 +52,62 @@ function shortestAngleDelta(from: number, to: number) {
 }
 
 function smoothHeading(from: number, to: number) {
-  return normalizeHeading(from + shortestAngleDelta(from, to) * 0.5);
+  return normalizeHeading(from + shortestAngleDelta(from, to) * 0.35);
 }
 
-function getHeadingFromLocation(location: Location.LocationObject) {
+function getLocationHeading(location: Location.LocationObject) {
   const heading = Number(location.coords.heading);
-  return Number.isFinite(heading) && heading >= 0 ? normalizeHeading(heading) : null;
+  const speed = Number(location.coords.speed);
+
+  if (
+    Number.isFinite(heading) &&
+    heading >= 0 &&
+    Number.isFinite(speed) &&
+    speed > 0.8
+  ) {
+    return normalizeHeading(heading);
+  }
+
+  return null;
 }
 
-function getHeadingFromSensor(heading: Location.LocationHeadingObject) {
-  const trueHeading = Number(heading.trueHeading);
+function getSensorHeading(value: Location.LocationHeadingObject) {
+  const trueHeading = Number(value.trueHeading);
+
   if (Number.isFinite(trueHeading) && trueHeading >= 0) {
     return normalizeHeading(trueHeading);
   }
 
-  const magneticHeading = Number(heading.magHeading);
+  const magneticHeading = Number(value.magHeading);
   return Number.isFinite(magneticHeading) && magneticHeading >= 0
     ? normalizeHeading(magneticHeading)
     : null;
 }
 
 export default function ExploreScreen() {
+  const params = useLocalSearchParams<{
+    focusLocationId?: string;
+    startRoute?: string;
+    requestKey?: string;
+  }>();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const processedNavigationRef = useRef<string | null>(null);
   const locationWatcherRef = useRef<Location.LocationSubscription | null>(null);
   const headingWatcherRef = useRef<Location.LocationSubscription | null>(null);
-  const { locations } = useLocations();
+  const { locations, keyword, setKeyword } = useLocations();
   const ensureLocationAccess = useLocationPermissionStore((state) => state.ensureAccess);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
-  const [heading, setHeading] = useState(0);
   const [selectedLocation, setSelectedLocation] = useState<LocationItem | null>(null);
+  const [ownerMarkerImages, setOwnerMarkerImages] = useState<Record<number, string>>({});
+  const [favoriteLocationIds, setFavoriteLocationIds] = useState<number[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [userMarkerImage, setUserMarkerImage] = useState<string | null>(null);
+  const [userHeading, setUserHeading] = useState(0);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isRouting, setIsRouting] = useState(false);
+  const [isUserZoomedIn, setIsUserZoomedIn] = useState(false);
 
   const [mapRegion] = useState<Region>({
     latitude: 10.027,
@@ -85,6 +115,28 @@ export default function ExploreScreen() {
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
   });
+
+  const favoriteLocationSet = useMemo(
+    () => new Set(favoriteLocationIds),
+    [favoriteLocationIds],
+  );
+  const searchResults = useMemo(
+    () => (keyword.trim() ? locations.slice(0, 5) : []),
+    [keyword, locations],
+  );
+
+  const loadFavorites = useCallback(async () => {
+    try {
+      const response = await userApi.getFavorites();
+      setFavoriteLocationIds(
+        (response.data || [])
+          .map((item) => Number(item.location_id))
+          .filter((item) => Number.isFinite(item)),
+      );
+    } catch {
+      setFavoriteLocationIds([]);
+    }
+  }, []);
 
   const centerOnUser = useCallback(async () => {
     const ready = await ensureLocationAccess("ban do");
@@ -95,9 +147,10 @@ export default function ExploreScreen() {
         accuracy: Location.Accuracy.Balanced,
       });
       setUserLocation(loc);
-      const nextHeading = getHeadingFromLocation(loc);
+      const nextHeading = getLocationHeading(loc);
+
       if (nextHeading !== null) {
-        setHeading((current) => smoothHeading(current, nextHeading));
+        setUserHeading((current) => smoothHeading(current, nextHeading));
       }
 
       mapRef.current?.animateToRegion({
@@ -107,9 +160,39 @@ export default function ExploreScreen() {
         longitudeDelta: 0.01,
       });
     } catch {
-      showToast("Khong the lay vi tri hien tai.");
+      showToast("Không thể lấy vị trí hiện tại.");
     }
   }, [ensureLocationAccess]);
+
+  const toggleUserZoom = useCallback(async () => {
+    const ready = await ensureLocationAccess("ban do");
+    if (!ready) return;
+
+    try {
+      const loc =
+        userLocation ??
+        (await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        }));
+      const nextZoomedIn = !isUserZoomedIn;
+
+      setUserLocation(loc);
+      setIsUserZoomedIn(nextZoomedIn);
+      mapRef.current?.animateCamera(
+        {
+          center: {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          },
+          zoom: nextZoomedIn ? 20 : 13,
+          pitch: 0,
+        },
+        { duration: 500 },
+      );
+    } catch {
+      showToast("Không thể lấy vị trí hiện tại.");
+    }
+  }, [ensureLocationAccess, isUserZoomedIn, userLocation]);
 
   const startWatchingUser = useCallback(async () => {
     const ready = await ensureLocationAccess("ban do");
@@ -135,19 +218,21 @@ export default function ExploreScreen() {
         },
         (nextLocation) => {
           setUserLocation(nextLocation);
-          const nextHeading = getHeadingFromLocation(nextLocation);
+          const nextHeading = getLocationHeading(nextLocation);
+
           if (nextHeading !== null) {
-            setHeading((current) => smoothHeading(current, nextHeading));
+            setUserHeading((current) => smoothHeading(current, nextHeading));
           }
         },
       );
     }
 
     if (!headingWatcherRef.current) {
-      headingWatcherRef.current = await Location.watchHeadingAsync((nextHeadingRaw) => {
-        const nextHeading = getHeadingFromSensor(nextHeadingRaw);
+      headingWatcherRef.current = await Location.watchHeadingAsync((value) => {
+        const nextHeading = getSensorHeading(value);
+
         if (nextHeading !== null) {
-          setHeading((current) => smoothHeading(current, nextHeading));
+          setUserHeading((current) => smoothHeading(current, nextHeading));
         }
       });
     }
@@ -158,11 +243,13 @@ export default function ExploreScreen() {
       const coordinate = getLocationCoordinate(location);
 
       if (!coordinate) {
-        showToast("Dia diem nay chua co toa do.");
+        showToast("Địa điểm này chưa có tọa độ.");
         return;
       }
 
       setSelectedLocation(location);
+      setSearchFocused(false);
+      searchInputRef.current?.blur();
 
       if (!isRouting) {
         mapRef.current?.animateToRegion({
@@ -176,10 +263,91 @@ export default function ExploreScreen() {
     [isRouting],
   );
 
+  const toggleSelectedFavorite = useCallback(async () => {
+    if (!selectedLocation) {
+      return;
+    }
+
+    const locationId = Number(selectedLocation.location_id);
+    const isFavorite = favoriteLocationSet.has(locationId);
+
+    setFavoriteLocationIds((current) =>
+      isFavorite
+        ? current.filter((item) => item !== locationId)
+        : current.includes(locationId)
+          ? current
+          : [...current, locationId],
+    );
+
+    try {
+      await userApi.toggleFavorite(locationId, !isFavorite);
+      showToast(isFavorite ? "Đã bỏ lưu địa điểm" : "Đã lưu địa điểm");
+    } catch {
+      await loadFavorites();
+      showToast("Không thể cập nhật địa điểm đã lưu");
+    }
+  }, [favoriteLocationSet, loadFavorites, selectedLocation]);
+
+  const startRouteToLocation = useCallback(
+    async (target: LocationItem) => {
+      const coordinate = getLocationCoordinate(target);
+      if (!coordinate) {
+        showToast("Địa điểm này chưa có tọa độ.");
+        return;
+      }
+
+      const ready = await ensureLocationAccess("chỉ đường");
+      if (!ready) return;
+
+      try {
+        const origin =
+          userLocation ??
+          (await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          }));
+
+        setUserLocation(origin);
+        setSelectedLocation(target);
+
+        const route = await osrmApi.getRoute(
+          {
+            latitude: origin.coords.latitude,
+            longitude: origin.coords.longitude,
+          },
+          coordinate,
+        );
+
+        setRouteInfo(route);
+        setIsRouting(true);
+        mapRef.current?.fitToCoordinates(route.coordinates, {
+          edgePadding: { top: 110, right: 45, bottom: 70, left: 45 },
+          animated: true,
+        });
+      } catch {
+        showToast("Không tìm được đường đi");
+      }
+    },
+    [ensureLocationAccess, userLocation],
+  );
+
+  const handleOwnerMarkerReady = useCallback((locationId: number, uri: string) => {
+    setOwnerMarkerImages((current) => {
+      if (current[locationId] === uri) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [locationId]: uri,
+      };
+    });
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void centerOnUser();
       void startWatchingUser();
+      void loadFavorites();
 
       const subscription = AppState.addEventListener("change", (state) => {
         if (state === "active") {
@@ -190,8 +358,42 @@ export default function ExploreScreen() {
       return () => {
         subscription.remove();
       };
-    }, [centerOnUser, startWatchingUser]),
+    }, [centerOnUser, loadFavorites, startWatchingUser]),
   );
+
+  useEffect(() => {
+    const focusId = Number(params.focusLocationId);
+    if (!Number.isFinite(focusId)) {
+      return;
+    }
+
+    const navigationKey = `${focusId}:${params.startRoute || "0"}:${params.requestKey || "default"}`;
+    if (processedNavigationRef.current === navigationKey) {
+      return;
+    }
+
+    const target = locations.find(
+      (location) => Number(location.location_id) === focusId,
+    );
+    if (!target) {
+      return;
+    }
+
+    processedNavigationRef.current = navigationKey;
+
+    if (params.startRoute === "1") {
+      void startRouteToLocation(target);
+    } else {
+      handleSelectLocation(target);
+    }
+  }, [
+    handleSelectLocation,
+    locations,
+    params.focusLocationId,
+    params.requestKey,
+    params.startRoute,
+    startRouteToLocation,
+  ]);
 
   useFocusEffect(
     useCallback(
@@ -217,7 +419,8 @@ export default function ExploreScreen() {
         provider={PROVIDER_DEFAULT}
         mapType="standard"
         initialRegion={mapRegion}
-        showsUserLocation={false}
+        maxZoomLevel={20}
+        showsUserLocation={Boolean(userLocation) && !userMarkerImage}
         showsCompass={false}
         showsMyLocationButton={false}
         toolbarEnabled={false}
@@ -234,14 +437,19 @@ export default function ExploreScreen() {
               key={location.location_id}
               coordinate={coordinate}
               location={location}
+              imageUri={ownerMarkerImages[location.location_id]}
               selected={selectedLocation?.location_id === location.location_id}
               onSelect={handleSelectLocation}
             />
           );
         })}
 
-        {userLocation ? (
-          <UserHeadingMarker location={userLocation} heading={heading} />
+        {userLocation && userMarkerImage ? (
+          <UserLocationMarker
+            location={userLocation}
+            heading={userHeading}
+            imageUri={userMarkerImage}
+          />
         ) : null}
 
         {isRouting && routeInfo && (
@@ -255,28 +463,87 @@ export default function ExploreScreen() {
         )}
       </MapView>
 
+      <OwnerMarkerBitmapFactory
+        locations={locations}
+        onReady={handleOwnerMarkerReady}
+      />
+      <UserMarkerBitmapFactory onReady={setUserMarkerImage} />
+
       {isRouting && routeInfo && selectedLocation ? (
         <View style={[styles.routeHeader, { paddingTop: Math.max(insets.top, 16) }]}>
-          <Pressable style={styles.cancelRouteBtn} onPress={() => setIsRouting(false)}>
+          <Pressable
+            style={styles.cancelRouteBtn}
+            onPress={() => {
+              setIsRouting(false);
+              setRouteInfo(null);
+            }}
+          >
             <Ionicons name="chevron-back" size={24} color="#0f172a" />
           </Pressable>
           <View style={styles.routeInfo}>
-            <Text style={styles.routeTitle}>Den {selectedLocation.location_name}</Text>
+            <Text style={styles.routeTitle}>Đến {selectedLocation.location_name}</Text>
             <Text style={styles.routeSub}>
               {(routeInfo.distance / 1000).toFixed(1)} km {"\u2022"}{" "}
-              {routeInfo.duration > 0 ? `${Math.round(routeInfo.duration / 60)} phut` : "duong thang"}
+              {routeInfo.duration > 0
+                ? `${Math.round(routeInfo.duration / 60)} phút`
+                : "đường thẳng"}
             </Text>
           </View>
         </View>
       ) : (
         <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-          <Pressable
-            style={styles.searchBar}
-            onPress={() => showToast("Chuc nang tim kiem dang cap nhat")}
-          >
+          <View style={styles.searchBar}>
             <Ionicons name="search" size={20} color="#64748b" />
-            <Text style={styles.searchText}>Tim kiem dia diem...</Text>
-          </Pressable>
+            <TextInput
+              ref={searchInputRef}
+              value={keyword}
+              onChangeText={setKeyword}
+              onFocus={() => setSearchFocused(true)}
+              placeholder="Tìm kiếm địa điểm..."
+              placeholderTextColor="#64748b"
+              style={styles.searchInput}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {keyword ? (
+              <Pressable
+                hitSlop={10}
+                onPress={() => {
+                  setKeyword("");
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <Ionicons name="close-circle" size={20} color="#94a3b8" />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {searchFocused && keyword.trim() ? (
+            <View style={styles.searchResults}>
+              {searchResults.length > 0 ? (
+                searchResults.map((location) => (
+                  <Pressable
+                    key={location.location_id}
+                    style={styles.searchResultItem}
+                    onPress={() => handleSelectLocation(location)}
+                  >
+                    <Ionicons name="location-outline" size={18} color="#0f766e" />
+                    <View style={styles.searchResultText}>
+                      <Text style={styles.searchResultTitle} numberOfLines={1}>
+                        {location.location_name}
+                      </Text>
+                      <Text style={styles.searchResultAddress} numberOfLines={1}>
+                        {location.address}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              ) : (
+                <Text style={styles.emptySearch}>Không tìm thấy địa điểm phù hợp.</Text>
+              )}
+            </View>
+          ) : null}
         </View>
       )}
 
@@ -286,49 +553,18 @@ export default function ExploreScreen() {
           { bottom: Math.max(insets.bottom + 20, 20) },
           selectedLocation && !isRouting && { bottom: Math.max(insets.bottom + 200, 200) },
         ]}
-        onPress={() => void centerOnUser()}
+        onPress={() => void toggleUserZoom()}
       >
         <Ionicons name="locate" size={24} color="#0f766e" />
       </Pressable>
 
       {selectedLocation && !isRouting ? (
         <BottomSheetSummary
+          isFavorite={favoriteLocationSet.has(selectedLocation.location_id)}
           location={selectedLocation}
           onClose={() => setSelectedLocation(null)}
-          onRoute={async () => {
-            if (!userLocation) {
-              showToast("Dang tim vi tri cua ban...");
-              await centerOnUser();
-              return;
-            }
-
-            const coordinate = getLocationCoordinate(selectedLocation);
-
-            if (!coordinate) {
-              showToast("Dia diem nay chua co toa do.");
-              return;
-            }
-
-            try {
-              const route = await osrmApi.getRoute(
-                {
-                  latitude: userLocation.coords.latitude,
-                  longitude: userLocation.coords.longitude,
-                },
-                coordinate,
-              );
-
-              setRouteInfo(route);
-              setIsRouting(true);
-
-              mapRef.current?.fitToCoordinates(route.coordinates, {
-                edgePadding: { top: 100, right: 50, bottom: 50, left: 50 },
-                animated: true,
-              });
-            } catch {
-              showToast("Khong tim duoc duong di");
-            }
-          }}
+          onToggleFavorite={() => void toggleSelectedFavorite()}
+          onRoute={() => void startRouteToLocation(selectedLocation)}
         />
       ) : null}
     </View>
@@ -366,9 +602,48 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 6,
   },
-  searchText: {
+  searchInput: {
+    flex: 1,
     fontSize: 16,
+    color: "#0f172a",
+    paddingVertical: 0,
+  },
+  searchResults: {
+    marginTop: 7,
+    backgroundColor: "#ffffff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#dbe4ea",
+    overflow: "hidden",
+    elevation: 8,
+  },
+  searchResultItem: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e2e8f0",
+  },
+  searchResultText: {
+    flex: 1,
+  },
+  searchResultTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  searchResultAddress: {
+    marginTop: 2,
+    fontSize: 12,
     color: "#64748b",
+  },
+  emptySearch: {
+    padding: 14,
+    color: "#64748b",
+    fontSize: 13,
   },
   routeHeader: {
     position: "absolute",

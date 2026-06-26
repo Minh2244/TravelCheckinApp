@@ -1,8 +1,9 @@
 import { Directory, File, Paths } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import { PixelRatio } from "react-native";
 
-const MARKER_CACHE_DIR_NAME = "travelcheckin-marker-cache";
-const MARKER_SIZE = 96;
+const MARKER_CACHE_DIR_NAME = "travelcheckin-native-marker-cache-v4";
+const MARKER_SOURCE_SIZE = PixelRatio.getPixelSizeForLayoutSize(38);
 
 const pending = new Map<string, Promise<string | null>>();
 
@@ -41,8 +42,8 @@ async function createCachedMarkerImage(
   imageUrl: string,
 ) {
   const directory = ensureCacheDirectory();
-  const cacheKey = `${locationId}-${hashString(imageUrl)}`;
-  const outputFile = new File(directory, `${cacheKey}.jpg`);
+  const cacheKey = `${locationId}-${MARKER_SOURCE_SIZE}-${hashString(imageUrl)}`;
+  const outputFile = new File(directory, `${cacheKey}.png`);
 
   if (outputFile.exists && outputFile.size > 0) {
     return outputFile.uri;
@@ -62,10 +63,17 @@ async function createCachedMarkerImage(
 
     const resized = await manipulateAsync(
       downloaded.uri,
-      [{ resize: { width: MARKER_SIZE } }],
+      [
+        {
+          resize: {
+            width: MARKER_SOURCE_SIZE,
+            height: MARKER_SOURCE_SIZE,
+          },
+        },
+      ],
       {
-        compress: 0.86,
-        format: SaveFormat.JPEG,
+        compress: 1,
+        format: SaveFormat.PNG,
       },
     );
 

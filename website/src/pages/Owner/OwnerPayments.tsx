@@ -746,7 +746,12 @@ export default function OwnerPayments() {
             return (
               <div className="flex flex-col gap-1 items-start">
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || (
+                  {row.invoice_code ? (
+                    <>
+                      {row.invoice_code}
+                      {vcTag}
+                    </>
+                  ) : (
                     <>
                       #RS-BATCH{vcTag}
                       <br />
@@ -755,6 +760,9 @@ export default function OwnerPayments() {
                       </span>
                     </>
                   )}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -765,7 +773,10 @@ export default function OwnerPayments() {
             return (
               <div>
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || <>#RS-{singleId}{vcTag}</>}
+                  {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#RS-{singleId}{vcTag}</>}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -774,7 +785,10 @@ export default function OwnerPayments() {
           return (
             <div>
               <span className="font-medium text-blue-700">
-                {row.invoice_code || <>#RS-POS-{row.payment_id}{vcTag}</>}
+                {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#RS-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              <span className="mt-1">
+                <Tag color="orange" className="ml-1 px-1 py-0 text-[10px]">Tại quầy</Tag>
               </span>
               {cancelTag}
             </div>
@@ -882,7 +896,10 @@ export default function OwnerPayments() {
             return (
               <div>
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || <>#DI-{row.booking_id}{vcTag}</>}
+                  {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#DI-{row.booking_id}{vcTag}</>}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -891,7 +908,10 @@ export default function OwnerPayments() {
           return (
             <div>
               <span className="font-semibold text-blue-700">
-                {row.invoice_code || <>#DI-POS-{row.payment_id}{vcTag}</>}
+                {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#DI-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              <span className="mt-1">
+                <Tag color="orange" className="ml-1 px-1 py-0 text-[10px]">Tại quầy</Tag>
               </span>
               {cancelTag}
             </div>
@@ -997,7 +1017,10 @@ export default function OwnerPayments() {
             return (
               <div>
                 <span className="font-semibold text-blue-700">
-                  {row.invoice_code || <>#SB-{row.booking_id}{vcTag}</>}
+                  {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#SB-{row.booking_id}{vcTag}</>}
+                </span>
+                <span className="mt-1">
+                  <Tag color="blue" className="ml-1 px-1 py-0 text-[10px]">Đặt trước</Tag>
                 </span>
                 {cancelTag}
               </div>
@@ -1006,7 +1029,10 @@ export default function OwnerPayments() {
           return (
             <div>
               <span className="font-semibold text-blue-700">
-                {row.invoice_code || <>#SB-POS-{row.payment_id}{vcTag}</>}
+                {row.invoice_code ? <>{row.invoice_code}{vcTag}</> : <>#SB-POS-{row.payment_id}{vcTag}</>}
+              </span>
+              <span className="mt-1">
+                <Tag color="orange" className="ml-1 px-1 py-0 text-[10px]">Tại quầy</Tag>
               </span>
               {cancelTag}
             </div>

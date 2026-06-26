@@ -7660,6 +7660,8 @@ export const getAdminReviews = async (
     if (status && ["active", "hidden", "deleted", "pending"].includes(status)) {
       where.push("r.status = ?");
       params.push(status);
+    } else {
+      where.push("r.status != 'deleted'");
     }
 
     const selectedDate =

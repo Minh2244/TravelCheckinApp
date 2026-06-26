@@ -50,6 +50,7 @@ const LocationChatBubble = ({
   initialOpen,
 }: LocationChatBubbleProps) => {
   const [isOpen, setIsOpen] = useState(initialOpen || false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
@@ -428,7 +429,7 @@ const LocationChatBubble = ({
 
       {/* Cửa sổ hội thoại nổi */}
       {isOpen && (
-        <div className="absolute bottom-16 right-0 w-[360px] sm:w-[400px] h-[520px] rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col overflow-hidden animate-fade-in">
+        <div className={`absolute bottom-16 right-0 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col z-40 overflow-hidden transition-all duration-300 origin-bottom-right rounded-2xl border border-slate-100 ${isExpanded ? 'w-[92vw] sm:w-[80vw] md:w-[65vw] lg:w-[50vw] h-[85vh] fixed bottom-24 right-6' : 'w-[360px] sm:w-[400px] h-[520px] max-h-[80vh]'}`}>
           {/* Header */}
           <div
             onMouseDown={handleHeaderMouseDown}
@@ -455,15 +456,33 @@ const LocationChatBubble = ({
                 <p className="text-[10px] opacity-80 font-semibold">Kết nối thời gian thực</p>
               </div>
             </div>
-            <button
-              type="button"
-              className="text-white/80 hover:text-white transition"
-              onClick={() => setIsOpen(false)}
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="text-white/80 hover:text-white p-1.5 rounded-full transition-colors active:scale-95"
+                onClick={() => setIsExpanded(p => !p)}
+                title={isExpanded ? "Thu nhỏ" : "Phóng to"}
+              >
+                {isExpanded ? (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9L5 5m4 4v-4m0 4H5m10 0l4-4m-4 4v-4m0 4h4M9 15l-4 4m4-4v4m0-4H5m10 0l4 4m-4-4v4m0-4h4" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                  </svg>
+                )}
+              </button>
+              <button
+                type="button"
+                className="text-white/80 hover:text-white p-1.5 rounded-full transition-colors active:scale-95"
+                onClick={() => setIsOpen(false)}
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Message List */}
@@ -538,7 +557,7 @@ const LocationChatBubble = ({
                     {/* Render Content Text if exists */}
                     {item.content && (
                       <div
-                        className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed break-words font-medium shadow-sm ${
+                        className={`rounded-2xl px-3.5 py-2 ${isExpanded ? 'text-base' : 'text-sm'} leading-relaxed break-words font-medium shadow-sm ${
                           isMe
                             ? userRole === "user"
                               ? "bg-blue-600 text-white rounded-br-none"

@@ -43,8 +43,11 @@ export interface DiaryItem {
 
 export interface AiChatHistoryItem {
   history_id: number;
+  conversation_id?: number;
   prompt: string;
   response: string;
+  response_type?: string;
+  metadata?: any;
   created_at: string;
 }
 
