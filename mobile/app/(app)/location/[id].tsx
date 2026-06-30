@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LocationReviews } from "../../../src/components/location/LocationReviews";
 import { resolveBackendUrl } from "../../../src/lib/url";
+import { isLocationOpen } from "../../../src/lib/time";
 import { useAuthStore } from "../../../src/modules/auth/store";
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { geoApi } from "../../../src/services/geo.api";
@@ -24,6 +25,7 @@ import {
   type LocationVoucher,
 } from "../../../src/services/user.api";
 import type { LocationItem } from "../../../src/types/location";
+import { LocationChatModal } from "../../../src/components/chat/LocationChatBubble";
 
 type DetailTab = "overview" | "reviews" | "about";
 
@@ -121,6 +123,7 @@ export default function LocationDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [temperature, setTemperature] = useState<number | null>(null);
   const [weather, setWeather] = useState<string | null>(null);
@@ -350,6 +353,22 @@ export default function LocationDetailScreen() {
             <View style={styles.headerRight}>
               <Pressable
                 style={styles.iconButton}
+                onPress={() => {
+                  const type = location?.location_type || "";
+                  const target = ["restaurant", "cafe"].includes(type)
+                    ? "/wallet/table-pass"
+                    : ["hotel", "resort", "homestay"].includes(type)
+                      ? "/wallet/room-pass"
+                      : ["attraction", "eco_tourism", "tourist"].includes(type)
+                        ? "/wallet/tickets"
+                        : "/wallet";
+                  router.push(target as any);
+                }}
+              >
+                <Ionicons name="cart-outline" size={23} color="#0f172a" />
+              </Pressable>
+              <Pressable
+                style={styles.iconButton}
                 onPress={() => void toggleFavorite()}
                 disabled={favoriteLoading}
               >
@@ -380,6 +399,13 @@ export default function LocationDetailScreen() {
               </Text>
             </View>
           </View>
+          
+          {!isLocationOpen(location.opening_hours) && (
+            <View style={styles.closedOverlay}>
+              <Ionicons name="time-outline" size={20} color="#fff" />
+              <Text style={styles.closedOverlayText}>Đang đóng cửa</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.infoPanel}>
@@ -585,10 +611,33 @@ export default function LocationDetailScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Pressable
-          style={styles.actionButton}
-          onPress={() => router.push(`/location/${location.location_id}/services`)}
+          style={[
+            styles.actionButton,
+            !isLocationOpen(location.opening_hours) && styles.actionButtonDisabled
+          ]}
+          disabled={!isLocationOpen(location.opening_hours)}
+          onPress={() => {
+            const t = String(location.location_type || "").toLowerCase();
+            if (t === "restaurant" || t === "cafe") {
+              router.push(`/booking/table/0?locationId=${location.location_id}`);
+            } else if (t === "hotel" || t === "resort") {
+              router.push(`/booking/hotel/${location.location_id}`);
+            } else if (t === "tourist") {
+              router.push(`/booking/ticket/all?locationId=${location.location_id}`);
+            } else {
+              router.push(`/location/${location.location_id}/services`);
+            }
+          }}
         >
-          <Text style={styles.actionButtonText}>Xem dịch vụ tại địa điểm</Text>
+          <Text style={styles.actionButtonText}>
+            {(() => {
+              const t = String(location.location_type || "").toLowerCase();
+              if (t === "restaurant" || t === "cafe") return "Đặt bàn trước";
+              if (t === "hotel" || t === "resort") return "Đặt phòng";
+              if (t === "tourist") return "Mua vé";
+              return "Xem dịch vụ tại địa điểm";
+            })()}
+          </Text>
         </Pressable>
       </View>
 
@@ -600,9 +649,7 @@ export default function LocationDetailScreen() {
       >
         <Pressable
           style={[styles.chatBubble, styles.ownerChatBubble]}
-          onPress={() =>
-            showToast("Chat với địa điểm sẽ mở ở cụm giao tiếp tiếp theo.")
-          }
+          onPress={() => setIsChatOpen(true)}
           accessibilityLabel="Chat với địa điểm"
         >
           <Ionicons name="chatbubble-ellipses-outline" size={23} color="#ffffff" />
@@ -616,10 +663,19 @@ export default function LocationDetailScreen() {
         >
           <Ionicons name="sparkles-outline" size={23} color="#ffffff" />
         </Pressable>
+        </View>
+
+        <LocationChatModal
+          locationId={location.location_id}
+          userRole="user"
+          locationName={location.location_name}
+          locationImage={normalizeImages(location.images)[0] || null}
+          visible={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+        />
       </View>
-    </View>
-  );
-}
+    );
+  }
 
 function InfoRow({
   icon,
@@ -746,6 +802,24 @@ const styles = StyleSheet.create({
     maxWidth: 88,
     color: "#0369a1",
     fontSize: 11,
+  },
+  closedOverlay: {
+    position: "absolute",
+    left: 14,
+    bottom: 34,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    elevation: 5,
+  },
+  closedOverlayText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
   },
   iconButton: {
     width: 42,
@@ -1002,6 +1076,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  actionButtonDisabled: {
+    backgroundColor: "#94a3b8",
   },
   actionButtonText: {
     color: "#ffffff",

@@ -1,0 +1,59 @@
+{
+  "plans": [
+    {
+      "file": "docs/Kế Hoạch mobile/README.md",
+      "title": "Yêu Cầu Kỹ Thuật & Cấu Hình Mobile App (Phase 4)",
+      "status": "reference"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/giai-doan-1-auth.md",
+      "title": "Giai đoạn 1: Cụm Màn Hình Xác Thực",
+      "status": "completed"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/giai-doan-2-home.md",
+      "title": "Giai đoạn 2: Trang Chủ (Home Tab)",
+      "status": "completed"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/Ke_hoach_giai_doan_3.md",
+      "title": "Kế hoạch Triển khai Giai đoạn 3: Bản đồ Tương tác, Marker Ảnh Mobile & Màn Hình Chi Tiết",
+      "status": "completed"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/giai-doan-4-booking-thanh-toan-va-vi-dien-tu.md",
+      "title": "Giai đoạn 4: Booking, Thanh toán VietQR & Ví điện tử của User",
+      "status": "completed"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/giai-doan-5-tien-ich-user-ho-so-va-an-toan.md",
+      "title": "Giai đoạn 5: Tiện ích User, Hồ sơ cá nhân & An toàn",
+      "status": "planned"
+    },
+    {
+      "file": "docs/Kế Hoạch mobile/giai-doan-6-ai-chat-va-lich-trinh.md",
+      "title": "Giai đoạn 6: AI Chat, Chat với địa điểm & Lịch trình cá nhân",
+      "status": "planned"
+    },
+    {
+      "file": "docs/kế hoạch làm AI/README.md",
+      "title": "Tiêu chuẩn và Kiến trúc Tích hợp AI (Gemini API)",
+      "status": "reference"
+    },
+    {
+      "file": "docs/kế hoạch làm AI/AI user/ke-hoach-ai-user.md",
+      "title": "Kế hoạch AI hỗ trợ User bằng Gemini API",
+      "status": "planned"
+    },
+    {
+      "file": "docs/kế hoạch làm AI/AI owner admin/ke-hoach-ai-owner-admin.md",
+      "title": "Kế hoạch chi tiết AI cho Owner và Admin",
+      "status": "planned"
+    },
+    {
+      "file": "docs/kế hoạch thiết kế auth/README.md",
+      "title": "Kế hoạch Thiết kế lại Giao diện Xác thực (Auth UI Redesign)",
+      "status": "planned"
+    }
+  ]
+}

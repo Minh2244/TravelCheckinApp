@@ -114,11 +114,15 @@ export default function BookingPaymentScreen() {
         router.replace(params.returnTo as never);
         return;
       }
-      if (mode === "table" && params.locationId) {
-        router.replace(`/booking/table/0?locationId=${params.locationId}`);
+      if (mode === "ticket") {
+        router.replace("/wallet/tickets");
         return;
       }
-      router.back();
+      if (mode === "room" || mode === "room-batch") {
+        router.replace("/wallet/room-pass");
+        return;
+      }
+      router.replace("/wallet/table-pass");
     } catch (error) {
       showToast(getErrorMessage(error));
     } finally {

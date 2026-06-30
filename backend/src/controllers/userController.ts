@@ -1500,7 +1500,7 @@ export const updateUserFavorite = async (
       return;
     }
 
-    const body = req.body as UpdateFavoriteBody;
+    const body = (req.body || {}) as UpdateFavoriteBody;
     const note = body.note === undefined ? undefined : (body.note ?? null);
     const tags = body.tags === undefined ? undefined : (body.tags ?? null);
 

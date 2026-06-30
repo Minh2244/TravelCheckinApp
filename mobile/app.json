@@ -18,7 +18,8 @@
           "hidden": false,
           "enforceContrast": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "ios": {
       "supportsTablet": true,

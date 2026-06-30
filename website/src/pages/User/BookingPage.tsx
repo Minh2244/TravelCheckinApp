@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { io } from "socket.io-client";
 import { ConfigProvider, DatePicker, Modal } from "antd";
 import viVN from "antd/locale/vi_VN";
 import dayjs from "dayjs";
@@ -70,6 +71,7 @@ type PublicServiceRow = {
   service_name: string;
   service_type: "room" | "table" | "ticket" | "food" | "combo" | "other";
   price: number | string;
+  unit?: string | null;
   images: unknown;
   category_name?: string | null;
   category_type?: string | null;
@@ -779,6 +781,26 @@ const BookingPage = () => {
   }, [locationIdNum, loadServices]);
 
   useEffect(() => {
+    if (!location) return;
+
+    const checkOpen = () => {
+      if (!isWithinOpeningHours(location.opening_hours)) {
+        sessionStorage.setItem(
+          "tc_booking_fade_message",
+          "Địa điểm đã đóng cửa, không thể tiếp tục đặt dịch vụ.",
+        );
+        navigate(`/user/location/${location.location_id}`);
+        return false;
+      }
+      return true;
+    };
+
+    if (!checkOpen()) return;
+    const interval = setInterval(checkOpen, 60000);
+    return () => clearInterval(interval);
+  }, [location, navigate]);
+
+  useEffect(() => {
     if (!locationIdNum) return;
     userApi.getMySavedVouchers().then((res) => {
       if (res.success) setSavedVouchers(res.data || []);
@@ -1275,6 +1297,59 @@ const BookingPage = () => {
     loadServices,
   ]);
 
+  // Public Real-time (Socket.IO) for table/room state changes
+  useEffect(() => {
+    if (!locationIdNum) return;
+    const backendUrl = resolveBackendUrl("");
+    if (!backendUrl) return;
+
+    const socket = io(backendUrl);
+
+    socket.on("connect", () => {
+      socket.emit("join_location_public", { locationId: locationIdNum });
+    });
+
+    socket.on("public_status_changed", (data: any) => {
+      if (data?.type === "table" || data?.type === "pos_updated") {
+        if (isFoodLocation) {
+          void fetchPosTables().then((latest) => {
+            if (latest) {
+              setPosTables(latest);
+              // Conflict resolution
+              if (data?.action === "table_reserved" || data?.status === "reserved") {
+                const targetTableId = Number(data.table_id || data.target_id);
+                setSelectedTableIds((prev) => {
+                  if (prev.includes(targetTableId)) {
+                    Modal.warning({
+                      title: "Dịch vụ không khả dụng",
+                      content: `Bàn bạn đang chọn vừa có người đặt trước. Vui lòng chọn dịch vụ khác.`,
+                      okText: "Đã hiểu"
+                    });
+                    return prev.filter((id) => id !== targetTableId);
+                  }
+                  return prev;
+                });
+              }
+            }
+          });
+          void fetchMyTableReservations().then((latest) => {
+            setTableReservations(latest);
+          });
+        }
+      }
+
+      if (data?.type === "tourist_updated" || data?.type === "hotel_updated") {
+        void loadServices();
+        // Room conflict resolution can be done on reload implicitly if available rooms decrease, 
+        // but since we do not have specific room ID locking until payment, we just refresh.
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [locationIdNum, isFoodLocation, fetchPosTables, loadServices]);
+
   const handleChange = (field: keyof BookingFormState, value: string) => {
     if (field === "checkInDate" && !isHotelBooking) {
       setAutoSyncCheckIn(false);
@@ -1568,6 +1643,7 @@ const BookingPage = () => {
             service_name: String(r.service_name || ""),
             service_type: String(r.service_type || "other") as any,
             price: r.price,
+            unit: r.unit == null ? null : String(r.unit),
             images: r.images,
             category_name:
               r.category_name == null ? null : String(r.category_name),
@@ -1796,14 +1872,30 @@ const BookingPage = () => {
   }, [roomServices, selectedRoomIds]);
 
   const selectedTotal = useMemo(() => {
-    const hourly = selectedRooms.reduce(
-      (sum, r) => sum + Number(r.price || 0),
-      0,
-    );
-    if (isHotelBooking) {
-      return hourly * hotelStayDays * 24;
+    if (!isHotelBooking) {
+      return selectedRooms.reduce(
+        (sum, r) => sum + Number(r.price || 0),
+        0
+      );
     }
-    return hourly;
+    return selectedRooms.reduce((sum, r) => {
+      const basePrice = Number(r.price || 0);
+      const u = String(r.unit || "").toLowerCase().trim();
+      let multiplier = hotelStayDays;
+      
+      const isHourly = u === "h" || u.includes("hour") || u.includes("giờ") || u.includes("gio") || u.includes("tiếng") || u.includes("tieng");
+      const isWeekly = u.includes("tuần") || u.includes("tuan") || u.includes("week");
+      const isMonthly = u.includes("tháng") || u.includes("thang") || u.includes("month");
+
+      if (isHourly) {
+        multiplier = hotelStayDays * 24;
+      } else if (isMonthly) {
+        multiplier = hotelStayDays / 30;
+      } else if (isWeekly) {
+        multiplier = hotelStayDays / 7;
+      }
+      return sum + basePrice * multiplier;
+    }, 0);
   }, [hotelStayDays, isHotelBooking, selectedRooms]);
 
   const toggleRoom = (serviceId: number) => {
@@ -3514,7 +3606,7 @@ const BookingPage = () => {
                                           {Number(r.price || 0).toLocaleString(
                                             "vi-VN",
                                           )}
-                                          đ / giờ
+                                          đ / {r.unit || "giờ"}
                                         </p>
                                       </div>
                                     </div>

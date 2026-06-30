@@ -1,26 +1,32 @@
+import { AxiosError } from "axios";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Image,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { resolveBackendUrl } from "../../../../src/lib/url";
+import { isLocationOpen } from "../../../../src/lib/time";
 import { getErrorMessage } from "../../../../src/lib/error";
+import { normalizeImages, pad, toInputDateTime, toLocalISOString } from "../../../../src/lib/booking-utils";
+import { useBookingRealtime } from "../../../../src/hooks/useBookingRealtime";
 import { useAuthStore } from "../../../../src/modules/auth/store";
 import { showToast } from "../../../../src/modules/ui/toast-store";
 import { bookingApi } from "../../../../src/services/booking.api";
 import { locationApi } from "../../../../src/services/location.api";
 import { userApi, type LocationVoucher } from "../../../../src/services/user.api";
-import type { CreateBookingResult } from "../../../../src/types/booking";
 import type {
   LocationItem,
   LocationPosArea,
@@ -38,19 +44,18 @@ type MenuCategory = {
   sortOrder: number;
 };
 
-function pad(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function toInputDateTime(date: Date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours(),
-  )}:${pad(date.getMinutes())}`;
-}
-
 function parseInputDate(value: string) {
-  const date = new Date(value.trim().replace(" ", "T"));
-  return Number.isNaN(date.getTime()) ? null : date;
+  const parts = value.trim().split(/[\s/\-:]+/);
+  if (parts.length >= 5) {
+    const d = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const y = parseInt(parts[2], 10);
+    const h = parseInt(parts[3], 10);
+    const min = parseInt(parts[4], 10);
+    const date = new Date(y, m, d, h, min);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
 }
 
 function addMinutes(date: Date, minutes: number) {
@@ -178,6 +183,7 @@ export default function TableBookingScreen() {
   const params = useLocalSearchParams<SearchParams>();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((state) => state.user);
+  const lastLoadedCheckInRef = useRef<string | null>(null);
 
   const locationId = Number(params.locationId);
   const [location, setLocation] = useState<LocationItem | null>(null);
@@ -191,7 +197,7 @@ export default function TableBookingScreen() {
   const [selectedArea, setSelectedArea] = useState("all");
   const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
   const [checkInDate, setCheckInDate] = useState(() =>
-    toInputDateTime(addMinutes(new Date(), 15)),
+    toInputDateTime(new Date()),
   );
   const [contactName, setContactName] = useState(user?.full_name ?? "");
   const [contactPhone, setContactPhone] = useState(user?.phone ?? "");
@@ -202,16 +208,33 @@ export default function TableBookingScreen() {
     Record<number, number>
   >({});
   const [selectedVoucherId, setSelectedVoucherId] = useState<number | null>(null);
-  const [bookingResult, setBookingResult] = useState<CreateBookingResult | null>(
-    null,
-  );
+
+  // Socket.IO real-time table conflict detection
+  useBookingRealtime(locationId, {
+    onTableConflict: (tableId) => {
+      setSelectedTableIds((prev) => {
+        if (prev.includes(tableId)) {
+          showToast("Bàn bạn đang chọn vừa có người đặt trước. Vui lòng chọn bàn khác.");
+          return prev.filter((id) => id !== tableId);
+        }
+        return prev;
+      });
+    },
+    onStatusChanged: (data) => {
+      if (data?.type === "table" || data?.type === "pos_updated") {
+        // Reload tables silently when status changes
+        loadTables().catch(() => {});
+      }
+    },
+  });
 
   const loadTables = useCallback(async () => {
     if (!Number.isFinite(locationId) || locationId <= 0) return null;
     setTablesLoading(true);
     try {
+      const dateToLoad = lastLoadedCheckInRef.current ?? checkInDate;
       const response = await locationApi.getPosTables(locationId, {
-        check_in_date: parseInputDate(checkInDate)?.toISOString(),
+        check_in_date: parseInputDate(dateToLoad)?.toISOString(),
       });
       const nextTables = Array.isArray(response.data) ? response.data : [];
       setTables(nextTables);
@@ -238,7 +261,7 @@ export default function TableBookingScreen() {
       locationApi.getLocationById(locationId),
       locationApi.getPosAreas(locationId),
       locationApi.getPosTables(locationId, {
-        check_in_date: parseInputDate(checkInDate)?.toISOString(),
+        check_in_date: parseInputDate(lastLoadedCheckInRef.current ?? checkInDate)?.toISOString(),
       }),
       locationApi.getServices(locationId),
       userApi.getMySavedVouchers().catch(() => ({ data: [] })),
@@ -275,7 +298,26 @@ export default function TableBookingScreen() {
     return () => {
       active = false;
     };
-  }, [checkInDate, locationId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
+  useEffect(() => {
+    if (!location) return;
+
+    const checkOpen = () => {
+      if (!isLocationOpen(location.opening_hours)) {
+        showToast("Địa điểm đã đóng cửa, không thể đặt dịch vụ lúc này.");
+        router.replace("/(app)/(tabs)/home");
+        return false;
+      }
+      return true;
+    };
+
+    if (!checkOpen()) return;
+
+    const interval = setInterval(checkOpen, 60000);
+    return () => clearInterval(interval);
+  }, [location, router]);
 
   const areaOptions = useMemo(
     () => [
@@ -498,7 +540,7 @@ export default function TableBookingScreen() {
 
       const response = await bookingApi.createBooking({
         location_id: Number(location.location_id),
-        check_in_date: checkIn.toISOString(),
+        check_in_date: toLocalISOString(checkIn),
         check_out_date: null,
         quantity: selectedTableIds.length,
         source: "mobile",
@@ -512,24 +554,51 @@ export default function TableBookingScreen() {
           preorderEnabled && selectedVoucher?.code ? selectedVoucher.code : null,
       });
 
-      setBookingResult(response.data);
-
+      // Reset state for both cases so the form is cleared
+      setSelectedTableIds([]);
+      setPreorderEnabled(false);
+      setPreorderQtyByServiceId({});
+      setSelectedVoucherId(null);
+      setNotes("");
+      
       if (preorderEnabled) {
-        await bookingApi.createOrGetPaymentForBooking(response.data.bookingId);
-        const returnTo = encodeURIComponent(
-          `/booking/table/0?locationId=${location.location_id}`,
-        );
+        void loadTables(); // Reload tables in background
         router.push(
-          `/booking/payment/${response.data.bookingId}?mode=table&locationId=${location.location_id}&returnTo=${returnTo}` as never,
+          `/booking/payment/${response.data.bookingId}?mode=table&returnTo=back` as never,
         );
         return;
       }
 
-      setSelectedTableIds([]);
       await loadTables();
-      showToast(response.message || "Đã gửi yêu cầu đặt bàn.");
+
+      // Show prominent success feedback
+      Alert.alert(
+        "Đặt bàn thành công! 🎉",
+        `Booking #${response.data.bookingId} đã được gửi.\n\nOwner sẽ duyệt yêu cầu đặt bàn của bạn. Bạn sẽ nhận thông báo khi được xác nhận.`,
+        [{ text: "OK", onPress: () => {} }],
+      );
     } catch (error) {
-      showToast(getErrorMessage(error));
+      // Reload tables and clear conflicted selections
+      try {
+        const latestTables = await loadTables();
+        if (latestTables) {
+          setSelectedTableIds((prev) =>
+            prev.filter((id) => {
+              const t = latestTables.find((tbl) => Number(tbl.table_id) === id);
+              return t?.status === "free";
+            })
+          );
+        }
+      } catch {}
+
+      // Show user-friendly error
+      let msg = getErrorMessage(error);
+      if (error instanceof AxiosError && error.response?.status === 409) {
+        msg = msg || "Bàn đã có người đặt trước. Vui lòng chọn bàn khác.";
+        Alert.alert("Không thể đặt bàn", msg, [{ text: "OK" }]);
+      } else {
+        showToast(msg || "Có lỗi xảy ra khi đặt bàn.", 5000);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -559,6 +628,9 @@ export default function TableBookingScreen() {
             {location?.location_name || "Địa điểm ăn uống"}
           </Text>
         </View>
+        <Pressable style={styles.cartButton} onPress={() => router.push("/wallet/table-pass")}>
+          <Ionicons name="cart-outline" size={24} color="#0f172a" />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -579,17 +651,34 @@ export default function TableBookingScreen() {
         <View style={styles.formCard}>
           <Text style={styles.sectionTitle}>Thông tin đặt chỗ</Text>
           <View style={styles.field}>
-            <Text style={styles.label}>Thời gian tới</Text>
+            <Text style={styles.label}>Thời gian tới <Text style={styles.labelHint}>(DD/MM/YYYY HH:mm)</Text></Text>
             <TextInput
               value={checkInDate}
               onChangeText={setCheckInDate}
               onBlur={() => {
-                setSelectedTableIds([]);
-                void loadTables();
+                const parsed = parseInputDate(checkInDate);
+                if (!parsed) return;
+                const nowFloorMinute = new Date();
+                nowFloorMinute.setSeconds(0, 0);
+                if (parsed < nowFloorMinute) {
+                  Alert.alert(
+                    "Thời gian không hợp lệ",
+                    "Thời gian tới phải là tương lai, vui lòng chọn lại.",
+                    [{ text: "OK" }]
+                  );
+                  return;
+                }
+                // Chỉ reload nếu ngày giờ thực sự thay đổi
+                if (lastLoadedCheckInRef.current !== checkInDate) {
+                  lastLoadedCheckInRef.current = checkInDate;
+                  setSelectedTableIds([]);
+                  void loadTables();
+                }
               }}
-              placeholder="YYYY-MM-DD HH:mm"
+              placeholder="VD: 27/06/2026 20:00"
               style={styles.input}
               autoCapitalize="none"
+              keyboardType="numeric"
             />
           </View>
 
@@ -624,10 +713,6 @@ export default function TableBookingScreen() {
                 Đã chọn {selectedTableIds.length} bàn
               </Text>
             </View>
-            <Pressable style={styles.reloadButton} onPress={() => void loadTables()}>
-              <Ionicons name="refresh" size={17} color="#0f766e" />
-              <Text style={styles.reloadText}>Tải lại</Text>
-            </Pressable>
           </View>
 
           <ScrollView
@@ -664,44 +749,46 @@ export default function TableBookingScreen() {
               </Text>
             </View>
           ) : (
-            <View style={styles.tableGrid}>
-              {filteredTables.map((table) => {
-                const tableId = Number(table.table_id);
-                const selected = selectedTableIds.includes(tableId);
-                const disabled = table.status !== "free";
+            <View style={styles.tableListContainer}>
+              <ScrollView nestedScrollEnabled contentContainerStyle={styles.tableGrid}>
+                {filteredTables.map((table) => {
+                  const tableId = Number(table.table_id);
+                  const selected = selectedTableIds.includes(tableId);
+                  const disabled = table.status !== "free";
 
-                return (
-                  <Pressable
-                    key={table.table_id}
-                    style={[
-                      styles.tableItem,
-                      selected && styles.tableItemSelected,
-                      disabled && styles.tableItemDisabled,
-                    ]}
-                    onPress={() => toggleTable(table)}
-                  >
-                    <Text
+                  return (
+                    <Pressable
+                      key={table.table_id}
                       style={[
-                        styles.tableName,
-                        disabled && styles.tableNameDisabled,
+                        styles.tableItem,
+                        selected && styles.tableItemSelected,
+                        disabled && styles.tableItemDisabled,
                       ]}
-                      numberOfLines={1}
+                      onPress={() => toggleTable(table)}
                     >
-                      {table.table_name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statusBadge,
-                        table.status === "free" && styles.statusFree,
-                        table.status === "reserved" && styles.statusReserved,
-                        table.status === "occupied" && styles.statusOccupied,
-                      ]}
-                    >
-                      {selected ? "Đã chọn" : tableStatusLabel(table.status)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+                      <Text
+                        style={[
+                          styles.tableName,
+                          disabled && styles.tableNameDisabled,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {table.table_name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.statusBadge,
+                          table.status === "free" && styles.statusFree,
+                          table.status === "reserved" && styles.statusReserved,
+                          table.status === "occupied" && styles.statusOccupied,
+                        ]}
+                      >
+                        {selected ? "Đã chọn" : tableStatusLabel(table.status)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
 
@@ -767,12 +854,22 @@ export default function TableBookingScreen() {
                 </Text>
               </View>
             ) : (
-              <View style={styles.menuList}>
+            <View style={styles.menuListContainer}>
+              <ScrollView nestedScrollEnabled contentContainerStyle={styles.menuList}>
                 {filteredMenuServices.map((service) => {
                   const serviceId = Number(service.service_id);
                   const quantity = preorderQtyByServiceId[serviceId] || 0;
+                  const images = normalizeImages(service.images);
+                  const coverUrl = images.length > 0 ? resolveBackendUrl(images[0]) : null;
                   return (
                     <View key={service.service_id} style={styles.menuItem}>
+                      <View style={styles.menuItemImageContainer}>
+                        {coverUrl ? (
+                          <Image source={{ uri: coverUrl }} style={styles.menuItemImage} />
+                        ) : (
+                          <Ionicons name="fast-food-outline" size={24} color="#94a3b8" />
+                        )}
+                      </View>
                       <View style={styles.menuInfo}>
                         <Text style={styles.menuName} numberOfLines={2}>
                           {service.service_name}
@@ -799,7 +896,8 @@ export default function TableBookingScreen() {
                     </View>
                   );
                 })}
-              </View>
+              </ScrollView>
+            </View>
             )}
 
             <View style={styles.divider} />
@@ -861,18 +959,6 @@ export default function TableBookingScreen() {
             />
           </View>
         </View>
-
-        {bookingResult && !preorderEnabled ? (
-          <View style={styles.resultCard}>
-            <Ionicons name="checkmark-circle" size={28} color="#0f766e" />
-            <View style={styles.resultText}>
-              <Text style={styles.resultTitle}>Đã gửi booking #{bookingResult.bookingId}</Text>
-              <Text style={styles.resultMeta}>
-                Owner sẽ duyệt yêu cầu đặt bàn của bạn.
-              </Text>
-            </View>
-          </View>
-        ) : null}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -891,10 +977,48 @@ export default function TableBookingScreen() {
         <Pressable
           style={[
             styles.primaryButton,
-            (!canSubmit || submitting) && styles.disabledButton,
+            submitting && styles.disabledButton,
           ]}
-          onPress={handleSubmit}
-          disabled={!canSubmit || submitting}
+          onPress={() => {
+            if (submitting) return;
+            if (selectedTableIds.length === 0) {
+              showToast("Bạn chọn ít nhất 1 bàn trước nha.");
+              return;
+            }
+            if (!parseInputDate(checkInDate)) {
+              showToast("Thời gian chưa đúng định dạng DD/MM/YYYY HH:mm.");
+              return;
+            }
+            const parsedCheckIn = parseInputDate(checkInDate);
+            const nowFloorMinute = new Date();
+            nowFloorMinute.setSeconds(0, 0);
+            if (parsedCheckIn && parsedCheckIn < nowFloorMinute) {
+              Alert.alert(
+                "Thời gian không hợp lệ",
+                "Thời gian tới phải là tương lai, vui lòng chọn lại!",
+                [{ text: "OK" }]
+              );
+              return;
+            }
+            if (!contactName.trim()) {
+              showToast("Bạn điền tên liên hệ trước nha.");
+              return;
+            }
+            if (!contactPhone.trim()) {
+              showToast("Bạn điền số điện thoại liên hệ trước nha.");
+              return;
+            }
+            if (preorderEnabled && selectedTableIds.length !== 1) {
+              showToast("Đặt món trước chỉ áp dụng cho đúng 1 bàn.");
+              return;
+            }
+            if (preorderEnabled && preorderItems.length === 0) {
+              showToast("Bạn chọn ít nhất 1 món trước khi tiếp tục thanh toán nha.");
+              return;
+            }
+            handleSubmit();
+          }}
+          disabled={submitting}
         >
           <Text style={styles.primaryButtonText}>
             {submitting
@@ -958,12 +1082,22 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#f1f5f9",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#f8fafc",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
+  },
+  cartButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: "auto",
   },
   headerText: {
     flex: 1,
@@ -1029,6 +1163,11 @@ const styles = StyleSheet.create({
     color: "#334155",
     fontSize: 14,
     fontWeight: "800",
+  },
+  labelHint: {
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: "400",
   },
   input: {
     minHeight: 50,
@@ -1110,7 +1249,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  tableListContainer: {
+    height: 330,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    marginBottom: 16,
+  },
   tableGrid: {
+    padding: 8,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
@@ -1221,7 +1369,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "900",
   },
+  menuListContainer: {
+    height: 350,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    marginBottom: 16,
+  },
   menuList: {
+    padding: 8,
     gap: 10,
   },
   menuItem: {
@@ -1233,6 +1390,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  menuItemImageContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: "#e2e8f0",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  menuItemImage: {
+    width: "100%",
+    height: "100%",
   },
   menuInfo: {
     flex: 1,
@@ -1322,30 +1492,6 @@ const styles = StyleSheet.create({
     color: "#0f766e",
     fontSize: 15,
   },
-  resultCard: {
-    backgroundColor: "#ecfdf5",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#99f6e4",
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  resultText: {
-    flex: 1,
-  },
-  resultTitle: {
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  resultMeta: {
-    marginTop: 3,
-    color: "#0f766e",
-    fontSize: 14,
-    fontWeight: "800",
-  },
   footer: {
     position: "absolute",
     left: 0,
@@ -1393,3 +1539,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 });
+ 

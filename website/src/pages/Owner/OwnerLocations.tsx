@@ -544,7 +544,7 @@ const OwnerLocations = () => {
       }
 
       const opening_hours =
-        openStr && closeStr ? { open: openStr, close: closeStr } : null;
+        openStr && closeStr ? { open: openStr, close: closeStr } : { open: "00:00", close: "23:59" };
 
       setSaving(true);
       if (editing) {

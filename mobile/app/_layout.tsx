@@ -36,7 +36,6 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" backgroundColor="#eef2f3" />
-      <ToastHost />
       {hydrated ? (
         <Stack
           screenOptions={{
@@ -58,6 +57,8 @@ export default function RootLayout() {
           </Text>
         </View>
       )}
+      <ToastHost />
     </SafeAreaProvider>
   );
 }
+ 

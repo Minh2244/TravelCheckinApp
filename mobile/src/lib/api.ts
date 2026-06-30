@@ -25,11 +25,17 @@ let refreshPromise: Promise<string | null> | null = null;
 export const api: AxiosInstance = axios.create({
   baseURL: env.apiBaseUrl,
   timeout: 20000,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+  },
 });
 
 const refreshClient = axios.create({
   baseURL: env.apiBaseUrl,
   timeout: 20000,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+  },
 });
 
 export function configureApiAuthBridge(nextBridge: AuthBridge) {

@@ -34,6 +34,7 @@ export const bookingApi = {
   async createOrGetPaymentForBooking(bookingId: number) {
     const response = await api.post<BookingPaymentResponse>(
       `/bookings/${bookingId}/payments`,
+      {}
     );
     return response.data;
   },
@@ -65,6 +66,7 @@ export const bookingApi = {
   async confirmTicketTransfer(bookingId: number) {
     const response = await api.post<ConfirmTicketTransferResponse>(
       `/bookings/${bookingId}/tickets/confirm-transfer`,
+      {}
     );
     return response.data;
   },
@@ -72,6 +74,7 @@ export const bookingApi = {
   async confirmTableTransfer(bookingId: number) {
     const response = await api.post<ConfirmTableTransferResponse>(
       `/bookings/${bookingId}/tables/confirm-transfer`,
+      {}
     );
     return response.data;
   },
@@ -79,6 +82,7 @@ export const bookingApi = {
   async confirmRoomTransfer(bookingId: number) {
     const response = await api.post<ConfirmRoomTransferResponse>(
       `/bookings/${bookingId}/rooms/confirm-transfer`,
+      {}
     );
     return response.data;
   },
@@ -133,6 +137,7 @@ export const bookingApi = {
   async cancelTableBooking(bookingId: number) {
     const response = await api.post<CancelBookingResponse>(
       `/bookings/${bookingId}/tables/cancel`,
+      {}
     );
     return response.data;
   },
@@ -140,6 +145,7 @@ export const bookingApi = {
   async cancelMyBooking(bookingId: number) {
     const response = await api.post<CancelBookingResponse>(
       `/bookings/${bookingId}/cancel`,
+      {}
     );
     return response.data;
   },

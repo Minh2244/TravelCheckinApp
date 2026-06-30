@@ -1,5 +1,5 @@
-import { BookingDraftScreen } from "../../../../src/components/booking/BookingDraftScreen";
+import { TicketBookingScreen } from "../../../../src/components/booking/TicketBookingScreen";
 
-export default function TicketBookingScreen() {
-  return <BookingDraftScreen mode="ticket" />;
+export default function TicketBookingRoute() {
+  return <TicketBookingScreen />;
 }

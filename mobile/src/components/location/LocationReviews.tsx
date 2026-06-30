@@ -8,12 +8,23 @@ import {
   Text,
   TextInput,
   View,
+  Image,
+  ScrollView,
 } from "react-native";
 
+import * as ImagePicker from "expo-image-picker";
+
+import { env } from "../../lib/env";
 import { showToast } from "../../modules/ui/toast-store";
 import { locationApi } from "../../services/location.api";
 import { userApi } from "../../services/user.api";
 import type { LocationReview } from "../../types/location";
+
+const resolveBackendUrl = (url: string) => {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  return `${env.apiOrigin}${url.startsWith("/") ? "" : "/"}${url}`;
+};
 
 export function LocationReviews({
   locationId,
@@ -27,6 +38,7 @@ export function LocationReviews({
   const [submitting, setSubmitting] = useState(false);
   const [rating, setRating] = useState(5);
   const [text, setText] = useState("");
+  const [images, setImages] = useState<string[]>([]);
 
   const loadReviews = async () => {
     try {
@@ -44,21 +56,49 @@ export function LocationReviews({
     void loadReviews();
   }, [locationId]);
 
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: 5,
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      const newImages = result.assets.map((a) => a.uri);
+      setImages((prev) => [...prev, ...newImages].slice(0, 5));
+    }
+  };
+
   const handleSubmit = async () => {
-    if (!text.trim()) {
-      showToast("Vui lòng nhập nội dung đánh giá");
+    if (!text.trim() && images.length === 0) {
+      showToast("Vui lòng nhập nội dung đánh giá hoặc thêm ảnh");
       return;
     }
 
     try {
       setSubmitting(true);
+      
+      const uploadedImages: string[] = [];
+      for (const uri of images) {
+        try {
+          const res = await userApi.uploadReviewImage(uri);
+          if (res.success && res.data?.image_url) {
+            uploadedImages.push(res.data.image_url);
+          }
+        } catch (err) {
+          console.error("Failed to upload image", err);
+        }
+      }
+
       await userApi.createReview({
         location_id: locationId,
         rating,
         comment: text.trim(),
+        images: uploadedImages.length > 0 ? uploadedImages : undefined,
       });
       setText("");
       setRating(5);
+      setImages([]);
       await loadReviews();
       onSubmitted?.();
       showToast("Gửi đánh giá thành công");
@@ -102,6 +142,30 @@ export function LocationReviews({
           onChangeText={setText}
         />
 
+        {images.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {images.map((uri, index) => (
+              <View key={index} style={{ marginRight: 8 }}>
+                <Image source={{ uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                <Pressable
+                  style={{ position: "absolute", top: -5, right: -5, backgroundColor: "white", borderRadius: 10 }}
+                  onPress={() => setImages(images.filter((_, i) => i !== index))}
+                >
+                  <Ionicons name="close-circle" size={20} color="red" />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <Pressable
+          style={[styles.submitButton, { backgroundColor: "#f1f5f9", marginBottom: 12 }]}
+          onPress={() => void pickImage()}
+          disabled={submitting}
+        >
+          <Text style={[styles.submitButtonText, { color: "#475569" }]}>Thêm ảnh</Text>
+        </Pressable>
+
         <Pressable
           style={[styles.submitButton, submitting && styles.disabled]}
           onPress={() => void handleSubmit()}
@@ -136,8 +200,25 @@ export function LocationReviews({
                 {new Date(review.created_at).toLocaleDateString("vi-VN")}
               </Text>
               <Text style={styles.reviewText}>
-                {review.comment || "Người dùng chưa để lại nội dung."}
+                {review.comment || (review.images ? "" : "Người dùng chưa để lại nội dung.")}
               </Text>
+
+              {review.images ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                  {(Array.isArray(review.images) 
+                    ? review.images 
+                    : typeof review.images === "string" 
+                      ? (() => {
+                          try { return JSON.parse(review.images) as string[]; } 
+                          catch { return []; }
+                        })()
+                      : []
+                  ).map((img, idx) => (
+                    <Image key={idx} source={{ uri: resolveBackendUrl(img) }} style={{ width: 80, height: 80, borderRadius: 8, marginRight: 8, borderWidth: 1, borderColor: "#e2e8f0" }} />
+                  ))}
+                </ScrollView>
+              ) : null}
+
               {review.reply_content ? (
                 <View style={styles.ownerReply}>
                   <Text style={styles.ownerReplyTitle}>Phản hồi từ địa điểm</Text>

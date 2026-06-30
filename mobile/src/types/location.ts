@@ -50,6 +50,7 @@ export type LocationServiceItem = {
   unit?: string | null;
   status?: string | null;
   images?: string[] | string | null;
+  image_url?: string | null;
   room_status?: string | null;
   category_name?: string | null;
   category_type?: string | null;

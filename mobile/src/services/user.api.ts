@@ -58,7 +58,10 @@ export const userApi = {
   },
   async toggleFavorite(locationId: string | number, isFavorite: boolean) {
     if (isFavorite) {
-      const response = await api.patch<ApiResponse<unknown>>(`/user/favorites/${locationId}`);
+      const response = await api.patch<ApiResponse<unknown>>(
+        `/user/favorites/${locationId}`,
+        {}
+      );
       return response.data;
     } else {
       const response = await api.delete<ApiResponse<unknown>>(`/user/favorites/${locationId}`);
@@ -69,8 +72,45 @@ export const userApi = {
     location_id: string | number;
     rating: number;
     comment: string;
+    images?: string[];
   }) {
     const response = await api.post<ApiResponse<unknown>>("/user/reviews", data);
+    return response.data;
+  },
+  async uploadReviewImage(uri: string) {
+    const formData = new FormData();
+    const filename = uri.split("/").pop() || `review-${Date.now()}.jpg`;
+    const extension = filename.split(".").pop()?.toLowerCase();
+    const mimeType =
+      extension === "png"
+        ? "image/png"
+        : extension === "webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    formData.append("image", {
+      uri,
+      name: filename,
+      type: mimeType,
+    } as unknown as Blob);
+
+    const response = await api.post<ApiResponse<{ image_url: string }>>(
+      "/user/reviews/upload",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      },
+    );
+    return response.data;
+  },
+  async getProfile() {
+    const response = await api.get<ApiResponse<any>>("/user/profile");
+    return response.data;
+  },
+  async getTouristTickets() {
+    const response = await api.get<ApiResponse<any>>("/user/tickets");
     return response.data;
   },
 };
