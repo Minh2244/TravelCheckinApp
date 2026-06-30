@@ -23,11 +23,10 @@ export default function MyTickets() {
           <button
             key={tab.key}
             type="button"
-            className={`rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-              activeTab === tab.key
+            className={`rounded-full px-4 py-2 text-sm font-semibold transition-all duration-200 ${activeTab === tab.key
                 ? "bg-teal-600 text-white shadow-sm"
                 : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-            }`}
+              }`}
             onClick={() => setSearchParams({ tab: tab.key })}
           >
             {tab.label}

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Button,
   Card,
   Image,
   Modal,
-  Space,
   Table,
   Tag,
   message,
@@ -163,8 +161,18 @@ const OwnerReviews = () => {
     [load],
   );
 
-
-
+  const deleteReply = useCallback(
+    async (row: ReviewRow) => {
+      try {
+        await ownerApi.deleteReply(row.review_id);
+        message.success("Đã xóa phản hồi");
+        await load();
+      } catch (err: unknown) {
+        message.error(getErrorMessage(err, "Lỗi xóa phản hồi"));
+      }
+    },
+    [load],
+  );
   const filteredItems = useMemo(() => {
     if (!ratingFilter) return items;
     return items.filter((row) => Number(row.rating) === ratingFilter);
@@ -182,7 +190,80 @@ const OwnerReviews = () => {
         width: 170,
         render: (value: string) => formatDateTimeVi(value),
       },
-      { title: "Nội dung", dataIndex: "comment" },
+      { 
+        title: "Đánh giá & Phản hồi", 
+        key: "comments",
+        render: (_: unknown, row: ReviewRow) => (
+          <div className="flex flex-col gap-3 min-w-[300px] whitespace-normal py-2">
+            {/* User Comment */}
+            <div>
+              <div className="text-sm text-slate-800 whitespace-pre-wrap font-medium">
+                {row.comment || <span className="italic text-slate-400 font-normal">Không có nội dung</span>}
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+                <button
+                  type="button"
+                  className="hover:text-blue-600 transition"
+                  onClick={() => openReply(row)}
+                >
+                  {row.reply_content ? "Sửa phản hồi" : "Phản hồi"}
+                </button>
+                <button
+                  type="button"
+                  className="hover:text-blue-600 transition"
+                  onClick={() => toggleHide(row)}
+                >
+                  {row.status === "hidden" ? "Hiện bình luận" : "Ẩn bình luận"}
+                </button>
+                <Popconfirm
+                  title="Xóa đánh giá này của User?"
+                  okText="Xóa"
+                  cancelText="Hủy"
+                  onConfirm={() => deleteReview(row)}
+                >
+                  <button type="button" className="hover:text-red-600 transition">
+                    Xóa
+                  </button>
+                </Popconfirm>
+              </div>
+            </div>
+
+            {/* Owner Reply */}
+            {row.reply_content && (
+              <div className="flex gap-2">
+                {/* Curved line like Facebook */}
+                <div className="w-6 border-l-2 border-b-2 border-slate-300 rounded-bl-xl ml-2 mb-6"></div>
+                
+                <div className="flex-1 bg-slate-100 p-3 rounded-2xl rounded-tl-sm mt-1">
+                  <div className="text-[12px] font-bold text-slate-900 mb-1">
+                    Phản hồi của bạn (Owner)
+                  </div>
+                  <div className="text-sm text-slate-800 whitespace-pre-wrap">{row.reply_content}</div>
+                  <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+                    <button
+                      type="button"
+                      className="hover:text-blue-600 transition"
+                      onClick={() => openReply(row)}
+                    >
+                      Sửa
+                    </button>
+                    <Popconfirm
+                      title="Xóa phản hồi này của bạn?"
+                      okText="Xóa"
+                      cancelText="Hủy"
+                      onConfirm={() => deleteReply(row)}
+                    >
+                      <button type="button" className="hover:text-red-600 transition">
+                        Xóa
+                      </button>
+                    </Popconfirm>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      },
       {
         title: "Ảnh",
         key: "images",
@@ -235,33 +316,9 @@ const OwnerReviews = () => {
             </Tag>
           );
         },
-      },
-      {
-        title: "Hành động",
-        width: 320,
-        render: (_: unknown, row: ReviewRow) => (
-          <Space>
-            <Button size="small" onClick={() => openReply(row)}>
-              Phản hồi
-            </Button>
-            <Button size="small" onClick={() => toggleHide(row)}>
-              {row.status === "hidden" ? "Hiện" : "Ẩn"}
-            </Button>
-            <Popconfirm
-              title="Xóa đánh giá này?"
-              okText="Xóa"
-              cancelText="Hủy"
-              onConfirm={() => deleteReview(row)}
-            >
-              <Button size="small" danger>
-                Xóa
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
-      },
+      }
     ],
-    [deleteReview, openReply, toggleHide],
+    [deleteReview, deleteReply, openReply, toggleHide],
   );
 
   return (
@@ -296,11 +353,14 @@ const OwnerReviews = () => {
         {!selectedLocationId ? (
           <div className="mb-3 text-sm text-amber-700"></div>
         ) : null}
-        <Table<ReviewRow>
-          rowKey="review_id"
-          dataSource={filteredItems}
-          columns={columns}
-        />
+          <Table<ReviewRow>
+            rowKey="review_id"
+            dataSource={filteredItems}
+            columns={columns}
+            pagination={false}
+            scroll={{ x: "max-content", y: "calc(100vh - 300px)" }}
+            size="small"
+          />
       </Card>
 
       <Modal

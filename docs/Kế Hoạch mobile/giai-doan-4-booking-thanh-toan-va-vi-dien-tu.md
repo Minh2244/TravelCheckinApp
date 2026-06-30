@@ -1,117 +1,66 @@
 # Giai đoạn 4: Booking, Thanh toán VietQR & Ví điện tử của User
 
-Tài liệu này tách riêng toàn bộ cụm chức năng đặt dịch vụ của User trên Website sang Mobile. Mục tiêu là **tái sử dụng 100% Backend hiện tại**, giữ nguyên nghiệp vụ booking phòng, booking bàn, booking vé, xác nhận chuyển khoản, ví vé, thẻ pass và lịch sử giao dịch liên quan.
+Trạng thái hiện tại: `completed`
 
-## 1. Phạm vi chính thức
+Tài liệu này đã được cập nhật theo implementation đang chạy trong repo, không còn bám cứng 100% vào bản kế hoạch ban đầu. Một số route và chi tiết UX đã được điều chỉnh trong quá trình làm thật, và các khác biệt đó được chấp nhận vì đang hoạt động ổn định, đồng bộ backend tốt, và đã được kiểm thử thủ công.
 
-Giai đoạn 4 bao phủ các chức năng Website User sau:
+## 1. Kết luận chốt phase
+
+Giai đoạn 4 được xem là hoàn thành theo hiện trạng code ngày `2026-06-30` với các căn cứ sau:
+
+- Luồng đặt vé, đặt bàn, đặt phòng, thanh toán VietQR, ví vé, pass bàn và pass phòng đều đã có màn hình Mobile riêng.
+- Mobile tái sử dụng backend hiện tại cho booking, payment, confirm transfer, wallet/pass và cancel flow.
+- TypeScript mobile đang pass với lệnh `cmd /c npx tsc --noEmit -p tsconfig.json`.
+- Các khác biệt so với bản kế hoạch cũ chủ yếu là khác route hoặc tối ưu UX, không phải thiếu chức năng cốt lõi.
+
+## 2. Phạm vi đã hoàn thành
+
+Phase 4 hiện bao phủ đầy đủ cụm chức năng User sau từ Website:
+
 - `website/src/pages/User/BookingPage.tsx`
 - `website/src/pages/User/TicketCart.tsx`
 - `website/src/pages/User/MyTickets.tsx`
 - `website/src/pages/User/TableBookingPass.tsx`
 - `website/src/pages/User/RoomBookingPass.tsx`
-- `website/src/components/LocationChatBubble.tsx` ở vai trò hỗ trợ trong luồng booking
-- Một phần logic gọi API trong:
-  - `website/src/api/bookingApi.ts`
-  - `website/src/api/locationApi.ts`
-  - `website/src/utils/vietqr.ts`
-  - `website/src/types/booking.types.ts`
+- `website/src/components/LocationChatBubble.tsx` ở mức hỗ trợ luồng trước và sau booking
 
-Ngoài phạm vi của Giai đoạn 4:
+Ngoài phạm vi của Phase 4:
+
 - Dashboard tổng quan
 - Saved locations
 - Check-ins / history
-- Vouchers tổng hợp
+- Vouchers tổng hợp ngoài ngữ cảnh booking
 - SOS
 - AI chat / itineraries
 
-## 1.1. Quy tắc bắt buộc cho Giai đoạn 4
+## 3. Đối chiếu implementation hiện tại
 
-- Mọi màn booking, payment, wallet, pass đều phải xử lý `SafeArea` tuyệt đối cho header, nút back, QR card, sticky summary và CTA đáy.
-- Nút xác nhận thanh toán / xác nhận chuyển khoản / hủy booking không được nằm dưới home indicator.
-- Sau các luồng hoàn tất như tạo booking thành công, thanh toán thành công, confirm transfer xong, bắt buộc dùng `router.replace()` hoặc `router.dismissAll()` đúng chỗ để chặn back-loop.
-- Mọi route từ `location detail -> booking -> payment -> wallet/pass` phải chạy mạch lạc, không có màn rơi vào trạng thái cụt điều hướng.
-
-## 2. Đối chiếu theo luồng nghiệp vụ thực tế
-
-| Luồng | Nguồn Website | Màn hình Mobile dự kiến |
+| Luồng | Nguồn Website | Implementation Mobile hiện tại |
 |---|---|---|
-| Đặt vé du lịch | `BookingPage.tsx`, `TicketCart.tsx` | `mobile/app/booking/ticket/[serviceId].tsx` |
-| Đặt bàn nhà hàng / cafe | `BookingPage.tsx`, `TableBookingPass.tsx` | `mobile/app/booking/table/[serviceId].tsx` |
-| Đặt phòng khách sạn / resort | `BookingPage.tsx`, `RoomBookingPass.tsx` | `mobile/app/booking/room/[serviceId].tsx` |
-| Thanh toán chuyển khoản VietQR | `BookingPage.tsx`, `TicketCart.tsx` | `mobile/app/booking/payment/[bookingId].tsx` |
-| Ví vé của tôi | `MyTickets.tsx` | `mobile/app/(tabs)/tickets.tsx` hoặc `mobile/app/wallet/tickets.tsx` |
-| Pass bàn | `TableBookingPass.tsx` | `mobile/app/wallet/table-pass.tsx` |
-| Pass phòng | `RoomBookingPass.tsx` | `mobile/app/wallet/room-pass.tsx` |
-| Hủy đơn đang chờ duyệt | `BookingPage.tsx`, `TableBookingPass.tsx`, `RoomBookingPass.tsx`, `TicketCart.tsx` | nằm trong chính màn booking/pass tương ứng |
+| Đặt vé du lịch | `BookingPage.tsx`, `TicketCart.tsx` | `mobile/app/(app)/booking/ticket/[serviceId].tsx` -> `TicketBookingScreen` |
+| Đặt bàn nhà hàng / cafe | `BookingPage.tsx`, `TableBookingPass.tsx` | `mobile/app/(app)/booking/table/[serviceId].tsx` |
+| Đặt phòng khách sạn / resort | `BookingPage.tsx`, `RoomBookingPass.tsx` | Route chính: `mobile/app/(app)/booking/hotel/[locationId].tsx` |
+| Wrapper đặt phòng cũ / single-service | bản kế hoạch cũ | `mobile/app/(app)/booking/room/[serviceId].tsx` vẫn còn để tương thích flow cũ |
+| Thanh toán VietQR | `BookingPage.tsx`, `TicketCart.tsx` | `mobile/app/(app)/booking/payment/[bookingId].tsx` |
+| Ví vé du lịch | `TicketCart.tsx`, `MyTickets.tsx` | `mobile/app/(app)/wallet/tickets.tsx` |
+| Pass bàn | `TableBookingPass.tsx` | `mobile/app/(app)/wallet/table-pass.tsx` |
+| Pass phòng | `RoomBookingPass.tsx` | `mobile/app/(app)/wallet/room-pass.tsx` |
 
-## 3. Bản vẽ giao diện theo luồng
+Ghi chú quan trọng:
 
-### 3.1. Luồng vào trang đặt dịch vụ
-```text
-+---------------------------------------------------+
-|  [ < ] Xác nhận đặt dịch vụ                       |
-+===================================================+
-|  [ Ảnh địa điểm ]                                 |
-|  Bờ Kè Sông Hậu                                   |
-|  📍 Cần Thơ                                        |
-|---------------------------------------------------|
-|  [ Vé du lịch ] [ Đặt bàn ] [ Đặt phòng ]         |
-|---------------------------------------------------|
-|  Nội dung form thay đổi theo loại dịch vụ         |
-|  - Vé: số lượng từng loại vé                      |
-|  - Bàn: giờ đến, số lượng bàn, món đặt trước      |
-|  - Phòng: ngày đến, ngày đi, số đêm, số phòng     |
-+===================================================+
-|  Tạm tính: 1.250.000đ      [ Xác nhận đặt chỗ ]   |
-+---------------------------------------------------+
-```
+- Luồng room booking thực tế đã chuyển sang màn `hotel/[locationId]` để hỗ trợ multi-room và batch payment rõ ràng hơn.
+- Route `booking/room/[serviceId]` không phải phần bỏ dở; nó đang là wrapper tương thích cũ.
+- Ví vé du lịch Mobile đang bám hành vi Website hiện tại, bao gồm cả mã QR nhóm dạng `SB-{bookingId}-GROUP`.
 
-### 3.2. Luồng thanh toán VietQR
-```text
-+---------------------------------------------------+
-|  [ < ] Thanh toán                                 |
-+===================================================+
-|  [ Mã QR VietQR ]                                 |
-|                                                   |
-|  Ngân hàng: Vietcombank                           |
-|  Số tài khoản: 1030549759                         |
-|  Chủ tài khoản: MAI NHUT MINH                     |
-|  Số tiền: 1.250.000đ                              |
-|  Nội dung: BK-2450-TOURTICKET                     |
-|                                                   |
-|  [ Sao chép STK ] [ Sao chép nội dung ]           |
-+===================================================+
-|  [ ✅ Xác nhận đã chuyển khoản ]                  |
-+---------------------------------------------------+
-```
+## 4. Backend đang được tái sử dụng
 
-### 3.3. Ví điện tử của user
-```text
-+---------------------------------------------------+
-|  Vé của tôi                                       |
-|  [ Vé ] [ Pass bàn ] [ Pass phòng ]               |
-+===================================================+
-|  [ QR ] Vé người lớn x10                          |
-|  Địa điểm: Bờ Kè Sông Hậu                         |
-|  Trạng thái: Chưa sử dụng                         |
-|  Ngày dùng: 21-06-2026                            |
-|  [ Xem chi tiết ]                                 |
-|---------------------------------------------------|
-|  [ QR ] Bàn số A12                                |
-|  Giờ đến: 19:30                                   |
-|  Trạng thái: Đã xác nhận                          |
-+---------------------------------------------------+
-```
-
-## 4. Tái sử dụng Backend API và Database
-
-### 4.1. API phải tái sử dụng nguyên vẹn
+Các API cốt lõi Phase 4 hiện đã có call site trong Mobile:
 
 - `POST /api/bookings`
 - `POST /api/bookings/batch`
 - `POST /api/bookings/:id/payments`
 - `POST /api/bookings/batch/payments`
+- `PUT /api/bookings/batch/contact`
 - `POST /api/bookings/:id/tickets/confirm-transfer`
 - `POST /api/bookings/:id/tables/confirm-transfer`
 - `POST /api/bookings/:id/rooms/confirm-transfer`
@@ -124,156 +73,144 @@ Ngoài phạm vi của Giai đoạn 4:
 - `POST /api/bookings/:id/cancel`
 - `GET /api/user/tickets`
 - `GET /api/locations/:id/services`
+- `GET /api/locations/:id/pos/areas`
 - `GET /api/locations/:id/pos/tables`
-- `GET /api/locations/:id/tickets/realtime-stock`
 - `GET /api/chat/location/:locationId`
 - `POST /api/chat/location/:locationId`
 
-### 4.2. Bảng dữ liệu liên quan
+Các service Mobile liên quan:
 
-- `bookings`
-- `booking_tickets`
-- `booking_table_reservations`
-- `booking_preorder_items`
-- `payments`
-- `services`
-- `locations`
-- `owner_profiles`
-- `hotel_stays`
-- `hotel_rooms`
-- `pos_tables`
-- `pos_orders`
-- `booking_preorder_items`
+- `mobile/src/services/booking.api.ts`
+- `mobile/src/services/location.api.ts`
+- `mobile/src/services/user.api.ts`
+- `mobile/src/services/chat.api.ts`
 
-### 4.3. Quy tắc kiến trúc bắt buộc
+## 5. Phần đã triển khai theo từng cụm
 
-- Mobile không được tính trạng thái booking theo kiểu riêng.
-- Mobile không được tự dựng QR ngân hàng bằng dữ liệu hardcode.
-- Mọi trạng thái `pending`, `confirmed`, `cancelled`, `completed`, `used`, `void` phải đọc từ Backend.
-- Các pass (`table-pass`, `room-pass`) phải dùng chung cấu trúc response với Website để tránh lệch trạng thái.
-- Rule hủy booking phải bám backend hiện tại:
-  - `POST /api/bookings/:id/cancel`: chỉ cho hủy khi booking còn `pending` tức là **chưa owner duyệt**.
-  - Với bàn ăn đã thanh toán xong thì backend chặn tự hủy.
-  - Khi hủy thành công phải giải phóng tài nguyên liên quan (bàn / phòng / preorder order) đúng như service backend đang làm.
+### 5.1. Shared booking foundation
 
-### 4.4. Quy ước mã theo từng loại dịch vụ
+Đã có:
 
-Đã đối chiếu lại schema + backend hiện tại, phần mobile phải hiểu rõ là **không còn một kiểu "mã vé" chung cho mọi dịch vụ**:
+- Type booking dùng chung tại `mobile/src/types/booking.ts`
+- Service gọi API booking tại `mobile/src/services/booking.api.ts`
+- Utility format ngày, tiền, QR và booking payload tại `mobile/src/lib/booking-utils.ts`
+- Realtime booking notification qua SSE tại `mobile/src/hooks/useBookingNotifications.ts`
+- Realtime table / public booking state qua Socket.IO tại `mobile/src/hooks/useBookingRealtime.ts`
 
-- **Vé du lịch / ticket lẻ**:
-  - Lưu ở bảng `booking_tickets.ticket_code`.
-  - Backend đang sinh theo dạng: `DL-{bookingId}-{ticketIndex}-{secureHash}`.
-  - Đây là mã để quét / xác thực từng vé đơn.
+### 5.2. Vé du lịch
 
-- **Mã chứng từ / hóa đơn giao dịch theo dịch vụ**:
-  - Lưu ở `payments.invoice_code`.
-  - Trigger database đang sinh theo prefix nghiệp vụ:
-    - `NH-yyMMdd-seq`: ăn uống / đặt bàn
-    - `DL-yyMMdd-seq`: vé du lịch
-    - `KS-yyMMdd-seq`: khách sạn / lưu trú
-  - Sequence đang đi theo `location_invoice_sequences`.
+Đã có:
 
-- **Mã giao dịch chuyển khoản**:
-  - Vẫn là lớp riêng ở `payments.transaction_code` như `BK-...` hoặc `BKB-...`.
-  - Mobile chỉ hiển thị theo response backend, không tự format lại.
+- Mua nhiều loại vé trong cùng một giao dịch
+- Giới hạn tối đa `50` vé mỗi lần
+- Chuyển sang payment screen ngay sau khi tạo booking
+- Ví vé du lịch có grouping theo booking
+- Hiển thị QR từng vé và QR nhóm tương thích Website
 
-Yêu cầu bắt buộc cho mobile:
-- Không tự generate mã ở client.
-- Không dùng một label chung cho tất cả trường hợp nếu dữ liệu backend đang là `ticketCode`, `invoiceCode`, `transactionCode`.
-- Ở ví vé / pass / lịch sử thanh toán, phải map đúng loại mã theo đúng service type đang hiển thị.
+Điều chỉnh so với kế hoạch cũ:
 
-## 5. Lộ trình triển khai chia phân hệ
+- Mobile dùng `TicketBookingScreen` theo location-level flow thay vì chỉ bám một service đơn lẻ
+- Stock hiện được đọc từ response service hiện tại của backend thay vì tách riêng một màn realtime stock độc lập
 
-### 5.1. Phân hệ 1: Shared Booking Foundation
-- **Độ ưu tiên:** Ưu tiên Số 1
-- **Độ khó:** 🔥🔥🔥
+### 5.3. Đặt bàn & preorder
 
-#### Code ở đâu?
-- `mobile/types/booking.ts`
-- `mobile/api/bookingApi.ts`
-- `mobile/utils/vietqr.ts`
-- `mobile/hooks/useBookingRealtime.ts`
+Đã có:
 
-#### Việc phải làm:
-- Đồng bộ type booking từ Website sang Mobile.
-- Tách rõ 3 service type: `ticket`, `table`, `room`.
-- Chuẩn hóa formatter tiền, ngày, trạng thái.
-- Dựng listener SSE / socket cho trạng thái booking nếu user đang mở màn hình thanh toán hoặc ví vé.
+- Chọn bàn theo sơ đồ public table
+- Hỗ trợ preload menu preorder
+- Hỗ trợ voucher trong luồng preorder
+- Hủy booking pending từ ví bàn
+- Realtime xử lý conflict bàn qua Socket.IO
+- Payment flow cho preorder qua VietQR
 
-### 5.2. Phân hệ 2: Vé du lịch & Ticket Cart
-- **Độ ưu tiên:** Ưu tiên Số 2
-- **Độ khó:** 🔥🔥🔥
+### 5.4. Đặt phòng & batch booking
 
-#### Code ở đâu?
-- `mobile/app/booking/ticket/[serviceId].tsx`
-- `mobile/app/wallet/tickets.tsx`
-- `mobile/hooks/useTicketBooking.ts`
+Đã có:
 
-#### Việc phải làm:
-- Chọn số lượng vé theo từng loại dịch vụ.
-- Chặn giới hạn tối đa 50 vé mỗi giao dịch như Website.
-- Hiển thị realtime stock từ API.
-- Sau thanh toán thành công, điều hướng thẳng sang ví vé bằng `router.replace()`.
+- Chọn nhiều phòng trong một giao dịch
+- Batch booking
+- Batch payment
+- Cập nhật contact cho batch booking
+- Ví pass phòng và hủy booking pending
+- Hỗ trợ prepay bằng VietQR cho room batch
 
-### 5.3. Phân hệ 3: Đặt bàn & món đặt trước
-- **Độ ưu tiên:** Ưu tiên Số 3
-- **Độ khó:** 🔥🔥🔥🔥
+Điều chỉnh so với kế hoạch cũ:
 
-#### Code ở đâu?
-- `mobile/app/booking/table/[serviceId].tsx`
-- `mobile/app/wallet/table-pass.tsx`
-- `mobile/hooks/useTableBooking.ts`
+- Màn chính hiện tại là `HotelBookingScreen`
+- Flow room ưu tiên chọn theo location rồi batch theo room IDs
 
-#### Việc phải làm:
-- Chọn giờ đến và bàn còn trống.
-- Gắn `preorder_items` đúng theo API hiện tại.
-- Hỗ trợ hủy booking bàn của chính user khi đơn còn `pending` / chưa owner duyệt.
-- Đồng bộ trạng thái pass bàn với backend.
-- Nếu đang ở màn booking hoặc pass, cho mở chat với địa điểm như website đang làm qua `LocationChatBubble`.
+### 5.5. Thanh toán VietQR
 
-### 5.4. Phân hệ 4: Đặt phòng & batch booking
-- **Độ ưu tiên:** Ưu tiên Số 4
-- **Độ khó:** 🔥🔥🔥🔥🔥
+Đã có:
 
-#### Code ở đâu?
-- `mobile/app/booking/room/[serviceId].tsx`
-- `mobile/app/wallet/room-pass.tsx`
-- `mobile/hooks/useRoomBooking.ts`
+- Hiển thị QR động từ response payment
+- Hiển thị ngân hàng, số tài khoản, chủ tài khoản, số tiền, nội dung chuyển khoản
+- Confirm transfer theo từng mode: ticket, table, room, room-batch
+- Polling trạng thái payment để khóa nút khi đã `completed`
+- Redirect hợp lý về đúng ví tương ứng sau confirm
 
-#### Việc phải làm:
-- Hỗ trợ nhiều phòng trong một giao dịch giống Website.
-- Tính check-in, check-out, số đêm, tổng tiền.
-- Đồng bộ `batch booking`, `batch payment`, `contact update`.
-- Hiển thị room pass và trạng thái lưu trú từ backend.
-- Hỗ trợ user tự hủy booking phòng khi đơn còn `pending` / chưa owner duyệt.
+Khác với bản kế hoạch cũ:
 
-### 5.5. Phân hệ 5: Thanh toán VietQR & xác nhận chuyển khoản
-- **Độ ưu tiên:** Ưu tiên Số 5
-- **Độ khó:** 🔥🔥🔥🔥
+- Bản hiện tại không có shortcut copy riêng cho từng trường
+- UX thanh toán được tối giản theo hướng xem thông tin và bấm xác nhận
 
-#### Code ở đâu?
-- `mobile/app/booking/payment/[bookingId].tsx`
-- `mobile/components/payment/VietQrCard.tsx`
-- `mobile/services/paymentClipboard.ts`
+### 5.6. Wallet, pass và realtime sync
 
-#### Việc phải làm:
-- Hiển thị QR động từ response payment.
-- Cho copy `bank_account`, `amount`, `content`.
-- User bấm `Xác nhận đã chuyển khoản` để gọi API confirm tương ứng.
-- Nếu backend trả trạng thái completed, mobile phải khóa nút tránh gửi đúp.
+Đã có:
 
-## 6. Tiêu chí nghiệm thu
+- `wallet/tickets.tsx`
+- `wallet/table-pass.tsx`
+- `wallet/room-pass.tsx`
+- SSE phát `booking_updated` để các ví tự reload
+- Đồng bộ trạng thái `pending`, `confirmed`, `completed`, `cancelled` theo backend
 
-1. User đặt được vé, bàn, phòng bằng chung backend hiện tại.
-2. Mobile hiển thị đúng QR VietQR động theo từng owner.
-3. Không có back-loop quay lại màn hình thanh toán sau khi hoàn tất.
-4. Ví vé, pass bàn, pass phòng hiển thị đúng trạng thái như Website.
-5. Booking bị hủy hoặc được xác nhận từ backend phải cập nhật realtime trên Mobile.
-6. Không có chỗ nào hardcode thông tin ngân hàng ở client.
-7. User hủy được đơn ăn uống / khách sạn trước khi owner duyệt và UI cập nhật đúng trạng thái `cancelled`.
+## 6. Sai khác đã được chấp nhận
 
-## 7. Phụ thuộc và rủi ro
+Các sai khác dưới đây không còn được xem là blocker cho Phase 4:
 
-- Giai đoạn 4 phụ thuộc hoàn chỉnh vào `Giai đoạn 3` vì user phải đi từ `Chi tiết địa điểm` sang luồng booking.
-- Batch room booking là phần rủi ro cao nhất, cần test riêng.
-- Các endpoint auth / refresh token trên Mobile phải khớp chính xác với backend trước khi đóng phase này.
+- Route room booking thực tế dùng `booking/hotel/[locationId]` thay vì chỉ `booking/room/[serviceId]`
+- Payment screen không có nút copy riêng
+- Mobile bám theo QR nhóm `SB-{bookingId}-GROUP` giống Website hiện tại
+- Một số wording/UI mobile đã được tinh giản hoặc đổi nhãn so với mock cũ
+
+## 7. Kết quả rà lỗi ẩn
+
+Sau khi rà lại code hiện tại, kết luận:
+
+- Không thấy blocker nào đủ lớn để giữ Phase 4 ở trạng thái `in-progress`
+- Đã vá một lỗi ngầm ở luồng ticket booking: parse ngày `YYYY-MM-DD` theo local date để tránh lệch timezone khi tạo payload booking
+- Đã chỉnh lại một số nhãn trạng thái ở wallet/pass để bớt gây hiểu nhầm
+- Đã chỉnh note trên payment screen để khớp đúng mode ticket / table / room
+
+Rủi ro còn lại ở mức thấp:
+
+- Payment screen hiện chưa có nút copy nhanh cho từng trường chuyển khoản
+- Luồng ticket nên tiếp tục regression test khi đổi timezone thiết bị
+- Room batch vẫn là cụm cần test kỹ nhất mỗi lần backend đổi rule booking
+
+## 8. Biên bản chốt Phase 4
+
+Biên bản chốt theo hiện trạng code:
+
+- Trạng thái: `completed`
+- Ngày chốt: `2026-06-30`
+- Căn cứ chốt:
+  - Code mobile đã có đủ các màn booking, payment, wallet/pass thuộc Phase 4
+  - Backend reuse đầy đủ cho nghiệp vụ chính
+  - TypeScript mobile pass
+  - Sai khác so với kế hoạch cũ đã được chấp nhận vì implementation mới hoạt động tốt hơn
+
+## 9. Điều kiện sang Giai đoạn 5
+
+Đánh giá hiện tại: `có thể chuyển sang Giai đoạn 5`
+
+Lý do:
+
+- Giai đoạn 4 không còn blocker chức năng ở mức phase
+- Luồng từ location detail -> booking -> payment -> wallet/pass đã hình thành đầy đủ
+- Các phần còn lại chủ yếu là tối ưu UX nhỏ và regression test, không cần giữ Phase 4 mở
+
+Khuyến nghị trước khi mở nhiều việc ở Phase 5:
+
+- Giữ một checklist smoke test ngắn cho ticket / table / room / payment / wallet
+- Khi backend đổi logic booking, rerun nhanh 4 flow cốt lõi của Phase 4

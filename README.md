@@ -13,7 +13,7 @@ A comprehensive full-stack travel ecosystem connecting tourists with service pro
 - [III. Backend API & AI Services](#iii-backend-api--ai-services)
 - [IV. Mobile App (Tourist Client)](#iv-mobile-app-tourist-client)
 - [V. System Architecture & Roles](#v-system-architecture--roles)
-- [VI. Database Schema (56 Tables)](#vi-database-schema-56-tables)
+- [VI. Database Schema (59 Tables)](#vi-database-schema-59-tables)
 - [VII. Development Progress](#vii-development-progress)
 - [VIII. Author & License](#viii-author--license)
 
@@ -33,43 +33,67 @@ The system enables tourists to discover locations, book services (hotel rooms, r
 
 ---
 
-## II. Website Dashboard (Admin, Owner, User)
+## II. Detailed Features & Permissions by Role
 
-The web frontend is a Single Page Application (SPA) providing tailored interfaces for ba distinct roles.
+The system provides tailored interfaces and features for four distinct roles: Admin, Owner, Employee, and User (Tourist). Each role has access to specific pages and functionalities.
 
-### 1. Tech Stack
-| Category | Technology |
-|----------|------------|
-| Framework | React 19 + TypeScript |
-| Build Tool | Vite 7 |
-| Routing | react-router-dom v7 |
-| UI Library | Ant Design v6 |
-| State Management | Zustand |
-| Styling | Tailwind CSS 3 |
-| Maps | react-leaflet (OpenStreetMap) |
-| Real-time | socket.io-client, EventSource (SSE) |
+### 1. User Role (Tourist / Consumer)
+Tourists use both the Web Portal and the Mobile App to discover and experience travel.
+- **Dashboard:** Features location recommendations and a real-time weather widget.
+- **Interactive Map:** A split-screen interface (Map on the left, Location Details on the right). Clicking a location instantly fetches its local weather. Supports full routing/navigation. Users can also select any "free location" on the map to save or navigate to.
+- **Location Details:** Google Maps-style detailed information and comments, with direct links to pre-book services.
+- **Distinct Booking UIs:** Three completely independent interfaces for booking Food (Restaurants), Hotels, and Tourism Tickets. Supported payment methods include Pay Later and Bank Transfer.
+- **Ticket Wallet (Vỏ vé):** A smart wallet storing invoices, ticket codes, and dynamically generated QR codes. (Fun fact: Originally designed for tourist tickets, this feature was cleverly adapted for restaurants and hotels using descriptive stickers instead of full images, taking a week to perfect!). Staff can scan the QR or enter the code to verify.
+- **Saved Locations:** Bookmark favorite spots.
+- **Travel Diary:** Log past check-ins, write personal emotions, and upload photos (private visibility).
+- **Itinerary Planner:** A straightforward planner to select destinations and times to create a customized travel journey.
+- **SOS Alert:** A panic button that instantly sends emergency notifications and location data to the Admin.
+- **Profile:** Basic info management featuring an advanced, Zalo-style avatar cropping and zooming tool.
 
-### 2. Key Features
+### 2. Admin Role (Platform Administrator)
+The Admin has absolute control over the platform, ensuring quality, safety, and financial operations.
+- **Dashboard:** System overview and analytics.
+- **Account Management:** Can lock or delete accounts across all roles (Users, Owners, Employees, Admins).
+- **Location Moderation:** Review location info and map coordinates before approving or rejecting newly registered business locations.
+- **Service Moderation:** Review and approve/reject specific services, prices, and images submitted by Owners.
+- **Review Moderation:** Monitor user reviews and owner replies. Admins can delete inappropriate reviews but cannot participate in the comment thread.
+- **Commission Management:** Track commission history and exact amounts. Admins manually confirm receipt of commission transfers from Owners.
+- **Bank Configuration:** Admins set up their receiving bank account. The system automatically generates a VietQR code for Owners to pay their commissions.
+- **System Settings:** Update website/mobile background images and set the default global commission percentage.
+- **Export Reports (Excel):** Export detailed revenue, order, and commission reports for individual Owners or the entire platform.
+- **System Vouchers:** Create platform-wide promotional vouchers.
+- *(Upcoming)* AI capabilities.
 
-#### Admin Dashboard
-- **Full Platform Control:** Manage users, owners, locations, and system settings.
-- **Location Moderation:** Approve, reject, hide, or delete locations; detect and merge duplicates.
-- **Commission Management:** Set per-location commission rates, track payments.
-- **Analytics & SOS:** Dashboard statistics, user reports, and real-time SOS monitoring.
-- **AI Settings:** Configure AI chatbot behavior and view chat history.
+### 3. Owner Role (Business Partner)
+Owners are travel service providers. Their experience is divided into two distinct flows: **Normal Mode** and **Operational Mode**.
 
-#### Owner Dashboard (POS & PMS)
-- **Location Management:** CRUD with up to 12 images, geo coordinates, and OSM integration.
-- **Hotel PMS (Property Management System):** Visual drag-and-drop room grid, stay management, walk-in & online check-in.
-- **Restaurant / Cafe POS:** Drag-and-drop table layout, real-time order tracking, area management.
-- **Tourist Ticket POS:** QR Code validation via camera, walk-in sales, real-time stock.
-- **Business Operations:** Review management, employee roles (JSON-based permissions), commission tracking, voucher creation.
+#### I. Normal Mode (Business Management)
+- **Dashboard:** Business overview with a quick-access button to switch to Operational Mode.
+- **Location Creation:** Pick a spot on the map, enter details, choose a service type, and submit for Admin approval.
+- **Configuration (Post-Approval):** Set up specific layouts based on business type:
+  - Food: Table and seating layout.
+  - Hotel: Room layout.
+  - Tourism: Ticket types.
+- **Service Creation:** Create categories and services, subject to Admin approval (any subsequent edits require re-approval).
+- **History:** Comprehensive logs of transactions, financial data, and timestamps.
+- **Bank Configuration:** Owners set up their own bank details for direct user bank transfers.
+- **Commission Settlement:** View owed commissions, perform reconciliation, and pay the Admin (clicking the button pops up a QR code with the exact owed amount).
+- **Employee Management:** Create and manage staff accounts.
+- **Owner Vouchers:** Create location-specific vouchers (fixed amount or percentage) without needing Admin approval.
+- **Export Reports (Excel):** Export business-specific revenue and order reports.
+- **Customer Chat:** Direct messaging with users.
+- *(Upcoming)* AI capabilities.
 
-#### User Web Portal
-- **Discovery & Booking:** Browse locations, reserve hotel rooms, restaurant tables, and tourist tickets.
-- **Travel Features:** Travel Diary, Itinerary Planning, and Voucher Wallet.
-- **AI Chat Assistant:** Google Gemini-powered chatbot for travel planning and personalized recommendations.
-- **Social Login:** Google and Facebook OAuth integration.
+#### II. Operational Mode (Trang vận hành)
+Accessible by Owners and their Employees. Users enter this mode by selecting a specific location to operate.
+- **Food (Restaurant/Cafe):** Select a table, choose services/food, and process usage.
+- **Hotel:** Select a room, enter guest info, check-in, and calculate payment based on stay duration.
+- **Tourism:** Direct offline ticket sales.
+- **Shared Features:** All three services support online pre-booking. An operational history page separates offline and online sales (platform commission only applies to online pre-bookings) and features revenue charts.
+
+### 4. Employee Role (Staff)
+- **Restricted Access:** Employees log in and are directed primarily to the **Operational Mode** for the specific locations assigned to them by the Owner.
+- **Operational Tasks:** They handle day-to-day tasks like assigning tables, checking in hotel guests, or selling/scanning tickets.
 
 ---
 
@@ -392,12 +416,14 @@ The system uses a relational **MySQL** database with **59 tables** organized acr
 
 ## VII. Development Progress
 
-- [x] **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
-- [x] **Phase 2** — Web Dashboard for Admin & Owner management module
-- [x] **Phase 3** — Complete database schema (56 tables) and restore full functionality
-- [ ] **Phase 4** — Mobile App Development (Currently in progress)
-- [ ] **Phase 6** — Hotel PMS and Restaurant POS drag-and-drop refinement
-- [ ] **Phase 7** — AI Chat Integration with Google Gemini
+- ✔️ **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
+- ✔️ **Phase 2** — Web Dashboard for Admin & Owner management module
+- ✔️ **Phase 3** — Complete database schema (59 tables) and restore full functionality
+- ✔️ **Phase 4** — Mobile App Development (Auth, Home, Map, Booking & Unified Wallet)
+- ❌ **Phase 5** — Mobile App (User Utilities, Saved Locations, Diary, SOS & Vouchers)
+- ❌ **Phase 6** — Mobile App (AI Chat, Location Chat & Itinerary Planner)
+- ❌ **Phase 7** — Hotel PMS and Restaurant POS drag-and-drop refinement
+- ❌ **Phase 8** — AI Integration across Web and Mobile with Google Gemini
 
 ---
 

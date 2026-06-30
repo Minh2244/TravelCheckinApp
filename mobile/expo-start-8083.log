@@ -1,0 +1,7 @@
+env: load .env
+env: export EXPO_PUBLIC_API_URL EXPO_PUBLIC_GOOGLE_CLIENT_ID EXPO_PUBLIC_FACEBOOK_APP_ID
+Starting project at E:\TravelCheckinApp\mobile
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8083
+Logs for your project will appear below.

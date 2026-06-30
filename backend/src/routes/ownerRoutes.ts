@@ -62,6 +62,7 @@ import {
   getTouristTicketsByUser,
   hideReview,
   deleteOwnerReview,
+  deleteOwnerReply,
   reportReviewUserByOwner,
   openPosTable,
   payPosOrder,
@@ -208,6 +209,7 @@ router.delete("/vouchers/:id", deleteOwnerVoucher);
 // Reviews
 router.get("/reviews", getOwnerReviews);
 router.post("/reviews/:id/reply", replyToReview);
+router.delete("/reviews/:id/reply", deleteOwnerReply);
 router.put("/reviews/:id/hide", hideReview);
 router.delete("/reviews/:id", deleteOwnerReview);
 router.post("/reviews/:id/report-user", reportReviewUserByOwner);

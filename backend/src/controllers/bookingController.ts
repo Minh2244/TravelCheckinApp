@@ -20,17 +20,19 @@ import {
   isBookingPaymentError,
 } from "../services/bookingPaymentService";
 import { publishToUser, publishToAll } from "../utils/realtime";
+import { publishToLocationPublic } from "../utils/socketHub";
 import { pool } from "../config/database";
 
 const notifyRealtimeBookingUpdate = async (
   bookingId: number,
-  type: "tourist_updated" | "pos_updated" | "pms_updated" | "hotel_updated",
+  type?: "tourist_updated" | "pos_updated" | "pms_updated" | "hotel_updated",
 ) => {
   try {
     const [bRows] = await pool.query(
-      `SELECT b.location_id, l.owner_id
+      `SELECT b.location_id, l.owner_id, l.location_type, s.service_type
        FROM bookings b
        JOIN locations l ON l.location_id = b.location_id
+       LEFT JOIN services s ON s.service_id = b.service_id
        WHERE b.booking_id = ?
        LIMIT 1`,
       [bookingId],
@@ -41,16 +43,36 @@ const notifyRealtimeBookingUpdate = async (
     const locationId = Number(row.location_id);
     const ownerId = Number(row.owner_id);
 
+    const locationType = String(row.location_type || "").toLowerCase();
+    const serviceType = String(row.service_type || "").toLowerCase();
+
+    let typeToEmit = type;
+    if (!typeToEmit) {
+      if (serviceType === "ticket" || serviceType === "tour" || locationType === "tourist") {
+        typeToEmit = "tourist_updated";
+      } else if (serviceType === "table" || locationType === "restaurant" || locationType === "cafe") {
+        typeToEmit = "pos_updated";
+      } else {
+        typeToEmit = "hotel_updated";
+      }
+    }
+
     // Always broadcast to everyone first
     try {
-      console.log(`[SSE Booking] Broadcasting event to all:`, type, `for location`, locationId);
+      console.log(`[SSE Booking] Broadcasting event to all:`, typeToEmit, `for location`, locationId);
       publishToAll({
-        type,
+        type: typeToEmit,
+        location_id: locationId,
+        booking_id: bookingId,
+      });
+      // Broadcast to public socket room for customer real-time sync
+      publishToLocationPublic(locationId, {
+        type: typeToEmit,
         location_id: locationId,
         booking_id: bookingId,
       });
     } catch (err: any) {
-      console.error("❌ Booking publishToAll error:", err?.message || err);
+      console.error("❌ Booking publishToAll/publishToLocationPublic error:", err?.message || err);
     }
 
     const ids = new Set<number>();
@@ -67,7 +89,7 @@ const notifyRealtimeBookingUpdate = async (
     for (const id of ids) {
       try {
         publishToUser(id, {
-          type,
+          type: typeToEmit as any,
           location_id: locationId,
           booking_id: bookingId,
         });
@@ -189,15 +211,7 @@ export const createBookingHandler = async (
     });
 
     if (result && result.bookingId) {
-      const sId = body.service_id != null ? Number(body.service_id) : null;
-      if (hasTicketItems || (sId && body.ticket_items)) {
-        void notifyRealtimeBookingUpdate(result.bookingId, "tourist_updated");
-      } else if (hasTableIds || sId) {
-        void notifyRealtimeBookingUpdate(result.bookingId, "pos_updated");
-      } else {
-        void notifyRealtimeBookingUpdate(result.bookingId, "hotel_updated");
-        void notifyRealtimeBookingUpdate(result.bookingId, "pms_updated");
-      }
+      void notifyRealtimeBookingUpdate(result.bookingId);
     }
   } catch (error) {
     if (isBookingError(error)) {

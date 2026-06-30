@@ -1,5 +1,21 @@
 export type BookingSource = "web" | "mobile" | "admin";
 
+export type TouristTicket = {
+  ticket_id: number;
+  ticket_code: string;
+  service_name: string | null;
+  location_name: string | null;
+  status: "unused" | "used" | "expired";
+  use_date: string | null;
+  issued_at: string | null;
+  booking_id: number | null;
+  service_id: number | null;
+  location_id: number | null;
+  service_images?: string | null;
+  service_price?: number | string | null;
+  invoice_code?: string | null;
+};
+
 export type PreorderItemPayload = {
   service_id: number;
   quantity: number;

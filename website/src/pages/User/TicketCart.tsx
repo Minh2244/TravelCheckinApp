@@ -422,12 +422,15 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                 return (
                   <div
                     key={String(ticket.ticket_id)}
-                    className={`group relative overflow-hidden rounded-[24px] border p-5 sm:p-6 shadow-sm transition-all duration-300 w-full ${card}`}
+                    className={`group relative overflow-hidden rounded-[24px] border p-0 shadow-sm transition-all duration-300 w-full ${card}`}
                   >
                     <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-300 via-emerald-500 to-emerald-200" />
                     <div className="absolute -right-8 -top-10 h-20 w-20 rounded-full bg-white/70 blur-2xl" />
 
-                    <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] gap-5 sm:gap-6 items-center">
+                    <div className="flex flex-col sm:flex-row items-stretch min-h-[140px]">
+                      
+                      {/* Left/Top: 1 ảnh to bên trái & Details */}
+                      <div className="flex-1 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-5 sm:gap-6 items-center">
                       
                       {/* Left: 1 ảnh to bên trái */}
                       <div className="flex justify-center sm:justify-start">
@@ -494,12 +497,15 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                           </div>
                         </div>
                       </div>
-
-                      {/* Right: Trạng thái vé & Mã QR */}
-                      <div className="flex flex-col items-center justify-center gap-2 w-[130px]">
-                        <span className={`rounded-full px-3 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${badge}`}>
-                          {label}
-                        </span>
+                      </div>
+                      
+                      {/* Right/Bottom: Trạng thái vé & Mã QR (Tear-off) */}
+                      <div className="relative flex flex-col items-center justify-center p-5 sm:p-6 sm:w-[150px] bg-slate-50/50 border-t-2 sm:border-t-0 sm:border-l-2 border-slate-200 border-dashed">
+                        {/* Perforated holes */}
+                        <div className="hidden sm:block absolute -top-3 -left-3 w-6 h-6 rounded-full bg-white border border-slate-200" />
+                        <div className="hidden sm:block absolute -bottom-3 -left-3 w-6 h-6 rounded-full bg-white border border-slate-200" />
+                        <div className="block sm:hidden absolute -top-3 -left-3 w-6 h-6 rounded-full bg-white border border-slate-200" />
+                        <div className="block sm:hidden absolute -top-3 -right-3 w-6 h-6 rounded-full bg-white border border-slate-200" />
                         {ticket.status === "pending" ? (
                           <div className="relative p-1 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-center overflow-hidden">
                             <img
@@ -533,11 +539,9 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                             />
                           </div>
                         )}
-                        <div className="mt-1 text-center">
-                          <span className="text-xs font-bold text-slate-800 tracking-tight font-mono block">
-                            Mã vé: {ticket.ticket_code}
-                          </span>
-                        </div>
+                        <span className={`mt-3 rounded-full px-3 py-0.5 text-[10px] font-extrabold uppercase tracking-wide ${badge}`}>
+                          {label}
+                        </span>
                       </div>
 
                     </div>
@@ -596,7 +600,7 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                     </div>
 
                     {/* Middle: Details */}
-                    <div className="space-y-2 text-center md:text-left">
+                    <div className="space-y-2 text-center md:text-left flex-1 border-r-0 md:border-r-2 border-slate-200 border-dashed pr-0 md:pr-4">
                       <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
                         <span className="text-lg font-extrabold text-slate-800 tracking-tight font-heading">
                           {group.tickets[0]?.invoice_code ? `Hóa đơn: ${group.tickets[0].invoice_code}` : `Mã đặt chỗ: #DL-${group.bookingId}`}
@@ -652,7 +656,7 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                     </div>
 
                     {/* Right: Group QR Code */}
-                    <div className="flex flex-col items-center justify-center">
+                    <div className="flex flex-col items-center justify-center md:pl-4">
                       {group.tickets[0]?.status === "pending" ? (
                         <div className="relative p-2.5 rounded-2xl bg-white border border-slate-100 shadow-sm flex flex-col items-center justify-center gap-1 overflow-hidden select-none pointer-events-none">
                           <img
@@ -715,87 +719,97 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
                       <path d="m6 9 6 6 6-6" />
                     </svg>
                   </button>
-
                   {/* Collapsible Details */}
                   {isExpanded && (
-                    <div className="mt-4 p-4 rounded-[20px] bg-slate-50/60 border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4 animate-slideDown">
+                    <div className="mt-4 p-5 rounded-[24px] bg-slate-50/60 border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-5 animate-slideDown shadow-inner">
                       {group.tickets.map((ticket) => {
                         const childStatus = statusMeta(String(ticket.status || ""));
                         const useDate = ticket.use_date ? formatDisplayDateTime(ticket.use_date) : "-";
                         const price = Number.isFinite(Number(ticket.service_price)) ? formatMoney(Number(ticket.service_price)) : "-";
                         const childImgs = parseImages(ticket.service_images);
                         const childImgUrl = childImgs[0] ? resolveBackendUrl(childImgs[0]) : "";
+                        const isChildUsed = ticket.status !== "unused" && ticket.status !== "pending";
 
                         return (
                           <div
                             key={ticket.ticket_id}
-                            className={`flex flex-col justify-between p-3.5 rounded-[18px] border bg-white shadow-sm transition-all hover:shadow-md ${childStatus.card}`}
+                            className={`group/child relative flex flex-col sm:flex-row items-stretch rounded-[20px] border bg-white shadow-sm transition-all hover:shadow-md overflow-hidden ${childStatus.card}`}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-center gap-3">
+                            {/* Left/Top: Image and Info */}
+                            <div className="flex-1 flex p-4 gap-4 items-center">
+                              {/* Image */}
+                              <div className="shrink-0 relative">
                                 {childImgUrl ? (
                                   <img
                                     src={childImgUrl}
                                     alt={ticket.service_name || "Vé"}
-                                    className="w-12 h-12 rounded-xl object-cover border border-slate-100"
+                                    className="w-16 h-16 rounded-[14px] object-cover border border-slate-100 shadow-sm"
                                   />
                                 ) : (
-                                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-[10px] text-slate-400 font-medium">
-                                    Vé
+                                  <div className="w-16 h-16 rounded-[14px] bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-100 shadow-sm opacity-50 overflow-hidden transform scale-[0.6]">
+                                    <PremiumTicketIcon />
                                   </div>
                                 )}
-                                <div className="text-left">
-                                  <div className="text-sm font-bold text-slate-800">
-                                    {ticket.service_name || "Vé du lịch"}
-                                  </div>
-                                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                                    Mã: {ticket.ticket_code}
-                                  </div>
-                                  {ticket.invoice_code && (
-                                    <div className="text-[11px] text-emerald-600 font-mono mt-0.5">
-                                      Hóa đơn: {ticket.invoice_code}
-                                    </div>
-                                  )}
+                                {isChildUsed && (
+                                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] rounded-[14px]" />
+                                )}
+                              </div>
+                              
+                              {/* Details */}
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[15px] font-bold text-slate-900 truncate">
+                                  {ticket.service_name || "Vé du lịch"}
                                 </div>
-                              </div>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${childStatus.badge}`}>
-                                {childStatus.label}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between gap-4 mt-3 pt-3 border-t border-dashed border-slate-100">
-                              <div className="text-xs text-slate-500 text-left">
-                                <div>Ngày: <span className="font-semibold text-slate-700">{useDate}</span></div>
-                                <div className="mt-0.5">Giá: <span className="font-semibold text-slate-700">{price}</span></div>
-                              </div>
-                              {ticket.status === "pending" ? (
-                                <div className="relative p-1 rounded-xl border border-slate-100 bg-white shadow-sm flex items-center justify-center overflow-hidden select-none pointer-events-none">
-                                  <img
-                                    src={buildTicketQrUrl(ticket.ticket_code, 80)}
-                                    alt="QR Chờ duyệt"
-                                    className="w-14 h-14 opacity-20 blur-[2px]"
-                                    loading="lazy"
-                                  />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-white/20 backdrop-blur-[0.5px]">
-                                    <span className="text-[8px] font-extrabold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1 py-0.5 animate-pulse">
-                                      Đợi duyệt
+                                <div className="text-xs text-slate-500 font-medium mt-1 space-y-0.5">
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <span>Ngày: <span className="text-slate-700 font-bold">{useDate}</span></span>
+                                    <span>Giá: <span className="text-emerald-700 font-bold">{price}</span></span>
+                                  </div>
+                                </div>
+                                {ticket.invoice_code && (
+                                  <div className="mt-1.5">
+                                    <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-bold px-2 py-0.5 rounded-full">
+                                      Hóa đơn: {ticket.invoice_code}
                                     </span>
                                   </div>
-                                </div>
-                              ) : ticket.status === "unused" ? (
-                                <div className="p-1 rounded-xl border border-slate-100 bg-white shadow-sm flex items-center justify-center">
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Right/Bottom: QR and Status (Tear-off) */}
+                            <div className="relative flex flex-col items-center justify-center p-4 sm:w-[120px] bg-slate-50/50 border-t-2 sm:border-t-0 sm:border-l-2 border-slate-200 border-dashed">
+                              {/* Perforated holes */}
+                              <div className="hidden sm:block absolute -top-2.5 -left-2.5 w-5 h-5 rounded-full bg-white border border-slate-200" />
+                              <div className="hidden sm:block absolute -bottom-2.5 -left-2.5 w-5 h-5 rounded-full bg-white border border-slate-200" />
+                              <div className="block sm:hidden absolute -top-2.5 -left-2.5 w-5 h-5 rounded-full bg-white border border-slate-200" />
+                              <div className="block sm:hidden absolute -top-2.5 -right-2.5 w-5 h-5 rounded-full bg-white border border-slate-200" />
+                              
+                              {ticket.status === "unused" ? (
+                                <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-100">
                                   <img
-                                    src={buildTicketQrUrl(ticket.ticket_code, 80)}
+                                    src={buildTicketQrUrl(ticket.ticket_code, 70)}
                                     alt="QR"
-                                    className="w-14 h-14"
-                                    loading="lazy"
+                                    className="w-12 h-12"
                                   />
                                 </div>
                               ) : (
-                                <div className="text-[10px] font-extrabold text-slate-400 uppercase border border-slate-200 bg-slate-50 rounded-lg px-2.5 py-1">
-                                  {ticket.status === "used" ? "Đã soát" : childStatus.label}
+                                <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-100 opacity-40">
+                                  <img
+                                    src={buildTicketQrUrl(ticket.ticket_code, 70)}
+                                    alt="QR"
+                                    className="w-12 h-12 select-none pointer-events-none"
+                                  />
                                 </div>
                               )}
+                              
+                              <div className="mt-2 text-center w-full">
+                                <span className="text-[10px] text-slate-500 font-mono font-bold block truncate" title={ticket.ticket_code}>
+                                  {ticket.ticket_code}
+                                </span>
+                              </div>
+                              <span className={`mt-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${childStatus.badge}`}>
+                                {childStatus.label}
+                              </span>
                             </div>
                           </div>
                         );

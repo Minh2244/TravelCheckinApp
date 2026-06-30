@@ -16,14 +16,13 @@ export function ToastHost() {
   return (
     <View
       pointerEvents="box-none"
-      className="absolute left-0 right-0 z-50 items-center px-5"
-      style={{ top: insets.top + 10 }}
+      className="absolute left-0 right-0 top-0 bottom-0 z-50 items-center justify-center px-6"
     >
       <Pressable
         onPress={hide}
-        className="w-full max-w-[520px] rounded-2xl bg-slate-900/92 px-4 py-3"
+        className="w-full max-w-[340px] rounded-2xl bg-teal-800 px-6 py-5 shadow-2xl border border-teal-600"
       >
-        <Text className="text-[14px] font-semibold leading-5 text-white">{message}</Text>
+        <Text className="text-center text-[16px] font-bold leading-6 text-white">{message}</Text>
       </Pressable>
     </View>
   );

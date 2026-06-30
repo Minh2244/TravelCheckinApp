@@ -771,6 +771,11 @@ const ownerApi = {
     return res.data;
   },
 
+  deleteReply: async (reviewId: number) => {
+    const res = await axiosClient.delete(`/owner/reviews/${reviewId}/reply`);
+    return res.data;
+  },
+
   hideReview: async (reviewId: number, hidden: boolean) => {
     const res = await axiosClient.put(`/owner/reviews/${reviewId}/hide`, {
       hidden,

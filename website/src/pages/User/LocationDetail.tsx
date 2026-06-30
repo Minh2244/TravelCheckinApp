@@ -794,9 +794,13 @@ const LocationDetail = () => {
 
                     <button
                       type="button"
-                      className="mt-4 w-full rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-60"
+                      className={`mt-4 w-full rounded-full px-5 py-3 text-sm font-semibold text-white transition ${
+                        !primaryService || !isOpenNow
+                          ? "bg-slate-400 cursor-not-allowed"
+                          : "bg-blue-600 hover:bg-blue-700"
+                      }`}
                       onClick={handleBooking}
-                      disabled={!primaryService}
+                      disabled={!primaryService || !isOpenNow}
                     >
                       {bookingLabelByLocationType(location?.location_type)}
                     </button>
@@ -942,6 +946,17 @@ const LocationDetail = () => {
                                   className="h-20 w-full rounded-xl object-cover"
                                 />
                               ))}
+                            </div>
+                          ) : null}
+                          
+                          {review.reply_content ? (
+                            <div className="mt-3 border-l-2 border-teal-500 bg-teal-50/50 p-3 rounded-r-xl">
+                              <div className="text-xs font-bold text-teal-700 mb-1">
+                                Phản hồi từ địa điểm
+                              </div>
+                              <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                                {review.reply_content}
+                              </p>
                             </div>
                           ) : null}
                         </article>

@@ -37,8 +37,8 @@ type StatsState = {
 const quickActions: Array<{
   label: string;
   description: string;
-  action: "food" | "stay" | "saved" | "itinerary";
-  icon: "restaurant-outline" | "bed-outline" | "bookmark-outline" | "calendar-outline";
+  action: "food" | "tickets" | "saved" | "itinerary";
+  icon: "restaurant-outline" | "ticket-outline" | "bookmark-outline" | "calendar-outline";
   iconBackground: string;
   cardBackground: string;
 }> = [
@@ -51,12 +51,12 @@ const quickActions: Array<{
     cardBackground: "#fff7ed",
   },
   {
-    label: "Lưu trú",
-    description: "Xem khách sạn và resort",
-    action: "stay",
-    icon: "bed-outline",
-    iconBackground: "#0f766e",
-    cardBackground: "#f0fdfa",
+    label: "Giỏ vé",
+    description: "Quản lý vé du lịch của bạn",
+    action: "tickets",
+    icon: "ticket-outline",
+    iconBackground: "#0ea5e9",
+    cardBackground: "#f0f9ff",
   },
   {
     label: "Đã lưu",
@@ -357,8 +357,8 @@ export default function HomeScreen() {
                   return;
                 }
 
-                if (item.action === "stay") {
-                  setCategory("Lưu trú");
+                if (item.action === "tickets") {
+                  router.push("/wallet?tab=tour");
                   return;
                 }
 

@@ -10,6 +10,18 @@ interface AuthenticatedRequest extends Request {
 interface AiChatBody {
   prompt?: string;
   conversationId?: number;
+  context?: {
+    current_location?: {
+      lat?: number;
+      lng?: number;
+      city?: string | null;
+      province?: string | null;
+    } | null;
+    weather?: {
+      temperature?: number | null;
+      condition?: string | null;
+    } | null;
+  };
 }
 
 export const chatWithAi = async (
@@ -32,7 +44,8 @@ export const chatWithAi = async (
     const result = await processChat({
       userId,
       prompt: body.prompt.trim(),
-      conversationId: body.conversationId
+      conversationId: body.conversationId,
+      context: body.context,
     });
 
     res.json({

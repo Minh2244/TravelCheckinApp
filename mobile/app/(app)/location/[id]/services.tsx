@@ -201,41 +201,59 @@ export default function LocationServicesScreen() {
                 <Text style={styles.groupCount}>{items.length}</Text>
               </View>
 
-              {items.map((service) => {
-                const imageUrl = getServiceImage(service);
-                return (
-                  <Pressable
-                    key={service.service_id}
-                    style={styles.serviceCard}
-                    onPress={() => handleServicePress(service)}
-                  >
-                    {imageUrl ? (
-                      <Image
-                        source={{ uri: imageUrl }}
-                        style={styles.serviceImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={[styles.serviceImage, styles.imageFallback]}>
-                        <Ionicons name="image-outline" size={22} color="#94a3b8" />
-                      </View>
-                    )}
+              {label === "Vé tham quan" ? (
+                <Pressable
+                  style={styles.serviceCard}
+                  onPress={() => router.push(`/booking/ticket/all?locationId=${id}`)}
+                >
+                  <View style={[styles.serviceImage, styles.imageFallback]}>
+                    <Ionicons name="ticket" size={26} color="#0f766e" />
+                  </View>
+                  <View style={styles.serviceInfo}>
+                    <Text style={styles.serviceName}>Mua vé tham quan</Text>
+                    <Text style={styles.serviceDescription}>
+                      Bao gồm {items.length} loại vé (Người lớn, trẻ em...). Chọn ngày và số lượng.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                </Pressable>
+              ) : (
+                items.map((service) => {
+                  const imageUrl = getServiceImage(service);
+                  return (
+                    <Pressable
+                      key={service.service_id}
+                      style={styles.serviceCard}
+                      onPress={() => handleServicePress(service)}
+                    >
+                      {imageUrl ? (
+                        <Image
+                          source={{ uri: imageUrl }}
+                          style={styles.serviceImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.serviceImage, styles.imageFallback]}>
+                          <Ionicons name="image-outline" size={22} color="#94a3b8" />
+                        </View>
+                      )}
 
-                    <View style={styles.serviceInfo}>
-                      <Text style={styles.serviceName} numberOfLines={1}>
-                        {service.service_name}
-                      </Text>
-                      <Text style={styles.serviceDescription} numberOfLines={2}>
-                        {service.description || serviceTypeLabel(service.service_type)}
-                      </Text>
-                      <Text style={styles.servicePrice}>
-                        {formatCurrency(service.price)}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
-                  </Pressable>
-                );
-              })}
+                      <View style={styles.serviceInfo}>
+                        <Text style={styles.serviceName} numberOfLines={1}>
+                          {service.service_name}
+                        </Text>
+                        <Text style={styles.serviceDescription} numberOfLines={2}>
+                          {service.description || serviceTypeLabel(service.service_type)}
+                        </Text>
+                        <Text style={styles.servicePrice}>
+                          {formatCurrency(service.price)}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+                    </Pressable>
+                  );
+                })
+              )}
             </View>
           ))
         )}

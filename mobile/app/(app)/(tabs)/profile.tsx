@@ -41,6 +41,20 @@ export default function ProfileScreen() {
             </Text>
           </View>
 
+          <View className="h-[1px] w-full bg-line" />
+
+          <Pressable
+            className="flex-row items-center justify-between py-2"
+            onPress={() => router.push("/wallet")}
+          >
+            <Text className="text-[17px] font-bold text-slate-900">
+              Ví vé & Đơn hàng của tôi
+            </Text>
+            <Text className="text-slate-400">➔</Text>
+          </Pressable>
+
+          <View className="h-[1px] w-full bg-line" />
+
           <Pressable
             className="min-h-[50px] items-center justify-center rounded-2xl bg-brand-600"
             onPress={async () => {

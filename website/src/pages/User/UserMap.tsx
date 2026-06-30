@@ -1050,9 +1050,8 @@ const UserMap = () => {
   }, [selected]);
 
   const selectedIsFavorite = useMemo(() => {
-    const locationId = Number(selected?.location_id);
-    if (!Number.isFinite(locationId) || locationId <= 0) return false;
-    return favoriteLocationIds.includes(locationId);
+    if (!selected?.location_id) return false;
+    return favoriteLocationIds.includes(Number(selected.location_id));
   }, [favoriteLocationIds, selected?.location_id]);
 
   const loadFavoriteLocationIds = useCallback(async () => {
@@ -1937,13 +1936,13 @@ const UserMap = () => {
     setSavingSelected(true);
     try {
       if (selectedIsFavorite) {
-        await userApi.removeFavorite(selected.location_id);
+        await userApi.removeFavorite(Number(selected.location_id));
         setFavoriteLocationIds((prev) =>
           prev.filter((id) => id !== Number(selected.location_id)),
         );
         setFeedback({ type: "success", message: "Đã bỏ lưu địa điểm." });
       } else {
-        await userApi.saveFavorite(selected.location_id, {
+        await userApi.saveFavorite(Number(selected.location_id), {
           note: "",
           tags: "",
         });
@@ -2065,7 +2064,7 @@ const UserMap = () => {
     setFeedback(null);
     setFreeAction(action);
     try {
-      await userApi.createCheckin({
+      const res = await userApi.createCheckin({
         action,
         location_id: pickedSuggested?.location_id,
         checkin_latitude: pickedPoint.lat,
@@ -2081,6 +2080,12 @@ const UserMap = () => {
             : "Đã lưu địa điểm để đi sau.",
       });
       if (action === "checkin") setNotes("");
+      if (action === "save") {
+        const data = res?.data as any;
+        if (data?.location_id) {
+          setFavoriteLocationIds((prev) => [...prev, Number(data.location_id)]);
+        }
+      }
       refetch();
     } catch (error) {
       setFeedback({

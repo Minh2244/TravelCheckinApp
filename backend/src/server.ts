@@ -189,6 +189,39 @@ const startServer = async () => {
              AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_food_minutes, 60)`,
         );
 
+        // B2) Giải phóng POS tables cho các booking vừa bị auto-cancel
+        try {
+          const [cancelledTableBookings] = await pool.query<import("mysql2").RowDataPacket[]>(
+            `SELECT DISTINCT btr.table_id
+             FROM booking_table_reservations btr
+             JOIN bookings b ON b.booking_id = btr.booking_id
+             JOIN services s ON s.service_id = b.service_id
+             WHERE b.status = 'cancelled'
+               AND btr.status = 'active'
+               AND s.service_type = 'table'`
+          );
+          const releasedTableIds = cancelledTableBookings
+            .map((r) => Number(r.table_id))
+            .filter((id) => Number.isFinite(id));
+
+          if (releasedTableIds.length > 0) {
+            await pool.query(
+              `UPDATE booking_table_reservations btr
+               JOIN bookings b ON b.booking_id = btr.booking_id
+               SET btr.status = 'cancelled'
+               WHERE b.status = 'cancelled' AND btr.status = 'active'`
+            );
+
+            const ph = releasedTableIds.map(() => "?").join(",");
+            await pool.query(
+              `UPDATE pos_tables SET status = 'free' WHERE table_id IN (${ph})`,
+              releasedTableIds
+            );
+          }
+        } catch (e) {
+          console.warn("[auto-cancel] Lỗi giải phóng POS tables:", e);
+        }
+
         // C) Tự động hủy phòng khách sạn trễ hạn check-in (auto_cancel_hotel_minutes)
         await pool.query(
           `UPDATE bookings b

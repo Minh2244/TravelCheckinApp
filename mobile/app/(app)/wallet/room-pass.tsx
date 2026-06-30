@@ -1,0 +1,26 @@
+﻿import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { RoomPassTab } from "../../../src/components/wallet/RoomPassTab";
+
+export default function RoomPassScreen() {
+  const router = useRouter();
+
+  return (
+    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right"]}>
+      <View className="flex-row items-center border-b border-line bg-white px-4 pb-3 pt-2">
+        <Pressable
+          className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+          onPress={() => router.back()}
+        >
+          <Ionicons name="chevron-back" size={24} color="#0f172a" />
+        </Pressable>
+        <Text className="ml-3 text-[20px] font-extrabold text-slate-900 flex-1">
+          Vỏ vé khách sạn
+        </Text>
+      </View>
+      <RoomPassTab />
+    </SafeAreaView>
+  );
+}

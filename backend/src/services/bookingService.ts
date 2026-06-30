@@ -4,6 +4,7 @@ import { pool } from "../config/database";
 import { extractOpenClose, isWithinOpeningHours } from "../utils/openingHours";
 import type { OpeningHoursRaw } from "../utils/openingHours";
 import { publishToUsers, type RealtimeEvent } from "../utils/realtime";
+import { publishToLocationPublic } from "../utils/socketHub";
 import {
   computeOwnerReservationWindowStart,
   computeTableReservationEnd,
@@ -187,8 +188,8 @@ export const reserveHotelStaysForBookingsIfMissing = async (params: {
     const expectedOut = r.check_out_date
       ? formatMysqlDateTime(new Date(r.check_out_date))
       : formatMysqlDateTime(
-          new Date(new Date(r.check_in_date).getTime() + 24 * 60 * 60 * 1000),
-        );
+        new Date(new Date(r.check_in_date).getTime() + 24 * 60 * 60 * 1000),
+      );
 
     await ensureHotelRoomAndReserveWithConn({
       connection: params.connection,
@@ -264,11 +265,13 @@ const publishHotelUpdatedForLocation = async (params: {
     }
 
     if (ids.size === 0) return;
-    publishToUsers(Array.from(ids), {
+    const eventPayload = {
       type: "hotel_updated",
       location_id: locationId,
       ...payload,
-    });
+    };
+    publishToUsers(Array.from(ids), eventPayload);
+    publishToLocationPublic(locationId, eventPayload);
   } catch {
     // ignore realtime failures
   }
@@ -1399,24 +1402,24 @@ export const createBooking = async (
   const roomStayHours =
     svc.service_type === "room" && checkOutLocal
       ? Math.max(
-          1,
-          Math.ceil(
-            (checkOutLocal.getTime() - checkInLocal.getTime()) /
-              (60 * 60 * 1000),
-          ),
-        )
+        1,
+        Math.ceil(
+          (checkOutLocal.getTime() - checkInLocal.getTime()) /
+          (60 * 60 * 1000),
+        ),
+      )
       : 1;
   const baseAmount =
     ticketItems.length > 0 && svc.service_type === "ticket"
       ? roundMoney(
-          ticketItems.reduce((sum, it) => {
-            const row = serviceRows.find(
-              (r) => Number(r.service_id) === Number(it.serviceId),
-            );
-            const p = row ? toNumber(row.price) : 0;
-            return sum + p * it.quantity;
-          }, 0),
-        )
+        ticketItems.reduce((sum, it) => {
+          const row = serviceRows.find(
+            (r) => Number(r.service_id) === Number(it.serviceId),
+          );
+          const p = row ? toNumber(row.price) : 0;
+          return sum + p * it.quantity;
+        }, 0),
+      )
       : roundMoney(unitPrice * quantity * roomStayHours);
 
   const connection = await pool.getConnection();
@@ -1655,7 +1658,7 @@ export const createBooking = async (
         ticketItems.length > 0
           ? ticketItems
           : [{ serviceId: effectiveServiceId, quantity }];
-          
+
       for (const it of issuance) {
         if (it.quantity > 50) {
           throw new BookingError(
@@ -1716,8 +1719,8 @@ export const createBooking = async (
     // Nếu đặt bàn mà không có ghi chú, tự điền "Tên - SĐT" để owner dễ nhận biết
     const defaultTableNote =
       svc.service_type === "table" &&
-      !String(notes || "").trim() &&
-      (normalizedContactName || normalizedContactPhone)
+        !String(notes || "").trim() &&
+        (normalizedContactName || normalizedContactPhone)
         ? [normalizedContactName, normalizedContactPhone].filter(Boolean).join(" - ")
         : null;
 
@@ -1725,7 +1728,7 @@ export const createBooking = async (
 
     let storedNotes =
       reserveOnConfirm &&
-      (svc.service_type === "room" || svc.service_type === "table")
+        (svc.service_type === "room" || svc.service_type === "table")
         ? withPrepayUnconfirmedMarker(effectiveNotes)
         : effectiveNotes;
 
@@ -2025,8 +2028,8 @@ export const createBooking = async (
 
       const commissionRate = Number(
         locRateRows[0]?.commission_rate ??
-          settings.default_commission_rate ??
-          2.5,
+        settings.default_commission_rate ??
+        2.5,
       );
       const vatRate = Number(settings.vat_rate ?? 0);
 
@@ -2126,7 +2129,7 @@ export const createBooking = async (
     await connection.commit();
 
     // Realtime: notify owner/employee POS screens to refresh table status.
-    if (svc.service_type === "table" && tableIds.length > 0) {
+    if ((svc.service_type === "table" && tableIds.length > 0) || svc.service_type === "ticket") {
       const ownerId = Number(svc.owner_id);
       if (Number.isFinite(ownerId)) {
         void publishPosUpdatedForLocation({
@@ -2135,7 +2138,7 @@ export const createBooking = async (
           event: {
             type: "pos_updated",
             location_id: locationId,
-            action: "table_booking_created",
+            action: svc.service_type === "table" ? "table_booking_created" : "ticket_booking_created",
             booking_id: insertId,
           },
         });

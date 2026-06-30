@@ -30,11 +30,11 @@ export const locationApi = {
     );
     return response.data;
   },
-  async getServices(id: string | number) {
+  async getServices(id: string | number, params?: { type?: string }) {
     const response = await api.get<{
       success: boolean;
       data: LocationServiceItem[];
-    }>(`/locations/${id}/services`);
+    }>(`/locations/${id}/services`, { params });
     return response.data;
   },
   async getPosAreas(id: string | number) {

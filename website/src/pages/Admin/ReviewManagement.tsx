@@ -185,16 +185,6 @@ const ReviewManagement = () => {
     [loadReviews],
   );
 
-  const repliedRows = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          row.reply_id != null ||
-          Boolean(String(row.reply_content || "").trim()),
-      ),
-    [rows],
-  );
-
   const userReviewColumns: ColumnsType<ReviewRow> = useMemo(
     () => [
       {
@@ -214,11 +204,57 @@ const ReviewManagement = () => {
       },
       { title: "Sao", dataIndex: "rating" },
       {
-        title: "Nội dung",
-        dataIndex: "comment",
-        render: (value: string) => (
-          <div className="text-sm">{value || "-"}</div>
-        ),
+        title: "Đánh giá & Phản hồi",
+        key: "comments",
+        render: (_: unknown, row: ReviewRow) => (
+          <div className="flex flex-col gap-3 min-w-[300px] whitespace-normal py-2">
+            {/* User Comment */}
+            <div>
+              <div className="text-sm text-slate-800 whitespace-pre-wrap font-medium">
+                {row.comment || <span className="italic text-slate-400 font-normal">Không có nội dung</span>}
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+                <Popconfirm
+                  title="Xóa đánh giá này của User?"
+                  okText="Xóa"
+                  cancelText="Hủy"
+                  onConfirm={() => handleDelete(row)}
+                >
+                  <button type="button" className="hover:text-red-600 transition">
+                    Xóa đánh giá
+                  </button>
+                </Popconfirm>
+              </div>
+            </div>
+
+            {/* Owner Reply */}
+            {row.reply_content && (
+              <div className="flex gap-2">
+                {/* Curved line like Facebook */}
+                <div className="w-6 border-l-2 border-b-2 border-slate-300 rounded-bl-xl ml-2 mb-6"></div>
+                
+                <div className="flex-1 bg-slate-100 p-3 rounded-2xl rounded-tl-sm mt-1">
+                  <div className="text-[12px] font-bold text-slate-900 mb-1">
+                    Phản hồi của Owner
+                  </div>
+                  <div className="text-sm text-slate-800 whitespace-pre-wrap">{row.reply_content}</div>
+                  <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+                    <Popconfirm
+                      title="Xóa phản hồi này của Owner?"
+                      okText="Xóa"
+                      cancelText="Hủy"
+                      onConfirm={() => handleDeleteOwnerReply(row)}
+                    >
+                      <button type="button" className="hover:text-red-600 transition">
+                        Xóa phản hồi
+                      </button>
+                    </Popconfirm>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )
       },
       {
         title: "Ảnh",
@@ -274,115 +310,9 @@ const ReviewManagement = () => {
             </Tag>
           );
         },
-      },
-      {
-        title: "Hành động",
-        render: (_: unknown, row: ReviewRow) => (
-          <Popconfirm
-            title="Bạn có chắc muốn xóa đánh giá này?"
-            okText="Xóa"
-            cancelText="Hủy"
-            onConfirm={() => {
-              void handleDelete(row);
-            }}
-          >
-            <Button danger type="primary" ghost size="small" className="rounded-md">
-              Xóa
-            </Button>
-          </Popconfirm>
-        ),
-      },
+      }
     ],
-    [handleDelete, rows.length],
-  );
-
-  const ownerReplyColumns: ColumnsType<ReviewRow> = useMemo(
-    () => [
-      {
-        title: "STT",
-        render: (_: unknown, __: ReviewRow, index: number) => repliedRows.length - index,
-      },
-      { title: "Tên Owner", dataIndex: "owner_name" },
-      { title: "Địa điểm", dataIndex: "location_name" },
-      {
-        title: "Liên hệ",
-        render: (_: unknown, row: ReviewRow) => (
-          <div className="text-xs">
-            <div>{row.owner_email || "-"}</div>
-            <div>{row.owner_phone || "-"}</div>
-          </div>
-        ),
-      },
-      { title: "User", dataIndex: "user_name" },
-      {
-        title: "Nội dung",
-        render: (_: unknown, row: ReviewRow) => {
-          const images = parseReviewImages(row.images);
-          return (
-            <div className="space-y-2">
-              <div className="text-sm">{row.comment || "-"}</div>
-              {images.length > 0 ? (
-                <Image.PreviewGroup>
-                  <div className="flex flex-wrap gap-2">
-                    {images.slice(0, 4).map((src, idx) => (
-                      <Image
-                        key={`reply-${row.review_id}-${idx}`}
-                        src={src}
-                        alt={`reply-review-${row.review_id}-${idx}`}
-                        width={40}
-                        height={40}
-                        className="rounded border object-cover"
-                      />
-                    ))}
-                    {images.length > 4 ? (
-                      <div className="flex h-[40px] w-[40px] items-center justify-center rounded border text-xs text-gray-500">
-                        +{images.length - 4}
-                      </div>
-                    ) : null}
-                  </div>
-                </Image.PreviewGroup>
-              ) : null}
-            </div>
-          );
-        },
-      },
-      {
-        title: "Sao",
-        dataIndex: "rating",
-      },
-      {
-        title: "Phản hồi",
-        dataIndex: "reply_content",
-        render: (value: unknown) => (
-          <div className="text-sm">{String(value || "-")}</div>
-        ),
-      },
-      {
-        title: "Thời gian",
-        render: (_: unknown, row: ReviewRow) =>
-          formatDateTimeVi(
-            String(row.reply_created_at || row.created_at || ""),
-          ),
-      },
-      {
-        title: "Hành động",
-        render: (_: unknown, row: ReviewRow) => (
-          <Popconfirm
-            title="Bạn có chắc muốn xóa phản hồi này?"
-            okText="Xóa"
-            cancelText="Hủy"
-            onConfirm={() => {
-              void handleDeleteOwnerReply(row);
-            }}
-          >
-            <Button danger type="primary" ghost size="small" className="rounded-md">
-              Xóa
-            </Button>
-          </Popconfirm>
-        ),
-      },
-    ],
-    [handleDeleteOwnerReply, repliedRows.length],
+    [handleDelete, handleDeleteOwnerReply, rows.length],
   );
 
   return (
@@ -458,25 +388,12 @@ const ReviewManagement = () => {
         ) : null}
 
         <div className="space-y-6">
-          <Card className="shadow-sm border-blue-50 overflow-hidden" styles={{ body: { padding: 0 } }} title={<span className="text-blue-700 font-semibold px-4 py-2 block border-b bg-blue-50/50">Đánh giá của users</span>}>
+          <Card className="shadow-sm border-blue-50 overflow-hidden" styles={{ body: { padding: 0 } }} title={<span className="text-blue-700 font-semibold px-4 py-2 block border-b bg-blue-50/50">Tất cả bình luận & phản hồi</span>}>
             <Table<ReviewRow>
               rowKey={(row, idx) => `user-review-${row.review_id}-${idx}`}
               loading={loading}
               dataSource={rows}
               columns={userReviewColumns}
-              size="small"
-              pagination={false}
-              scroll={{ x: 'max-content' }}
-              className="px-2 pb-2 pt-1"
-            />
-          </Card>
-
-          <Card className="shadow-sm border-emerald-50 overflow-hidden" styles={{ body: { padding: 0 } }} title={<span className="text-emerald-700 font-semibold px-4 py-2 block border-b bg-emerald-50/50">Phản hồi của owner tới users</span>}>
-            <Table<ReviewRow>
-              rowKey={(row, idx) => `owner-reply-${row.review_id}-${idx}`}
-              loading={loading}
-              dataSource={repliedRows}
-              columns={ownerReplyColumns}
               size="small"
               pagination={false}
               scroll={{ x: 'max-content' }}

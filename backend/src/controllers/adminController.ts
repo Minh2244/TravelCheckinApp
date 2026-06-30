@@ -7714,7 +7714,7 @@ export const getAdminReviews = async (
       JOIN locations l ON l.location_id = r.location_id
       JOIN users u ON u.user_id = r.user_id
       LEFT JOIN users ow ON ow.user_id = l.owner_id
-      LEFT JOIN review_replies rr ON rr.review_id = r.review_id
+      LEFT JOIN review_replies rr ON rr.review_id = r.review_id AND rr.role = 'owner'
       WHERE ${where.join(" AND ")}
       ORDER BY r.created_at DESC
       LIMIT ? OFFSET ?`;
@@ -7973,7 +7973,7 @@ export const reportOwnerReplyByAdmin = async (
        FROM reviews r
        JOIN locations l ON l.location_id = r.location_id
        JOIN users ow ON ow.user_id = l.owner_id
-       LEFT JOIN review_replies rr ON rr.review_id = r.review_id
+       LEFT JOIN review_replies rr ON rr.review_id = r.review_id AND rr.role = 'owner'
        WHERE r.review_id = ?
        LIMIT 1`,
       [reviewId],

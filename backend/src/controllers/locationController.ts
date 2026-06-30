@@ -292,7 +292,10 @@ export const getLocationServicesPublic = async (
          s.unit,
          s.status,
          s.images,
-         r.status AS room_status,
+         CASE
+           WHEN pb.is_booked_now = 1 THEN 'reserved'
+           ELSE r.status
+         END AS room_status,
          c.category_name,
          c.category_type,
          c.sort_order as category_sort_order
@@ -318,6 +321,15 @@ export const getLocationServicesPublic = async (
            AND DATE(pt2.sold_at) = ?
          GROUP BY pt2.service_id
        ) pt_sold ON pt_sold.service_id = s.service_id AND s.service_type = 'ticket'
+       LEFT JOIN (
+         SELECT b.service_id, 1 AS is_booked_now
+         FROM bookings b
+         WHERE b.location_id = ?
+           AND b.status IN ('pending', 'confirmed')
+           AND DATE(b.check_in_date) <= ?
+           AND (b.check_out_date IS NULL OR DATE(b.check_out_date) > ?)
+         GROUP BY b.service_id
+       ) pb ON pb.service_id = s.service_id AND s.service_type = 'room'
        WHERE s.location_id = ?
          AND s.deleted_at IS NULL
          AND s.admin_status = 'approved'
@@ -327,7 +339,7 @@ export const getLocationServicesPublic = async (
          )
          ${whereType}
        ORDER BY c.sort_order ASC, s.created_at DESC`,
-      [locationId, todayStr, locationId, todayStr, ...params],
+      [locationId, todayStr, locationId, todayStr, locationId, todayStr, todayStr, ...params],
     );
 
     res.json({ success: true, data: rows });
