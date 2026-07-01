@@ -654,16 +654,7 @@ export default function LocationDetailScreen() {
         >
           <Ionicons name="chatbubble-ellipses-outline" size={23} color="#ffffff" />
         </Pressable>
-        <Pressable
-          style={[styles.chatBubble, styles.aiChatBubble]}
-          onPress={() =>
-            showToast("Trợ lý AI sẽ được hoàn thiện ở Giai đoạn 6.")
-          }
-          accessibilityLabel="Mở trợ lý AI"
-        >
-          <Ionicons name="sparkles-outline" size={23} color="#ffffff" />
-        </Pressable>
-        </View>
+      </View>
 
         <LocationChatModal
           locationId={location.location_id}

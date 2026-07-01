@@ -109,8 +109,72 @@ export const userApi = {
     const response = await api.get<ApiResponse<any>>("/user/profile");
     return response.data;
   },
+  async updateProfile(data: { full_name: string; phone?: string; address?: string; skip_avatar?: boolean; avatar_url?: string }) {
+    const response = await api.put<ApiResponse<any>>("/user/profile", data);
+    return response.data;
+  },
+  async uploadAvatar(uri: string) {
+    const formData = new FormData();
+    const filename = uri.split("/").pop() || `avatar-${Date.now()}.jpg`;
+    const extension = filename.split(".").pop()?.toLowerCase();
+    const mimeType =
+      extension === "png"
+        ? "image/png"
+        : extension === "webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    formData.append("avatar", {
+      uri,
+      name: filename,
+      type: mimeType,
+    } as unknown as Blob);
+
+    const response = await api.post<ApiResponse<{ avatar_url: string }>>(
+      "/user/profile/avatar",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      },
+    );
+    return response.data;
+  },
   async getTouristTickets() {
     const response = await api.get<ApiResponse<any>>("/user/tickets");
+    return response.data;
+  },
+  async getDiaries() {
+    const response = await api.get<ApiResponse<any[]>>("/user/diary");
+    return response.data;
+  },
+  async createDiary(data: { location_id: number; notes: string; mood: string; images?: string[] }) {
+    const response = await api.post<ApiResponse<any>>("/user/diary", data);
+    return response.data;
+  },
+  async deleteDiary(id: number) {
+    const response = await api.delete<ApiResponse<any>>(`/user/diary/${id}`);
+    return response.data;
+  },
+  async getBookingReminders() {
+    const response = await api.get<ApiResponse<any[]>>("/user/booking-reminders");
+    return response.data;
+  },
+  async getNotifications() {
+    const response = await api.get<ApiResponse<any[]>>("/user/notifications");
+    return response.data;
+  },
+  async markNotificationsRead() {
+    const response = await api.post<ApiResponse<any>>("/user/notifications/read-all");
+    return response.data;
+  },
+  async deleteNotificationsAll() {
+    const response = await api.post<ApiResponse<any>>("/user/notifications/delete-all");
+    return response.data;
+  },
+  async getLeaderboard() {
+    const response = await api.get<ApiResponse<any>>("/user/leaderboard");
     return response.data;
   },
 };

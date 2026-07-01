@@ -47,4 +47,16 @@ export const chatApi = {
     const response = await api.get<any>(`/chat/location/${locationId}/sessions`);
     return response.data;
   },
+  chatWithAi: async (prompt: string, conversationId?: number, context?: any) => {
+    const response = await api.post<any>("/ai/chat", {
+      prompt,
+      conversationId,
+      context,
+    });
+    return response.data;
+  },
+  getAiHistory: async () => {
+    const response = await api.get<any>("/ai/history");
+    return response.data;
+  },
 };
