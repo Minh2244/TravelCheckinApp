@@ -1,10 +1,12 @@
+import React, { useState, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveBackendUrl } from "../../lib/url";
 import type { LocationItem } from "../../types/location";
+import { geoApi } from "../../services/geo.api";
 
 export function BottomSheetSummary({
   isFavorite,
@@ -25,6 +27,44 @@ export function BottomSheetSummary({
     location.first_image || location.images?.[0] || null,
   );
   const rating = Number(location.rating || 0);
+
+  // Weather States
+  const [temperature, setTemperature] = useState<number | null>(null);
+  const [weather, setWeather] = useState<string | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+
+  useEffect(() => {
+    const lat = Number(location.latitude);
+    const lng = Number(location.longitude);
+    if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+      setTemperature(null);
+      setWeather(null);
+      return;
+    }
+
+    let active = true;
+    setWeatherLoading(true);
+
+    geoApi
+      .reverse(lat, lng)
+      .then((res) => {
+        if (!active) return;
+        setTemperature(Number.isFinite(Number(res.temperature)) ? Number(res.temperature) : null);
+        setWeather(res.weather || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTemperature(null);
+        setWeather(null);
+      })
+      .finally(() => {
+        if (active) setWeatherLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [location.location_id, location.latitude, location.longitude]);
 
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -48,17 +88,33 @@ export function BottomSheetSummary({
           <Text style={styles.title} numberOfLines={1}>
             {location.location_name}
           </Text>
-          <Text style={styles.subtitle} numberOfLines={2}>
+          <Text style={styles.subtitle} numberOfLines={1}>
             {location.address}
           </Text>
-          <View style={styles.ratingRow}>
-            <Ionicons name="star" size={14} color="#eab308" />
-            <Text style={styles.ratingText}>
-              {rating > 0 ? rating.toFixed(1) : "Chưa có"}
-            </Text>
-            <Text style={styles.reviewCount}>
-              ({location.total_reviews || 0} đánh giá)
-            </Text>
+          <View className="flex-row items-center gap-3">
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={14} color="#eab308" />
+              <Text style={styles.ratingText}>
+                {rating > 0 ? rating.toFixed(1) : "Chưa có"}
+              </Text>
+              <Text style={styles.reviewCount}>
+                ({location.total_reviews || 0})
+              </Text>
+            </View>
+
+            {/* Weather display */}
+            <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-sky-100 bg-sky-50">
+              {weatherLoading ? (
+                <ActivityIndicator size="small" color="#0284c7" style={{ transform: [{ scale: 0.7 }] }} />
+              ) : (
+                <>
+                  <Ionicons name="sunny-outline" size={12} color="#0284c7" />
+                  <Text className="text-[10px] text-sky-800 font-bold">
+                    {temperature !== null ? `${Math.round(temperature)}°C` : "--"} {weather || ""}
+                  </Text>
+                </>
+              )}
+            </View>
           </View>
         </View>
       </View>
