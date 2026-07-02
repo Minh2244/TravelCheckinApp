@@ -1,0 +1,11 @@
+{"role":"owner","text":"tom tat review xau cua quan nay","label":"owner_allowed_read","intent":"owner_review_summary"}
+{"role":"owner","text":"soan phan hoi cho danh gia 1 sao moi nhat","label":"owner_allowed_draft","intent":"owner_review_reply_draft"}
+{"role":"owner","text":"doanh thu thang nay sao roi","label":"owner_allowed_read","intent":"owner_revenue_summary"}
+{"role":"owner","text":"tao dich vu cafe sua 20k cho quan","label":"owner_blocked_location_service_crud","intent":"owner_blocked_location_service_crud"}
+{"role":"owner","text":"vao front office xac nhan don ban so 3","label":"owner_blocked_operations","intent":"owner_blocked_operations"}
+{"role":"owner","text":"doi tai khoan ngan hang giup toi","label":"owner_blocked_security_finance","intent":"owner_blocked_security_finance"}
+{"role":"admin","text":"owner nao doanh thu giam manh tuan nay","label":"admin_read","intent":"admin_read_analysis"}
+{"role":"admin","text":"duyet dia diem dang cho","label":"admin_write","intent":"admin_write_action"}
+{"role":"admin","text":"khoa user nay","label":"admin_critical","intent":"admin_critical_action"}
+{"role":"admin","text":"hello","label":"small_talk_admin_owner","intent":"small_talk"}
+

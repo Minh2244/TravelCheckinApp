@@ -106,7 +106,8 @@ function statusLabel(status: LocationItem["status"]) {
 
 function voucherDiscountLabel(voucher: LocationVoucher) {
   const value = Number(voucher.discount_value || 0);
-  if (voucher.discount_type === "percentage") {
+  const isPercent = voucher.discount_type === "percent" || voucher.discount_type === "percentage";
+  if (isPercent) {
     return `Giảm ${value}%`;
   }
   return `Giảm ${value.toLocaleString("vi-VN")} đ`;
@@ -546,35 +547,72 @@ export default function LocationDetailScreen() {
                 ) : (
                   vouchers.slice(0, 2).map((voucher) => {
                     const claimed = Boolean(voucher.is_claimed);
+                    const isPercent = voucher.discount_type === "percent" || voucher.discount_type === "percentage";
+                    const discountLabel = isPercent
+                      ? `-${Number(voucher.discount_value)}%`
+                      : `-${(Number(voucher.discount_value) / 1000).toFixed(0)}k`;
+
                     return (
-                      <View key={voucher.voucher_id} style={styles.voucherItem}>
-                        <View style={styles.voucherCopy}>
-                          <Text style={styles.voucherDiscount}>
-                            {voucherDiscountLabel(voucher)}
+                      <View key={voucher.voucher_id} style={styles.voucherTicket}>
+                        <View style={styles.voucherTicketStub}>
+                          <Text style={styles.voucherTicketDiscount}>
+                            {discountLabel}
                           </Text>
-                          <Text style={styles.voucherName} numberOfLines={2}>
-                            {voucher.campaign_description ||
-                              voucher.campaign_name ||
-                              "Ưu đãi đặc biệt"}
+                          <Text style={styles.voucherTicketLabel}>
+                            GIẢM
                           </Text>
                         </View>
-                        <Pressable
-                          style={[
-                            styles.voucherButton,
-                            claimed && styles.voucherButtonClaimed,
-                          ]}
-                          disabled={claimed || claimingVoucherId === voucher.voucher_id}
-                          onPress={() => void claimVoucher(voucher.voucher_id)}
-                        >
-                          <Text
-                            style={[
-                              styles.voucherButtonText,
-                              claimed && styles.voucherButtonTextClaimed,
-                            ]}
-                          >
-                            {claimed ? "Đã lưu" : "Lưu"}
-                          </Text>
-                        </Pressable>
+
+                        <View style={styles.voucherDivider}>
+                          <View style={styles.voucherDividerDotTop} />
+                          <View style={styles.voucherDividerLine} />
+                          <View style={styles.voucherDividerDotBottom} />
+                        </View>
+
+                        <View style={styles.voucherTicketBody}>
+                          <View style={styles.voucherTicketTop}>
+                            <View style={styles.voucherTicketCopy}>
+                              <Text style={styles.voucherTicketName} numberOfLines={1}>
+                                {voucher.campaign_name || "Voucher đặc biệt"}
+                              </Text>
+                              <Text style={styles.voucherTicketDescription} numberOfLines={1}>
+                                {voucher.campaign_description || "Khám phá ưu đãi đặc biệt."}
+                              </Text>
+                            </View>
+
+                            <Pressable
+                              style={[
+                                styles.voucherTicketButton,
+                                claimed && styles.voucherTicketButtonClaimed,
+                              ]}
+                              disabled={claimed || claimingVoucherId === voucher.voucher_id}
+                              onPress={() => void claimVoucher(voucher.voucher_id)}
+                            >
+                              <Text
+                                style={[
+                                  styles.voucherTicketButtonText,
+                                  claimed && styles.voucherTicketButtonTextClaimed,
+                                ]}
+                              >
+                                {claimed ? "Đã lưu" : claimingVoucherId === voucher.voucher_id ? "..." : "Lưu"}
+                              </Text>
+                            </Pressable>
+                          </View>
+
+                          <View style={styles.voucherTicketMetaRow}>
+                            <View>
+                              <Text style={styles.voucherTicketMeta}>
+                                Đơn tối thiểu: {Number(voucher.min_order_value) > 0 ? `${Number(voucher.min_order_value) >= 1000 ? (Number(voucher.min_order_value)/1000).toFixed(0) + "k" : voucher.min_order_value}đ` : "0đ"}
+                              </Text>
+                              <Text style={styles.voucherTicketDate}>
+                                HSD: {voucher.end_date ? new Date(voucher.end_date).toLocaleDateString("vi-VN") : "-"}
+                              </Text>
+                            </View>
+                            <Text style={styles.voucherTicketRemaining}>
+                              Còn: {voucher.remaining ?? 0} vé
+                            </Text>
+                          </View>
+                        </View>
                       </View>
                     );
                   })
@@ -641,20 +679,30 @@ export default function LocationDetailScreen() {
         </Pressable>
       </View>
 
-      <View
-        style={[
-          styles.chatBubbles,
-          { bottom: Math.max(insets.bottom, 12) + 70 },
-        ]}
+
+      <Pressable
+        style={{
+          position: "absolute",
+          right: 20,
+          bottom: Math.max(insets.bottom, 12) + 70,
+          width: 52,
+          height: 52,
+          borderRadius: 26,
+          backgroundColor: "#2563eb",
+          justifyContent: "center",
+          alignItems: "center",
+          shadowColor: "#2563eb",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.35,
+          shadowRadius: 6,
+          elevation: 8,
+          zIndex: 30,
+        }}
+        onPress={() => setIsChatOpen(true)}
+        accessibilityLabel="Chat với địa điểm"
       >
-        <Pressable
-          style={[styles.chatBubble, styles.ownerChatBubble]}
-          onPress={() => setIsChatOpen(true)}
-          accessibilityLabel="Chat với địa điểm"
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={23} color="#ffffff" />
-        </Pressable>
-      </View>
+        <Ionicons name="chatbubbles" size={22} color="#ffffff" />
+      </Pressable>
 
         <LocationChatModal
           locationId={location.location_id}
@@ -1049,6 +1097,154 @@ const styles = StyleSheet.create({
   },
   voucherButtonTextClaimed: {
     color: "#64748b",
+  },
+  voucherTicket: {
+    minHeight: 105,
+    marginBottom: 8,
+    overflow: "hidden",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#ffffff",
+    flexDirection: "row",
+    elevation: 1,
+  },
+  voucherTicketStub: {
+    width: 76,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4f46e5",
+  },
+  voucherTicketDiscount: {
+    color: "#ffffff",
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  voucherTicketLabel: {
+    marginTop: 2,
+    color: "#c7d2fe",
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0,
+  },
+  voucherDivider: {
+    width: 12,
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+    paddingVertical: 4,
+    flexDirection: "column",
+    justifyContent: "space-between",
+  },
+  voucherDividerLine: {
+    flex: 1,
+    width: 1,
+    borderLeftWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#cbd5e1",
+  },
+  voucherDividerDotTop: {
+    width: 14,
+    height: 7,
+    borderBottomLeftRadius: 7,
+    borderBottomRightRadius: 7,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  voucherDividerDotBottom: {
+    width: 14,
+    height: 7,
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 7,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+  },
+  voucherTicketBody: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingRight: 10,
+    justifyContent: "space-between",
+    backgroundColor: "#ffffff",
+  },
+  voucherTicketTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  voucherTicketCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  voucherTicketName: {
+    color: "#1e293b",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+  },
+  voucherTicketDescription: {
+    marginTop: 2,
+    color: "#94a3b8",
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  voucherTicketButton: {
+    minWidth: 44,
+    height: 28,
+    paddingHorizontal: 9,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4f46e5",
+  },
+  voucherTicketButtonClaimed: {
+    backgroundColor: "#f1f5f9",
+  },
+  voucherTicketButtonText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  voucherTicketButtonTextClaimed: {
+    color: "#94a3b8",
+  },
+  voucherTicketMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  voucherTicketMeta: {
+    color: "#64748b",
+    fontSize: 9,
+    lineHeight: 13,
+    fontWeight: "600",
+  },
+  voucherTicketDate: {
+    marginTop: 2,
+    color: "#94a3b8",
+    fontSize: 8,
+    lineHeight: 12,
+  },
+  voucherTicketRemaining: {
+    overflow: "hidden",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    color: "#059669",
+    backgroundColor: "#ecfdf5",
+    fontSize: 9,
+    fontWeight: "800",
   },
   bottomBar: {
     position: "absolute",

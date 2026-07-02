@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Generated training/build artifacts
+models/
+datasets/generated/
+database/seed_ai_training_examples.sql
+
+# Local runtime files
+.env
+*.sqlite
+*.db

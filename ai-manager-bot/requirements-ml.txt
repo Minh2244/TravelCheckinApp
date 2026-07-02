@@ -1,0 +1,6 @@
+numpy
+scikit-learn
+joblib
+
+# GPU training requires PyTorch.
+# Install the CUDA build with the command in README.md instead of relying on this file.

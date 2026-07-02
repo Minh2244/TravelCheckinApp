@@ -1,0 +1,517 @@
+[
+  {
+    "name": "owner_revenue_today",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "hôm nay doanh thu quán tăng hay giảm",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true,
+      "risk_level": "read"
+    }
+  },
+  {
+    "name": "owner_revenue_month_southern",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "tháng này tiền vô ổn hong coi dùm tui",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_revenue_noisy",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "bữa nay doang thu co giam manh ko z",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_best_seller",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "món nào bán chạy nhất tuần này",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_profit_trend",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "xem xu hướng lợi nhuận tháng này giúp mình",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_report_short",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "báo cáo nhanh tình hình kinh doanh hôm nay",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_money_in",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "tiền tháng này so với tháng trước sao rồi",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_sales_compare",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "doanh số tuần này hơn tuần rồi không",
+      "available_actions": ["owner_revenue_summary"]
+    },
+    "expected": {
+      "intent": "owner_revenue_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_review_summary_bad",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "tóm tắt mấy đánh giá xấu gần đây",
+      "available_actions": ["owner_review_summary"]
+    },
+    "expected": {
+      "intent": "owner_review_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_review_reply_polite",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "khách chê phục vụ lâu quá rep sao cho lịch sự",
+      "available_actions": ["owner_review_reply_draft"]
+    },
+    "expected": {
+      "intent": "owner_review_reply_draft",
+      "allowed": true,
+      "risk_level": "low"
+    }
+  },
+  {
+    "name": "owner_review_reply_noisy",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "khach chui quan 1 sao qua troi viet gium cau tra loi di",
+      "available_actions": ["owner_review_reply_draft"]
+    },
+    "expected": {
+      "intent": "owner_review_reply_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_feedback_count",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "feedback tuần này khách phàn nàn gì nhiều nhất",
+      "available_actions": ["owner_review_summary"]
+    },
+    "expected": {
+      "intent": "owner_review_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_comment_read",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "đọc giúp tui mấy comment mới",
+      "available_actions": ["owner_review_summary"]
+    },
+    "expected": {
+      "intent": "owner_review_summary",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_review_publish_medium",
+    "request": {
+      "role": "owner",
+      "route": "/owner/reviews",
+      "text": "viết phản hồi rồi đăng luôn đánh giá này",
+      "available_actions": ["owner_review_reply_publish"]
+    },
+    "expected": {
+      "intent": "owner_review_reply_publish",
+      "allowed": true,
+      "risk_level": "medium"
+    }
+  },
+  {
+    "name": "owner_voucher_weekend",
+    "request": {
+      "role": "owner",
+      "route": "/owner/vouchers",
+      "text": "gợi ý giúp tui voucher cuối tuần",
+      "available_actions": ["owner_voucher_draft"]
+    },
+    "expected": {
+      "intent": "owner_voucher_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_voucher_sale_noisy",
+    "request": {
+      "role": "owner",
+      "route": "/owner/vouchers",
+      "text": "lam cai sale nhe nhe cho khach quay lai dc hong",
+      "available_actions": ["owner_voucher_draft"]
+    },
+    "expected": {
+      "intent": "owner_voucher_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_discount_idea",
+    "request": {
+      "role": "owner",
+      "route": "/owner/vouchers",
+      "text": "ưu đãi nào hợp cho khách đặt bàn tối nay",
+      "available_actions": ["owner_voucher_draft"]
+    },
+    "expected": {
+      "intent": "owner_voucher_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_deal_draft",
+    "request": {
+      "role": "owner",
+      "route": "/owner/vouchers",
+      "text": "soạn thử deal giảm giá cho đồ uống",
+      "available_actions": ["owner_voucher_draft"]
+    },
+    "expected": {
+      "intent": "owner_voucher_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_promotion_month",
+    "request": {
+      "role": "owner",
+      "route": "/owner/vouchers",
+      "text": "tháng này nên khuyến mãi kiểu gì",
+      "available_actions": ["owner_voucher_draft"]
+    },
+    "expected": {
+      "intent": "owner_voucher_draft",
+      "allowed": true
+    }
+  },
+  {
+    "name": "owner_blocked_create_location",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "tạo địa điểm mới cho tui",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_location_service_crud",
+      "allowed": false,
+      "risk_level": "blocked"
+    }
+  },
+  {
+    "name": "owner_blocked_create_service",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "thêm dịch vụ cafe sữa 20k vô quán",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_location_service_crud",
+      "allowed": false
+    }
+  },
+  {
+    "name": "owner_blocked_floor_plan",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "cấu hình sơ đồ vận hành tầng 1 giúp tui",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_location_service_crud",
+      "allowed": false
+    }
+  },
+  {
+    "name": "owner_blocked_booking_confirm",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "xác nhận đơn đặt bàn số 3",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_operations",
+      "allowed": false
+    }
+  },
+  {
+    "name": "owner_blocked_front_office_route",
+    "request": {
+      "role": "owner",
+      "route": "/owner/front-office/restaurant",
+      "text": "khách tới rồi mở bàn số 5",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_route",
+      "allowed": false,
+      "label": "owner_blocked_operations"
+    }
+  },
+  {
+    "name": "owner_blocked_bank_account",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "đổi số tài khoản ngân hàng nhận tiền",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_security_finance",
+      "allowed": false
+    }
+  },
+  {
+    "name": "owner_blocked_staff_permission",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "cấp quyền nhân viên cho bạn này",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_security_finance",
+      "allowed": false
+    }
+  },
+  {
+    "name": "owner_blocked_payment_counter",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "thanh toán tại quầy cho hóa đơn này",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "owner_blocked_operations",
+      "allowed": false
+    }
+  },
+  {
+    "name": "admin_read_revenue",
+    "request": {
+      "role": "admin",
+      "route": "/admin/dashboard",
+      "text": "phân tích doanh thu toàn hệ thống tháng này",
+      "available_actions": ["admin_revenue_analysis"]
+    },
+    "expected": {
+      "intent": "admin_read_analysis",
+      "allowed": true,
+      "risk_level": "read"
+    }
+  },
+  {
+    "name": "admin_read_reviews",
+    "request": {
+      "role": "admin",
+      "route": "/admin/reviews",
+      "text": "review nào đang bị phàn nàn nhiều nhất",
+      "available_actions": ["admin_revenue_analysis"]
+    },
+    "expected": {
+      "intent": "admin_read_analysis",
+      "allowed": true
+    }
+  },
+  {
+    "name": "admin_read_vouchers",
+    "request": {
+      "role": "admin",
+      "route": "/admin/vouchers",
+      "text": "voucher nào dùng nhiều nhất trong tuần",
+      "available_actions": ["admin_revenue_analysis"]
+    },
+    "expected": {
+      "intent": "admin_read_analysis",
+      "allowed": true
+    }
+  },
+  {
+    "name": "admin_read_report",
+    "request": {
+      "role": "admin",
+      "route": "/admin/dashboard",
+      "text": "báo cáo xu hướng tăng giảm của hệ thống",
+      "available_actions": ["admin_revenue_analysis"]
+    },
+    "expected": {
+      "intent": "admin_read_analysis",
+      "allowed": true
+    }
+  },
+  {
+    "name": "admin_write_review_location",
+    "request": {
+      "role": "admin",
+      "route": "/admin/locations",
+      "text": "duyệt địa điểm này giúp tôi",
+      "available_actions": ["admin_location_review"]
+    },
+    "expected": {
+      "intent": "admin_write_action",
+      "allowed": true,
+      "risk_level": "medium"
+    }
+  },
+  {
+    "name": "admin_critical_lock_user",
+    "request": {
+      "role": "admin",
+      "route": "/admin/users",
+      "text": "khóa tài khoản user spam này giúp tôi",
+      "available_actions": ["admin_user_lock"]
+    },
+    "expected": {
+      "intent": "admin_critical_action",
+      "allowed": true,
+      "risk_level": "critical"
+    }
+  },
+  {
+    "name": "admin_critical_delete_user",
+    "request": {
+      "role": "admin",
+      "route": "/admin/users",
+      "text": "xóa user này khỏi hệ thống",
+      "available_actions": ["admin_user_lock"]
+    },
+    "expected": {
+      "intent": "admin_critical_action",
+      "allowed": true
+    }
+  },
+  {
+    "name": "admin_critical_permission",
+    "request": {
+      "role": "admin",
+      "route": "/admin/users",
+      "text": "đổi quyền tài khoản này thành admin",
+      "available_actions": ["admin_user_lock"]
+    },
+    "expected": {
+      "intent": "admin_critical_action",
+      "allowed": true
+    }
+  },
+  {
+    "name": "admin_critical_commission",
+    "request": {
+      "role": "admin",
+      "route": "/admin/finance",
+      "text": "sửa hoa hồng owner này xuống 5 phần trăm",
+      "available_actions": ["admin_user_lock"]
+    },
+    "expected": {
+      "intent": "admin_critical_action",
+      "allowed": true
+    }
+  },
+  {
+    "name": "small_talk_hello",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "hello bot",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "small_talk",
+      "allowed": true
+    }
+  },
+  {
+    "name": "small_talk_tired",
+    "request": {
+      "role": "owner",
+      "route": "/owner/dashboard",
+      "text": "alo bot nay tui hơi mệt",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "small_talk",
+      "allowed": true
+    }
+  },
+  {
+    "name": "small_talk_thanks",
+    "request": {
+      "role": "admin",
+      "route": "/admin/dashboard",
+      "text": "cảm ơn nha",
+      "available_actions": []
+    },
+    "expected": {
+      "intent": "small_talk",
+      "allowed": true
+    }
+  }
+]

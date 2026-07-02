@@ -1018,53 +1018,68 @@ const LocationDetail = () => {
                 <div className="mt-4 space-y-3 max-h-[530px] overflow-y-auto pr-1">
                   {locationVouchers.map((v: any) => {
                     const isSaved = savedVoucherIds.includes(v.voucher_id) || !!v.is_claimed;
+                    const isPercent = v.discount_type === "percent" || v.discount_type === "percentage";
+                    const discountLabel = isPercent
+                      ? `-${Number(v.discount_value)}%`
+                      : `-${(Number(v.discount_value) / 1000).toFixed(0)}k`;
+
                     return (
                       <div
                         key={v.voucher_id}
-                        className="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 via-amber-50 to-white p-4"
+                        className="relative flex flex-row rounded-xl overflow-hidden border border-slate-100 bg-white shadow-sm"
+                        style={{ height: "115px" }}
                       >
-                        <div className="text-base font-bold text-rose-700">
-                          🎫{" "}
-                          {v.discount_type === "percent"
-                            ? `GIẢM ${Number(v.discount_value) % 1 === 0 ? Number(v.discount_value) : Number(v.discount_value).toFixed(0)}% hóa đơn`
-                            : `GIẢM ${Number(v.discount_value).toLocaleString("vi-VN")}đ`}
+                        {/* Left violet stub */}
+                        <div className="relative w-24 bg-gradient-to-br from-violet-600 to-indigo-600 flex flex-col justify-center items-center text-white shrink-0 select-none">
+                          <div className="text-xl font-black">{discountLabel}</div>
+                          <div className="text-[8px] font-bold tracking-widest text-indigo-200 uppercase mt-0.5">GIẢM GIÁ</div>
                         </div>
-                        {v.discount_type === "percent" && v.max_discount_amount ? (
-                          <div className="mt-1 text-xs text-rose-600 font-semibold">
-                            Tối đa: {Number(v.max_discount_amount).toLocaleString("vi-VN")}đ
+
+                        {/* Perforated Separator */}
+                        <div className="relative w-3 shrink-0 flex flex-col items-center justify-between py-1 bg-white select-none">
+                          <div className="absolute -top-2.5 w-5 h-5 rounded-full bg-slate-50 border border-slate-200/50 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.02)]" />
+                          <div className="h-full border-l border-dashed border-slate-200" />
+                          <div className="absolute -bottom-2.5 w-5 h-5 rounded-full bg-slate-50 border border-slate-200/50 shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)]" />
+                        </div>
+
+                        {/* Right Details Block */}
+                        <div className="flex-1 p-3 flex flex-col justify-between min-w-0 bg-white">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-slate-800 line-clamp-1 leading-snug">
+                                {v.campaign_name || "Voucher đặc biệt"}
+                              </h4>
+                              <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5 leading-normal">
+                                {v.campaign_description || "Khám phá và sử dụng ưu đãi."}
+                              </p>
+                            </div>
+                            {/* Claim button */}
+                            <button
+                              type="button"
+                              onClick={() => handleClaimVoucher(v.voucher_id)}
+                              disabled={isSaved || claimingId === v.voucher_id}
+                              className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition shrink-0 ${
+                                isSaved
+                                  ? "bg-slate-100 text-slate-400 cursor-default"
+                                  : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                              }`}
+                            >
+                              {isSaved ? "Đã lưu" : claimingId === v.voucher_id ? "Đang lưu..." : "Lưu"}
+                            </button>
                           </div>
-                        ) : null}
-                        <div className="mt-2 text-sm text-slate-700">
-                          {v.campaign_description || v.campaign_name || "Ưu đãi đặc biệt"}
-                        </div>
-                        {Number(v.min_order_value) > 0 && (
-                          <div className="mt-1 text-xs text-slate-500">
-                            Đơn tối thiểu: {Number(v.min_order_value).toLocaleString("vi-VN")}đ
+
+                          <div className="flex justify-between items-end text-[10px] text-slate-500">
+                            <div>
+                              <div className="font-medium">
+                                Đơn tối thiểu: <span className="font-semibold text-slate-700">{Number(v.min_order_value) > 0 ? `${Number(v.min_order_value).toLocaleString("vi-VN")}đ` : "0đ"}</span>
+                              </div>
+                              <div className="text-[9px] text-slate-400 mt-0.5">HSD: {new Date(v.end_date).toLocaleDateString("vi-VN")}</div>
+                            </div>
+                            <div className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
+                              Còn lại: {v.remaining} vé
+                            </div>
                           </div>
-                        )}
-                        <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
-                          <span>NSD: {new Date(v.start_date).toLocaleDateString("vi-VN")}</span>
-                          <span>HSD: {new Date(v.end_date).toLocaleDateString("vi-VN")}</span>
                         </div>
-                        <div className="mt-1 text-xs text-emerald-600 font-semibold">
-                          Còn lại: {v.remaining}/{v.usage_limit} vé
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleClaimVoucher(v.voucher_id)}
-                          disabled={isSaved || claimingId === v.voucher_id}
-                          className={`mt-3 w-full rounded-full px-4 py-2 text-sm font-semibold transition ${
-                            isSaved
-                              ? "bg-slate-100 text-slate-500 cursor-default"
-                              : "bg-blue-600 text-white hover:bg-blue-700"
-                          }`}
-                        >
-                          {isSaved
-                            ? "Đã lưu"
-                            : claimingId === v.voucher_id
-                              ? "Đang lưu..."
-                              : "Lưu voucher"}
-                        </button>
                       </div>
                     );
                   })}

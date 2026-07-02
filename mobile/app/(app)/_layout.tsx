@@ -34,7 +34,13 @@ export default function AppLayout() {
     pathname === "/profile" ||
     pathname === "/wallet";
 
+  // On location detail screen there's already an owner chat button at the same position;
+  // push the AI bubble higher so they don't overlap
+  const isLocationDetail = /^\/location\/[^/]+$/.test(pathname);
+
   const bottomOffset = isTabScreen ? 90 : Math.max(insets.bottom, 16) + 16;
+  // When on location detail, raise AI bubble to sit above owner chat FAB (extra 66px)
+  const aiBubbleBottom = isLocationDetail ? bottomOffset + 66 : bottomOffset;
 
   return (
     <View className="flex-1 bg-surface">
@@ -47,34 +53,32 @@ export default function AppLayout() {
           onPress={() => router.push("/ai/chat")}
           style={{
             position: "absolute",
-            bottom: bottomOffset,
+            bottom: aiBubbleBottom,
             right: 20,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            backgroundColor: "#7c3aed", // Purple-600
+            width: 52,
+            height: 52,
+            borderRadius: 26,
+            backgroundColor: "#7c3aed",
             justifyContent: "center",
             alignItems: "center",
             shadowColor: "#7c3aed",
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
+            shadowOpacity: 0.35,
             shadowRadius: 6,
             elevation: 8,
           }}
         >
-          {/* Cute robot/AI helper avatar or icon */}
-          <Ionicons name="chatbubble-ellipses" size={26} color="white" />
-          
-          {/* Green active dot indicator */}
+          <Ionicons name="sparkles" size={22} color="white" />
+          {/* Green active dot */}
           <View
             style={{
               position: "absolute",
-              top: 2,
-              right: 2,
+              top: 1,
+              right: 1,
               width: 12,
               height: 12,
               borderRadius: 6,
-              backgroundColor: "#22c55e", // Green-500
+              backgroundColor: "#22c55e",
               borderWidth: 2,
               borderColor: "#7c3aed",
             }}

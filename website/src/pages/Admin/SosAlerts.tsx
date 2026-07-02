@@ -122,6 +122,8 @@ const SosAlerts = () => {
 
   const [rows, setRows] = useState<SosAlertRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [, setSseConnected] = useState(false);
+  const fetchAlertsRef = useRef<(() => Promise<void>) | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<SosStatus | undefined>(
     undefined,
@@ -336,6 +338,59 @@ const SosAlerts = () => {
       setLoading(false);
     }
   };
+
+  // Keep fetchAlerts ref in sync
+  useEffect(() => {
+    fetchAlertsRef.current = fetchAlerts;
+  });
+
+  // Realtime: SSE + 30s polling
+  useEffect(() => {
+    // 30-second polling fallback
+    const pollId = window.setInterval(() => {
+      void fetchAlertsRef.current?.();
+    }, 30000);
+
+    // SSE realtime refresh
+    const token = sessionStorage.getItem("accessToken");
+    let sse: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    if (token) {
+      const { resolveBackendUrl } = {
+        resolveBackendUrl: (path: string) => {
+          const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
+          return `${base}${path}`;
+        },
+      };
+      const sseUrl = resolveBackendUrl("/api/events?token=" + encodeURIComponent(token));
+
+      const connectSse = () => {
+        sse = new EventSource(sseUrl);
+        sse.onopen = () => setSseConnected(true);
+        sse.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data) as Record<string, unknown>;
+            if (data.type === "sos_alert") {
+              void fetchAlertsRef.current?.();
+            }
+          } catch {}
+        };
+        sse.onerror = () => {
+          setSseConnected(false);
+          sse?.close();
+          reconnectTimer = setTimeout(connectSse, 5000);
+        };
+      };
+      connectSse();
+    }
+
+    return () => {
+      window.clearInterval(pollId);
+      sse?.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, []);
 
   useEffect(() => {
     fetchAlerts();

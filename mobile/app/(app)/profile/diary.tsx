@@ -95,10 +95,10 @@ export default function DiaryScreen() {
       ]);
 
       if (checkinsRes?.success) {
-        setCheckins(checkinsRes.data || []);
+        setCheckins((checkinsRes.data as any) || []);
       }
       if (diariesRes?.success) {
-        setDiaries(diariesRes.data || []);
+        setDiaries((diariesRes.data as any) || []);
       }
       await fetchProfileStats();
     } catch (e) {

@@ -400,7 +400,7 @@ const AdminVouchers = () => {
         setSysStats(res.data?.system || null);
         setOwnStats(res.data?.owner || null);
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const openCreate = async () => {
@@ -490,7 +490,7 @@ const AdminVouchers = () => {
         });
         const all: LocationRow[] = [];
         for (const oid of oids) {
-          try { const res = await adminApi.getOwnerLocations(oid); if (res?.data) all.push(...res.data); } catch {}
+          try { const res = await adminApi.getOwnerLocations(oid); if (res?.data) all.push(...res.data); } catch { }
         }
         setOwnerLocOptions(all);
       } else {
@@ -1212,7 +1212,7 @@ const AdminVouchers = () => {
                           getFieldValue("discount_type") === "percent" ? (
                             <Form.Item
                               name="max_discount_amount"
-                              label="Giảm tối đa (áp dụng khi giảm %)"
+                              label="Giảm tối đa (áp dụng cho %)"
                             >
                               <InputNumber style={{ width: "100%" }} min={0} />
                             </Form.Item>
@@ -1347,7 +1347,7 @@ const AdminVouchers = () => {
                           {scope === "owner_multiple" ? (
                             <>
                               <Form.Item name="owner_ids" label="Danh sách owner" rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 owner" }]}>
-                                <Select mode="multiple" options={ownerOptions} placeholder="Chọn owner" onChange={async (ids: number[]) => { form.setFieldsValue({ location_ids: [] }); const all: LocationRow[] = []; for (const id of ids) { try { const res = await adminApi.getOwnerLocations(id); if (res?.data) all.push(...res.data); } catch {} } setOwnerLocOptions(all); }} />
+                                <Select mode="multiple" options={ownerOptions} placeholder="Chọn owner" onChange={async (ids: number[]) => { form.setFieldsValue({ location_ids: [] }); const all: LocationRow[] = []; for (const id of ids) { try { const res = await adminApi.getOwnerLocations(id); if (res?.data) all.push(...res.data); } catch { } } setOwnerLocOptions(all); }} />
                               </Form.Item>
                               <Form.Item name="location_ids" label="Địa điểm">
                                 <Select mode="multiple" loading={ownerLocLoading} allowClear placeholder="Tất cả địa điểm" options={ownerLocOptions.map(l => ({ value: l.location_id, label: `${l.location_name} (#${l.location_id})` }))} />
