@@ -128,6 +128,7 @@ import {
   confirmPaymentAndCreateCommission,
 } from "../controllers/adminController";
 import { authenticateToken, requireRole } from "../middleware/authMiddleware";
+import { createOwnerAdminAiRouter } from "./ownerAdminAiRoutes";
 
 const router = Router();
 
@@ -143,6 +144,8 @@ const upload = multer({
 // Tất cả routes đều yêu cầu xác thực và role admin
 router.use(authenticateToken);
 router.use(requireRole("admin"));
+
+router.use("/ai", createOwnerAdminAiRouter("admin"));
 
 // Dashboard
 router.get("/dashboard/stats", getDashboardStats);

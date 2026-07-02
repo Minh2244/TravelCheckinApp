@@ -1,0 +1,13 @@
+{
+  "role": "admin",
+  "route": "/admin/users",
+  "text": "khóa user này",
+  "screen_context": {
+    "page_key": "admin_users",
+    "selected_entity_ids": [8]
+  },
+  "available_actions": [
+    "admin_user_lock"
+  ]
+}
+

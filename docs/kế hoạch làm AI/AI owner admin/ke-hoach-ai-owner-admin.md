@@ -29,6 +29,24 @@ Kế hoạch này được chỉnh lại theo định hướng mới:
 | Website Owner/Admin | Chat UI, gửi context đã lọc, hiển thị preview/xác nhận |
 | Gemini | Tùy chọn sau này, không phụ thuộc trong bản chính |
 
+### Bộ file giai đoạn triển khai
+
+Kế hoạch chi tiết đã được tách thành bộ file nhỏ để làm từng giai đoạn:
+
+```text
+docs/kế hoạch làm AI/AI owner admin/giai-doan-ai-manager-bot/
+  README.md
+  giai-doan-0-sandbox-va-train-model.md
+  giai-doan-1-guided-prompt-va-response.md
+  giai-doan-2-backend-adapter-an-toan.md
+  giai-doan-3-owner-read-draft.md
+  giai-doan-4-admin-read-critical-preview.md
+  giai-doan-5-action-registry-confirmation-audit.md
+  giai-doan-6-quality-dashboard-rollout.md
+```
+
+File tổng này giữ vai trò tài liệu kiến trúc đầy đủ. Bộ file giai đoạn dùng để triển khai, kiểm tra tiến độ và chốt tiêu chí hoàn thành từng phần.
+
 ## 1. Kết luận đánh giá
 
 Mục tiêu là tạo một trợ lý AI hiểu câu hỏi, biết Owner/Admin đang ở màn hình nào và hỗ trợ theo đúng phạm vi được cấp.
@@ -1953,3 +1971,739 @@ LLM local nếu có chỉ là phase nâng cao.
 #### AMB-5: Nâng cấp local LLM tùy chọn
 
 Chỉ làm nếu có máy đủ mạnh và dataset đủ tốt. Local LLM chỉ được dùng để soạn câu/draft, không quyết định quyền.
+
+---
+
+## 28. Kiem tra cuoi truoc khi trien khai
+
+### 28.1. Ket luan hien tai
+
+Ke hoach hien tai du de bat dau lam MVP AI Owner/Admin theo huong tu huan luyen noi bo, nhung chua du de coi la san sang chay production.
+
+Cac diem da on:
+
+- Da xac dinh ro `ai-manager-bot` la AI service chinh, khong phu thuoc Gemini/OpenAI/model cloud.
+- Da tach quyen ro: AI chi de xuat `ActionPlan`, Backend Node.js moi la lop xac thuc, policy, preview, confirmation, execute va audit.
+- Da chan cung Owner khoi nhom van hanh, front-office, booking/payment/POS, location/service CRUD, bank/security.
+- Da co huong dataset, quality gate, action registry, context sanitizer va policy engine.
+- Da co danh sach API noi bo can lam cho bot va API Backend can noi voi Website.
+
+Cac diem bat buoc phai lam truoc khi code:
+
+- Scaffold lai folder `ai-manager-bot/` vi workspace hien tai chua co source that.
+- Chuan hoa encoding toan bo file ke hoach/dataset sang UTF-8, tranh mojibake tieng Viet.
+- Chot danh sach label dau tien, khong mo qua rong.
+- Tao seed dataset du mau cho nhan bi cam cua Owner va nhan critical cua Admin.
+- Tao `Policy Engine` trong Backend truoc hoac song song voi bot. Khong duoc de model la lop bao mat cuoi.
+- Tao `Action Registry` theo allowlist. Action khong co trong registry thi khong chay.
+- Tao `ActionPreview` va xac nhan truoc khi write action.
+
+### 28.2. Nen cai gi neu giu huong Python
+
+Python la lua chon tot nhat neu uu tien tu huan luyen ML local nhanh, nhe, it rui ro.
+
+Backend Node.js hien da co:
+
+```text
+express
+mysql2
+zod
+uuid
+jsonwebtoken
+dotenv
+socket.io
+```
+
+Backend can them hoac dung chac:
+
+```bash
+cd backend
+npm install zod uuid
+```
+
+`ai-manager-bot` Python can:
+
+```powershell
+cd ai-manager-bot
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install fastapi "uvicorn[standard]" scikit-learn pandas numpy joblib pydantic pydantic-settings httpx python-dotenv pytest pytest-cov
+```
+
+Tuy chon:
+
+```powershell
+pip install underthesea
+```
+
+Khong bat buoc `underthesea` neu dung TF-IDF character n-gram, vi char n-gram chiu loi chinh ta/khong dau tot hon.
+
+### 28.3. Neu khong dung Python thi dung gi thay the?
+
+Co the thay Python bang Node.js/TypeScript. Day la huong hop du an nhat neu muon mot stack thong nhat voi Backend hien tai.
+
+#### Phuong an A - Node.js/TypeScript local AI service
+
+Tao `ai-manager-bot/` bang Node.js:
+
+```text
+ai-manager-bot/
+  src/
+    server.ts
+    schemas.ts
+    text-normalizer.ts
+    rule-classifier.ts
+    intent-classifier.ts
+    entity-extractor.ts
+    response-composer.ts
+    action-planner.ts
+    training/
+      dataset.ts
+      train.ts
+      evaluate.ts
+  datasets/
+  models/
+  tests/
+  package.json
+  tsconfig.json
+  .env.example
+```
+
+Thu vien de xuat:
+
+```bash
+cd ai-manager-bot
+npm init -y
+npm install express zod dotenv cors uuid natural compromise ml-matrix ml-logistic-regression csv-parse
+npm install -D typescript ts-node nodemon vitest @types/node @types/express
+```
+
+Cong dung:
+
+| Thu vien | Cong dung |
+|---|---|
+| `express` | API noi bo `/health`, `/predict`, `/chat`, `/plan-action` |
+| `zod` | Validate request/response |
+| `natural` | Tokenizer, TF-IDF, xu ly text co ban |
+| `compromise` | NLP nhe, rule/entity extraction |
+| `ml-logistic-regression` | Classifier local muc MVP |
+| `ml-matrix` | Ma tran cho ML |
+| `csv-parse` | Doc dataset CSV |
+| `vitest` | Test |
+
+Uu diem:
+
+- Cung ngon ngu voi Backend.
+- De deploy chung bang `npm`.
+- Khong can venv/Python runtime.
+- De tai su dung type/schema voi Backend.
+- De lam rule-based + template response + action planner.
+
+Nhuoc diem:
+
+- ML ecosystem yeu hon Python.
+- TF-IDF/classifier phai tu ghep nhieu hon.
+- Danh gia model, confusion matrix, train pipeline se it tien hon `scikit-learn`.
+
+#### Phuong an B - Chi dung Backend Node.js, khong tach service
+
+Khong tao service rieng, lam AI Manager ngay trong `backend/src/services/ai-manager`.
+
+Phu hop neu MVP chi can:
+
+- Rule-based intent.
+- Policy hard-deny.
+- Entity extractor bang regex/rule.
+- Response template.
+- Action planner co schema.
+
+Khong phu hop neu muon:
+
+- Train model nhieu phien ban.
+- Dashboard training/evaluation rieng.
+- Scale doc lap.
+- Tach bot khoi Backend cho de kiem soat.
+
+#### Phuong an C - Local LLM bang Ollama/llama.cpp
+
+Chi nen de phase nang cao.
+
+Khong khuyen nghi cho MVP vi:
+
+- Can may manh.
+- Kho kiem soat hallucination.
+- Kho dat quyen/chan cung bang model.
+- Van phai co Policy Engine va Action Registry nhu cu.
+
+Neu dung thi chi dung de soan cau/draft, khong dung de quyet dinh quyen hoac tu execute action.
+
+### 28.4. Khuyen nghi cuoi
+
+Khuyen nghi chinh:
+
+```text
+MVP nen dung Python/FastAPI + scikit-learn cho ai-manager-bot.
+```
+
+Ly do:
+
+- Tu huan luyen local de nhat.
+- Co TF-IDF, LogisticRegression/LinearSVC, metrics, confusion matrix tot.
+- Khong can GPU.
+- De dat muc tieu: phan loai intent, chan quyen, trich entity co ban, tao ActionPlan.
+
+Neu muon khong dung Python:
+
+```text
+Chon Node.js/TypeScript service rieng, khong chon local LLM ngay.
+```
+
+Node.js thay the duoc Python cho MVP neu chap nhan rule nhieu hon va ML nhe hon. Huong nay van lam duoc cac chuc nang:
+
+- Phan tich chuc nang du an.
+- Phan tich doanh thu tang/giam tu du lieu Backend dua vao.
+- Hieu route/man hinh.
+- De xuat action.
+- Hoi xac nhan truoc khi lam.
+- Chan Owner khoi vung cam.
+- Cho Admin lam rong hon theo policy.
+
+Khong nen hua trong MVP:
+
+- Chat thong minh tong quat nhu ChatGPT/Gemini.
+- Tu hieu moi cau hoi khong co dataset.
+- Tu train LLM lon.
+- Tu quyet dinh quyen bang model.
+
+### 28.5. Chot pham vi MVP nen lam truoc
+
+MVP nen lam theo thu tu:
+
+1. Backend `Policy Engine`.
+2. Backend `Action Registry`.
+3. `ai-manager-bot` rule + classifier cho intent/risk.
+4. Entity extractor co ban.
+5. `/chat` tra answer + `ActionPlan`.
+6. Website Owner/Admin chat panel.
+7. Preview + confirmation.
+8. Audit log.
+9. Training dataset dashboard cho Admin.
+
+Sau MVP moi nang:
+
+- Semantic search/RAG noi bo.
+- Memory theo role.
+- Local LLM soan draft.
+- Train/evaluate model nhieu phien ban.
+
+### 28.6. Chien luoc trien khai rieng truoc khi dua vao Backend
+
+Yeu cau cua du an: `ai-manager-bot` phai duoc tao va chay trong folder rieng truoc. Khong gan truc tiep vao Backend chinh ngay tu dau.
+
+Muc tieu:
+
+- Bot loi thi khong lam hong Backend hien tai.
+- Co the test intent/action/policy doc lap.
+- Co the thay doi model/dataset ma khong anh huong website/mobile.
+- Chi khi bot on moi noi vao Backend bang adapter co kiem soat.
+
+Thu tu trien khai bat buoc:
+
+```text
+1. Scaffold ai-manager-bot rieng
+2. Test bot local doc lap
+3. Tao dataset + train/evaluate
+4. Test cac cau Owner/Admin hop le va bi cam
+5. Dong bang API contract cua bot
+6. Moi them Backend adapter
+7. Moi them Policy Engine + Action Registry
+8. Moi bat UI Owner/Admin
+9. Moi cho execute action co confirmation
+```
+
+### 28.7. Giai doan sandbox trong `ai-manager-bot/`
+
+Folder rieng can co toi thieu:
+
+```text
+ai-manager-bot/
+  app/ hoac src/
+  datasets/
+  models/
+  tests/
+  README.md
+  .env.example
+  requirements.txt hoac package.json
+```
+
+Trong giai doan nay bot chi can chay doc lap:
+
+```text
+GET  /health
+POST /predict
+POST /chat
+POST /plan-action
+POST /evaluate
+```
+
+Chua can goi MySQL that. Chua can goi Backend that. Chua duoc execute action.
+
+Du lieu test co the la mock JSON:
+
+```json
+{
+  "role": "owner",
+  "route": "/owner/reviews",
+  "text": "tom tat review xau cua quan nay",
+  "screen_context": {
+    "page_key": "owner_reviews",
+    "selected_location_id": 1
+  },
+  "available_actions": [
+    "owner_review_summary",
+    "owner_review_reply_draft"
+  ]
+}
+```
+
+Ket qua bot tra ve phai co cau truc:
+
+```json
+{
+  "intent": "owner_review_summary",
+  "confidence": 0.91,
+  "risk_level": "read",
+  "entities": {},
+  "answer": "...",
+  "action_plan": {
+    "action_key": "owner_review_summary",
+    "requires_confirmation": false
+  },
+  "warnings": []
+}
+```
+
+### 28.8. Khi nao moi duoc noi vao Backend?
+
+Chi noi Backend khi dat cac dieu kien sau:
+
+- `/health` on dinh.
+- `/predict` phan loai dung nhom intent co ban.
+- `/plan-action` tra schema dung.
+- Test route cam cua Owner deu bi chan dung.
+- Test Admin critical deu gan dung risk.
+- Co test unit cho label cam.
+- Co file `.env.example` va lenh start ro rang.
+- Co README huong dan chay local.
+
+Luc noi Backend, chi them cac module cau noi:
+
+```text
+backend/src/services/ai-manager/managerBotClient.ts
+backend/src/services/ai-manager/policyEngine.ts
+backend/src/services/ai-manager/contextSanitizer.ts
+backend/src/services/ai-manager/actionRegistry.ts
+backend/src/controllers/ownerAdminAiController.ts
+backend/src/routes/ownerAdminAiRoutes.ts
+```
+
+Backend khong duoc tin bot 100%.
+Backend van phai:
+
+- Kiem JWT/role.
+- Kiem route co duoc dung AI khong.
+- Kiem action co trong registry khong.
+- Resolve entity tu database.
+- Preview truoc khi write action.
+- Yeu cau xac nhan.
+- Ghi audit.
+
+### 28.9. Nguyen tac rollout
+
+Mac dinh ban dau tat tinh nang tren UI:
+
+```text
+OWNER_ADMIN_AI_ENABLED=false
+OWNER_AI_ENABLED=false
+ADMIN_AI_ENABLED=false
+```
+
+Sau khi bot va Backend adapter on:
+
+1. Bat cho Admin dev/test.
+2. Bat cho Admin that voi read-only action.
+3. Bat cho Owner voi read-only/draft action.
+4. Bat write action thap sau khi audit on.
+5. Admin critical chi bat sau khi co typed confirmation va rollback/audit ro.
+
+Neu co loi:
+
+- Tat feature flag.
+- Backend khong goi bot nua.
+- Website an bubble AI.
+- Khong anh huong cac chuc nang cu.
+
+---
+
+## 29. Cap nhat cuoi: Guided Prompt cho Owner/Admin
+
+### 29.1. Ket luan
+
+Nen bo sung **cau hoi goi y san** cho AI Owner/Admin. Day la huong rat nen lam vi:
+
+- Giam viec nguoi dung mo chat trong va hoi qua rong.
+- Dinh huong Owner/Admin vao dung chuc nang duoc phep.
+- Giam ty le `unknown intent`.
+- Giam rui ro AI hieu nham thanh action nguy hiem.
+- Tao tap du lieu evaluation/training chat sach hon vi moi chip goi y da co intent mong doi.
+
+Khong thay the chat tu do. UI se dung mo hinh hybrid:
+
+```text
+Guided prompt chips + o chat tu do + action preview/confirmation
+```
+
+Nguoi dung bam chip nao thi chip do duoc gui vao chat nhu mot tin nhan binh thuong. Backend van phai chay day du Policy Engine, Action Registry, confirmation va audit nhu tin nhan tu go.
+
+### 29.2. Nguyen tac bat buoc
+
+- Cau hoi goi y khong duoc vuot quyen cua role.
+- Owner khong duoc thay chip lien quan route van hanh, booking/payment/front-office/location-ops.
+- Owner khong duoc thay chip tao/sua/xoa dia diem hoac dich vu.
+- Admin co the thay chip action rong hon nhung action ghi/nguy hiem van phai preview va xac nhan.
+- Moi chip phai co `intent_hint`, `risk_level`, `required_route_policy` va `allowed_roles`.
+- Click chip khong duoc execute truc tiep.
+- Click chip chi tao request den bot/backend, sau do moi hien preview/action plan.
+
+### 29.3. UI de xuat
+
+AI bubble khi mo len hien 2 nhom:
+
+```text
+1. Goi y theo man hinh hien tai
+2. Goi y pho bien
+```
+
+Neu dang o trang review Owner:
+
+```text
+[Tom tat danh gia xau]
+[Soan phan hoi danh gia 1 sao]
+[Diem khach phan nan nhieu nhat]
+[Goi y cach cai thien danh gia]
+```
+
+Neu dang o trang dashboard Owner:
+
+```text
+[Doanh thu hom nay sao roi?]
+[Thang nay tang hay giam?]
+[Mon/dich vu nao ban chay?]
+[Ngay nao it khach nhat?]
+```
+
+Neu dang o trang voucher Owner:
+
+```text
+[Goi y voucher cuoi tuan]
+[Soan noi dung uu dai]
+[Nen giam gia bao nhieu?]
+```
+
+Neu Owner o route bi cam:
+
+```text
+Khong hien AI bubble.
+```
+
+Hoac neu can hien thong bao nho:
+
+```text
+Tro ly AI khong hoat dong trong khu vuc van hanh.
+```
+
+Tuyet doi khong gui context man hinh van hanh sang `ai-manager-bot`.
+
+### 29.4. Guided Prompt cho Admin
+
+Admin dashboard:
+
+```text
+[Tong quan doanh thu he thong]
+[Dia diem nao bi danh gia xau nhieu?]
+[Owner nao co doanh thu giam?]
+[Voucher nao dang duoc dung nhieu?]
+```
+
+Admin duyet dia diem/dich vu:
+
+```text
+[Tom tat ho so dang cho duyet]
+[Kiem tra diem rui ro]
+[Soan ly do tu choi]
+[Goi y thong bao cho owner]
+```
+
+Admin users:
+
+```text
+[Tom tat hoat dong user nay]
+[Kiem tra dau hieu bat thuong]
+[Soan canh bao tai khoan]
+[Khoa tai khoan nay]
+```
+
+Chip `Khoa tai khoan nay` la critical, khong duoc chay ngay. Luong bat buoc:
+
+```text
+Click chip -> AI tao ActionPlan -> Backend preview -> Admin go xac nhan -> Backend execute -> audit
+```
+
+### 29.5. Contract de xuat
+
+Backend co the cung cap API lay goi y:
+
+```text
+GET /api/owner/ai/suggestions?route=/owner/dashboard
+GET /api/admin/ai/suggestions?route=/admin/users
+```
+
+Response:
+
+```ts
+type AiPromptSuggestion = {
+  id: string;
+  title: string;
+  prompt: string;
+  intent_hint: string;
+  assistant_scope: "owner" | "admin";
+  allowed_roles: string[];
+  risk_level: "read" | "low" | "medium" | "high" | "critical";
+  requires_confirmation: boolean;
+  route_allowlist?: string[];
+  route_blocklist?: string[];
+};
+```
+
+Trong MVP co the hardcode danh sach suggestion trong Backend hoac frontend. Khi on dinh thi dua vao database/config:
+
+```text
+ai_prompt_suggestions
+- id
+- assistant_scope
+- route_pattern
+- title
+- prompt
+- intent_hint
+- risk_level
+- allowed_roles_json
+- status
+- sort_order
+```
+
+### 29.6. Ket noi voi `ai-manager-bot`
+
+Khi user click chip, payload gui sang bot them:
+
+```json
+{
+  "text": "Tom tat danh gia xau cua dia diem nay",
+  "prompt_source": "guided_chip",
+  "intent_hint": "owner_review_summary",
+  "suggestion_id": "owner_reviews_summary_bad"
+}
+```
+
+`ai-manager-bot` duoc phep dung `intent_hint` nhu tin hieu phu, nhung khong duoc tin tuyet doi. Neu text/route/role vi pham policy thi van phai block.
+
+### 29.7. Kiem thu bat buoc
+
+- Owner route cam khong co prompt chip.
+- Owner khong thay chip tao/sua/xoa dia diem/dich vu.
+- Owner click chip read-only tra dung summary.
+- Owner click chip draft chi tao ban nhap.
+- Admin critical chip luon can confirmation.
+- Sua route bang DevTools khong lay duoc suggestion trai phep.
+- Chip bi disable khi feature flag tat.
+- Moi click chip duoc log vao `ai_chat_history.metadata.prompt_source`.
+
+---
+
+## 30. Cap nhat kien truc: `ai-manager-bot` co backend rieng
+
+### 30.1. Ket luan
+
+Co the tu xay **backend rieng ben trong `ai-manager-bot`**. Day la huong hop ly neu muon tach AI Owner/Admin thanh mot service doc lap, de sau nay Backend chinh chi can goi API cua bot.
+
+Tuy nhien can hieu dung ranh gioi:
+
+```text
+ai-manager-bot backend = AI/NLU/planner/evaluation service
+Backend Node.js chinh = auth/RBAC/data/action/audit gateway
+```
+
+Khong nen de `ai-manager-bot` thay the Backend chinh hoan toan. Ly do:
+
+- Backend chinh dang nam JWT/session/role that.
+- Backend chinh dang co service nghiep vu va permission that.
+- Backend chinh moi duoc quyen resolve MySQL production va execute action.
+- Backend chinh moi ghi audit theo chuan he thong.
+- Neu bot sai, Backend chinh van phai chan duoc.
+
+### 30.2. Nhung phan duoc xay trong `ai-manager-bot`
+
+`ai-manager-bot` co the chua day du cac module sau:
+
+```text
+ai-manager-bot/
+  app/
+    main.py                  # FastAPI service
+    inference.py             # NLU + classifier + model inference
+    rule_classifier.py       # rule guard baseline
+    entity_extractor.py      # trich xuat entity tho
+    action_planner.py        # tao ActionPlan
+    response_composer.py     # cau tra loi / ban nhap
+    policy_labels.py
+    text_normalizer.py
+    prompt_suggestions.py    # guided prompt theo role/route
+    evaluator.py             # batch evaluation
+    model_registry.py        # version model local
+  datasets/
+  models/
+  tests/
+  tools/
+```
+
+Nhiem vu cua service nay:
+
+- Hieu cau hoi tieng Viet sai chinh ta, viet tat, mien Nam.
+- Phan loai intent.
+- Gan risk level.
+- De xuat action key.
+- Tao cau tra loi doc-only.
+- Soan ban nhap cho review/voucher.
+- Tao danh sach guided prompts theo role/route.
+- Chay evaluation offline/online.
+- Quan ly model version local.
+
+### 30.3. Nhung phan KHONG duoc de `ai-manager-bot` lam truc tiep
+
+`ai-manager-bot` khong duoc:
+
+- Doc/ghi truc tiep MySQL production.
+- Giu database credential san xuat.
+- Goi truc tiep endpoint nghiep vu noi bo de thay doi du lieu.
+- Tu execute action.
+- Tu duyet/khoa/xoa/cap nhat tai khoan.
+- Tu tao/sua/xoa dia diem/dich vu.
+- Tu bo qua permission cua Backend.
+- Tu tin context do Frontend gui len.
+
+Tat ca du lieu that neu can cho bot phai di qua Backend chinh va da duoc sanitize.
+
+### 30.4. Cach Backend chinh goi `ai-manager-bot`
+
+Backend Node.js them client:
+
+```text
+backend/src/services/ai-manager/managerBotClient.ts
+```
+
+Client chi goi cac API AI service:
+
+```text
+GET  http://ai-manager-bot/health
+POST http://ai-manager-bot/predict
+POST http://ai-manager-bot/chat
+POST http://ai-manager-bot/plan-action
+POST http://ai-manager-bot/evaluate
+GET  http://ai-manager-bot/suggestions
+```
+
+Flow chuan:
+
+```text
+Website Owner/Admin
+  -> Backend Node.js
+    -> auth + RBAC + route policy
+    -> contextSanitizer
+    -> managerBotClient goi ai-manager-bot
+    <- bot tra Intent/Answer/ActionPlan
+    -> Backend policyEngine kiem lai
+    -> Neu read: tra ket qua
+    -> Neu write: preview + confirmation
+    -> actionRegistry execute bang service hien co
+    -> audit log
+```
+
+### 30.5. API contract de bot doc lap
+
+Request toi bot:
+
+```ts
+type ManagerBotRequest = {
+  role: "owner" | "admin";
+  user_id: number;
+  route: string;
+  text: string;
+  screen_context?: Record<string, unknown>;
+  available_actions?: string[];
+  prompt_source?: "typed" | "guided_chip";
+  intent_hint?: string;
+  suggestion_id?: string;
+};
+```
+
+Response tu bot:
+
+```ts
+type ManagerBotResponse = {
+  intent: string;
+  label: string;
+  confidence: number;
+  risk_level: "read" | "low" | "medium" | "high" | "critical" | "blocked";
+  allowed: boolean;
+  answer: string;
+  entities: Record<string, unknown>;
+  action_plan: {
+    action_key: string;
+    requires_confirmation: boolean;
+    summary: string;
+    warnings: string[];
+  };
+  model_version?: string;
+};
+```
+
+Backend chinh khong duoc execute theo response nay ngay. Response chi la de xuat.
+
+### 30.6. Loi ich
+
+- AI co the phat trien doc lap, test bang mock JSON truoc.
+- De rollback/tat bot neu loi.
+- Khong lam Backend chinh phinh to qua som.
+- Co the nang cap model tu rule-based sang ML ma khong doi Website.
+- Co the chay evaluation rieng cho bot.
+
+### 30.7. Rui ro va cach chan
+
+| Rui ro | Cach chan |
+|---|---|
+| Bot hieu sai intent | Backend policyEngine kiem lai |
+| Bot de xuat action cam | Backend actionRegistry allowlist |
+| Frontend gui context gia | Backend contextSanitizer chi lay context server-side neu can |
+| Bot bi timeout | Backend fallback rule-only/read-only |
+| Bot bi loi | Feature flag tat AI |
+| Bot bi prompt injection | Khong cho bot execute, khong cho doc DB truc tiep |
+
+### 30.8. Ket luan thuc thi
+
+Duoc phep xay `ai-manager-bot` nhu mot backend service rieng, gom API, model, dataset, guided prompt va evaluation.
+
+Nhung den khi tich hop that:
+
+```text
+ai-manager-bot chi nghi va de xuat.
+Backend Node.js moi quyet dinh va thuc thi.
+```

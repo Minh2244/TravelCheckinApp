@@ -8614,8 +8614,8 @@ export const getSosAlerts = async (
         sa.status,
         sa.resolved_at,
         sa.created_at,
-        ST_Y(sa.location_coordinates) as latitude,
-        ST_X(sa.location_coordinates) as longitude,
+        ST_X(sa.location_coordinates) as latitude,
+        ST_Y(sa.location_coordinates) as longitude,
         u.full_name as user_name,
         u.phone as user_phone
       FROM sos_alerts sa

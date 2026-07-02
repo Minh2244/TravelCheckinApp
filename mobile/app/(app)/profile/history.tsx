@@ -43,7 +43,7 @@ export default function HistoryScreen() {
     try {
       const resp = await userApi.getCheckins();
       if (resp?.success) {
-        setItems(resp.data || []);
+        setItems((resp.data as any) || []);
       } else {
         setError(resp.message || "Không thể tải lịch sử check-in");
       }

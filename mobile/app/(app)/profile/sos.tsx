@@ -25,7 +25,7 @@ export default function SosScreen() {
   const [address, setAddress] = useState<string | null>(null);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pingInterval = useRef<NodeJS.Timeout | null>(null);
+  const pingInterval = useRef<any>(null);
 
   // Pulse animation for active SOS state
   useEffect(() => {
@@ -64,10 +64,13 @@ export default function SosScreen() {
     };
   }, []);
 
-  const getAddressFromCoords = async (latitude: number, longitude: number) => {
+  const getAddressFromCoords = async (latitude: number, longitude: number): Promise<string | null> => {
     try {
-      const result = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (result && result.length > 0) {
+      const result = await Promise.race([
+        Location.reverseGeocodeAsync({ latitude, longitude }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+      ]);
+      if (result && Array.isArray(result) && result.length > 0) {
         const item = result[0];
         const parts = [
           item.name,
@@ -77,12 +80,13 @@ export default function SosScreen() {
           item.region,
           item.country,
         ].filter(Boolean);
-        return parts.join(", ");
+        return parts.join(", ") || null;
       }
     } catch (e) {
-      console.error("Lỗi lấy địa chỉ:", e);
+      console.warn("Lỗi lấy địa chỉ (bỏ qua):", e);
     }
-    return null;
+    // Fallback: return lat,lng as text
+    return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
   };
 
   const startSos = async () => {
@@ -95,12 +99,25 @@ export default function SosScreen() {
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      let location;
+      try {
+        location = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 8000))
+        ]);
+      } catch (err) {
+        // Fallback to last known position if current position times out or fails
+        location = await Location.getLastKnownPositionAsync();
+        if (!location) {
+          Alert.alert("Lỗi", "Không thể lấy được vị trí hiện tại. Vui lòng bật GPS.");
+          setLoading(false);
+          return;
+        }
+      }
 
-      const lat = location.coords.latitude;
-      const lng = location.coords.longitude;
+      const lat = (location as Location.LocationObject).coords.latitude;
+      const lng = (location as Location.LocationObject).coords.longitude;
+
       setCoords({ latitude: lat, longitude: lng });
 
       const resolvedAddress = await getAddressFromCoords(lat, lng);
@@ -216,7 +233,7 @@ export default function SosScreen() {
               </View>
             </View>
 
-            <Text className="text-red-500 font-extrabold text-xl mb-2 text-center animate-pulse">
+            <Text className="text-red-500 font-extrabold text-xl mb-2 text-center">
               🔴 TÍN HIỆU SOS ĐANG BẬT
             </Text>
             <Text className="text-slate-500 text-sm text-center px-4 mb-6 leading-[22px]">
@@ -265,7 +282,7 @@ export default function SosScreen() {
               onPress={startSos}
               className="w-48 h-48 rounded-full bg-red-100 justify-center items-center border border-red-200 shadow-md shadow-red-200/50 mb-10 active:bg-red-200/80"
             >
-              <View className="w-40 h-40 rounded-full bg-red-500 justify-center items-center shadow border-4 border-white active:bg-red-600">
+              <View pointerEvents="none" className="w-40 h-40 rounded-full bg-red-500 justify-center items-center shadow border-4 border-white active:bg-red-600">
                 <Ionicons name="alert-circle" size={54} color="white" />
               </View>
             </Pressable>

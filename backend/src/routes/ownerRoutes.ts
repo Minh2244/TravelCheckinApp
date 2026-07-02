@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 
 import { authenticateToken, requireRole } from "../middleware/authMiddleware";
+import { createOwnerAdminAiRouter } from "./ownerAdminAiRoutes";
 import {
   addHotelStayItems,
   createOwnerCommissionPaymentRequest,
@@ -109,6 +110,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(authenticateToken);
 router.use(requireRole("owner", "employee"));
+
+router.use("/ai", createOwnerAdminAiRouter("owner"));
 
 // Me / identity
 router.get("/me", getOwnerMe);

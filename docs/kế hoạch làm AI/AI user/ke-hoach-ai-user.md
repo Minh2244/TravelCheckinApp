@@ -1381,3 +1381,346 @@ AI: ưu tiên cafe/quán nước/chỗ mát từ database.
 User: tui đói quá kiếm gì ăn đi
 AI: ưu tiên restaurant/cafe, không bịa tên địa điểm ngoài database.
 ```
+
+---
+
+## 27. Cap nhat cuoi: Guided Prompt cho AI User
+
+### 27.1. Ket luan
+
+Nen them **cau hoi goi y san** cho AI User. Cach nay phu hop hon chat trong hoan toan vi user thuong khong biet hoi gi, hoac hoi rat ngan nhu `chan qua`, `nong qua`, `doi qua`. Guided prompt giup AI vao dung luong:
+
+- Goi y dia diem.
+- Goi y theo thoi tiet.
+- Goi y an uong.
+- Goi y khach san.
+- Tim voucher.
+- Mo ban do/chi duong.
+- Mo chi tiet dia diem.
+
+Khong bo o chat tu do. UI dung hybrid:
+
+```text
+Quick prompt chips + chat tu do + location cards that
+```
+
+### 27.2. Nguyen tac thiet ke
+
+- Chip phai la ngon ngu doi thuong, ngan, de bam.
+- Chip co the mang giong mien Nam/Gen Z nhe, nhung khong qua lo.
+- Bam chip se gui text vao `/api/ai/chat` nhu user tu go.
+- Backend van phai tim candidates that tu database truoc khi cho Gemini viet cau tra loi.
+- Gemini khong duoc tu bia dia diem ngoai candidates.
+- Neu khong co candidates, AI noi ro chua co dia diem phu hop va goi y doi bo loc.
+
+### 27.3. Nhom chip mac dinh
+
+Khi mo AI chat lan dau:
+
+```text
+[Nay nen di dau?]
+[Tui doi qua, kiem cho an di]
+[Troi nong, tim cho mat]
+[Quan cafe yen tinh gan day]
+[Khach san gia on]
+[Co voucher nao khong?]
+```
+
+Khi user dang o Home:
+
+```text
+[Goi y gan toi]
+[Quan an duoc danh gia tot]
+[Cho di choi nhe cuoi tuan]
+[Khach san gan trung tam]
+```
+
+Khi user dang o chi tiet dia diem:
+
+```text
+[Dia diem nay co gi hay?]
+[Chi duong toi day]
+[Luu dia diem nay]
+[Co voucher o day khong?]
+[Dich vu nao nen dat?]
+```
+
+Khi user dang o ban do:
+
+```text
+[Tim quan an gan day]
+[Tim khach san gan day]
+[Dia diem du lich quanh day]
+[Chi duong toi dia diem da chon]
+```
+
+Khi user dang o trang booking/dich vu:
+
+```text
+[Tom tat dieu can luu y]
+[Co voucher nao ap dung?]
+[Gia nay tinh sao?]
+[Quay lai chi tiet dia diem]
+```
+
+### 27.4. Chip dong theo ngu canh
+
+Backend co the tao quick prompts dua tren:
+
+- Gio hien tai.
+- Thoi tiet.
+- Vi tri GPS neu user da cap quyen.
+- Dia diem dang xem.
+- Loai dia diem dang xem.
+- Lich su saved/check-in/booking o muc tom tat.
+
+Vi du:
+
+```text
+Troi nong + dang o Can Tho:
+[Tim quan nuoc/co may lanh gan day]
+[Cafe ngoi lam viec duoc]
+[Cho di dao buoi chieu mat]
+```
+
+```text
+Buoi toi:
+[Quan an toi gan day]
+[Cho di choi buoi toi]
+[Khach san con phong]
+```
+
+### 27.5. API/response can bo sung
+
+`POST /api/ai/chat` nen tiep tuc tra:
+
+```ts
+type AiUserReply = {
+  message: string;
+  mode: "chat" | "suggest_locations" | "show_booking" | "show_voucher" | "need_clarification" | "error";
+  locations: LocationCard[];
+  quickReplies: string[];
+  actions: AiUserAction[];
+  metadata: {
+    intent?: string;
+    prompt_source?: "typed" | "guided_chip" | "system_suggested";
+    candidate_count?: number;
+    weather_hint?: string;
+    location_context?: string;
+  };
+};
+```
+
+Khi user bam chip:
+
+```json
+{
+  "message": "Troi nong, tim cho mat",
+  "prompt_source": "guided_chip",
+  "suggestion_id": "weather_hot_cool_place"
+}
+```
+
+### 27.6. UI Website/Mobile
+
+Chat popup:
+
+- Hien 4-6 chip dau tien ngay khi mo.
+- Sau moi cau tra loi, AI tra them `quickReplies` tiep theo.
+- Neu co location cards, chip tiep theo nen lien quan hanh dong:
+  - `Xem chi tiet`
+  - `Chi duong`
+  - `Luu dia diem`
+  - `Tim cho tuong tu`
+- Tren mobile, chip phai scroll ngang, khong lam day man hinh.
+
+### 27.7. Kiem thu bat buoc
+
+- Bam `Tui doi qua, kiem cho an di` phai ra restaurant/cafe card that.
+- Bam `Troi nong, tim cho mat` phai uu tien cafe/quan nuoc/cho mat.
+- Bam `Khach san gia on` phai ra location loai luu tru.
+- Bam `Co voucher nao khong?` neu khong co voucher thi noi ro, khong bia.
+- O chi tiet dia diem, bam `Chi duong toi day` mo dung map/location.
+- O chi tiet dia diem, bam `Co voucher o day khong?` chi tra voucher that cua dia diem do.
+- Neu user go tu do `hong biet di dau het`, AI van chuyen sang luong goi y dia diem.
+- Moi chip click luu `prompt_source=guided_chip` trong metadata de danh gia chat.
+
+---
+
+## 28. Cap nhat Guided Prompt: chi hien khi da dang nhap va chong spam
+
+### 28.1. Ket luan
+
+Cau hoi goi y chi nen hien khi user da dang nhap. Neu chua dang nhap:
+
+- Khong hien guided prompt ca nhan hoa.
+- Co the hien CTA nho: `Dang nhap de dung tro ly AI`.
+- Khong goi `/api/ai/chat`.
+- Khong luu chat history.
+
+Ly do:
+
+- AI User can user_id de luu lich su, prompt_source va feedback.
+- Can user_id de rate limit.
+- Can user_id de tranh hien lai cung mot cum cau hoi qua nhieu lan.
+- Can user_id de ca nhan hoa theo saved/check-in/booking.
+
+### 28.2. Hanh vi UI khi user bam cau hoi goi y
+
+Dung ket hop 3 lop phong ve o Frontend:
+
+1. **Hide on click**
+   - Khi user bam chip, chip bien thanh tin nhan cua user.
+   - Cum guided prompt hien tai bien mat ngay.
+   - Khong con nut de bam lap lai.
+
+2. **Disable & loading**
+   - Trong luc dang goi API, set `isLoading=true`.
+   - Tat toan bo chip va nut gui.
+   - Neu khong an chip thi chip phai mo/disabled.
+
+3. **Debounce/throttle**
+   - Ham click chip phai debounce/throttle.
+   - Trong 500-1000ms chi nhan mot lan click.
+   - Bam 10 lan lien tuc chi gui 1 request.
+
+Quy tac UX:
+
+```text
+Click chip -> an cum chip -> hien message user -> bot loading -> bot tra loi -> hien quickReplies moi neu co
+```
+
+### 28.3. Phong spam o Backend
+
+Backend bat buoc co phong ve ke ca khi user dung Postman/tool:
+
+```text
+Rate limit theo user_id + route + IP
+Message lock theo conversation_id
+Idempotency key theo message client_id
+```
+
+Quy tac de xuat:
+
+- Toi da 1 request AI dang xu ly cho moi conversation.
+- Toi da 3 tin nhan / 10 giay / user.
+- Toi da 50 tin nhan / ngay / user theo setting `ai_user_daily_limit`.
+- Neu spam tra HTTP `429 Too Many Requests`.
+- Neu bot dang xu ly tra `409 AI_MESSAGE_IN_PROGRESS` hoac reuse response dang pending.
+- Moi request chat tu frontend co `client_message_id` de Backend chong ghi trung.
+
+### 28.4. Cach de vao luc 10:00 bam roi 10:54 vao lai khong hien lai dong cau hoi
+
+Can luu trang thai guided prompt theo user, khong chi luu trong state React.
+
+De xuat luu o Backend:
+
+```text
+ai_prompt_impressions
+- impression_id
+- user_id
+- assistant_scope = 'user'
+- surface              -- home, ai_popup, location_detail, map, booking
+- suggestion_group_id  -- default_home, hot_weather, location_detail
+- suggestion_id
+- status               -- shown, clicked, dismissed, expired
+- shown_at
+- clicked_at
+- hidden_until
+- conversation_id
+```
+
+Luot dau 10:00:
+
+```text
+User mo AI -> Backend tra prompt group -> Frontend hien chip
+User bam chip -> Backend ghi status=clicked, hidden_until=cuoi ngay hoac +24h
+Frontend an chip
+```
+
+Luc 10:54 user thoat vao lai:
+
+```text
+Frontend goi GET /api/ai/suggestions?surface=home
+Backend thay user da clicked group do va hidden_until chua het
+Backend tra []
+Frontend khong hien lai dong cau hoi do
+```
+
+Khi nao hien lai:
+
+- Qua `hidden_until`.
+- User bam `Cau hoi goi y`.
+- User tao conversation moi neu cau hinh la hide theo conversation.
+- Context thay doi manh, vi du dang xem dia diem khac hoac thoi tiet khac.
+
+MVP co the don gian hon, khong can bang moi:
+
+```text
+Luu vao ai_conversations.metadata:
+{
+  "dismissed_prompt_groups": {
+    "default_home": "2026-07-02T10:00:00+07:00"
+  }
+}
+```
+
+Nhung ban tot hon la co bang `ai_prompt_impressions` de thong ke chip nao huu ich.
+
+### 28.5. API guided suggestions cho User
+
+Them API:
+
+```text
+GET /api/ai/suggestions?surface=home
+POST /api/ai/suggestions/:suggestionId/click
+POST /api/ai/suggestions/:suggestionId/dismiss
+```
+
+Response:
+
+```ts
+type AiUserSuggestion = {
+  id: string;
+  group_id: string;
+  title: string;
+  prompt: string;
+  intent_hint: string;
+  surface: "home" | "ai_popup" | "location_detail" | "map" | "booking";
+  hidden_after_click: boolean;
+  cooldown_seconds: number;
+};
+```
+
+### 28.6. Frontend state de xuat
+
+```ts
+const [suggestions, setSuggestions] = useState<AiUserSuggestion[]>([]);
+const [isSending, setIsSending] = useState(false);
+const clickedRef = useRef(new Set<string>());
+
+async function handleSuggestionClick(item: AiUserSuggestion) {
+  if (isSending || clickedRef.current.has(item.id)) return;
+  clickedRef.current.add(item.id);
+  setIsSending(true);
+  setSuggestions((current) => current.filter((x) => x.group_id !== item.group_id));
+  await sendAiMessage({
+    message: item.prompt,
+    prompt_source: "guided_chip",
+    suggestion_id: item.id,
+    client_message_id: crypto.randomUUID(),
+  });
+  setIsSending(false);
+}
+```
+
+### 28.7. Kiem thu bat buoc
+
+- Chua dang nhap: khong hien prompt chip AI.
+- Da dang nhap: hien prompt chip theo surface.
+- Bam chip 10 lan lien tuc chi tao 1 message.
+- Bam chip xong cum chip bien mat ngay.
+- Thoat vao lai sau 5-60 phut khong hien lai group da clicked neu hidden_until chua het.
+- Goi API spam truc tiep bi `429`.
+- Gui 2 message cung conversation khi bot dang xu ly bi lock.
+- Refresh app khong lam hien lai prompt da clicked neu Backend da ghi impression.

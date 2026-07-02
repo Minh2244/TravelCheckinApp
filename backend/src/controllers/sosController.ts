@@ -34,13 +34,31 @@ export const createSosAlert = async (
       return;
     }
 
-    const pointText = `POINT(${lng} ${lat})`;
+    const pointText = `POINT(${lat} ${lng})`;
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO sos_alerts (user_id, location_coordinates, location_text, message)
-       VALUES (?, ST_GeomFromText(?), ?, ?)`,
+       VALUES (?, ST_GeomFromText(?, 4326), ?, ?)`,
       [userId, pointText, body.location_text ?? null, body.message ?? null],
     );
+
+    // Notify all admins via SSE
+    try {
+      const { publishToUsers } = require("../utils/realtime");
+      const [adminRows] = await pool.query<RowDataPacket[]>(
+        `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
+      );
+      const adminIds = adminRows.map(r => r.user_id);
+      publishToUsers(adminIds, {
+        type: "sos_alert",
+        alert_id: result.insertId,
+        location: body.location_text || "Không xác định",
+        lat,
+        lng
+      });
+    } catch (e) {
+      console.error("SOS notify admins error:", e);
+    }
 
     res.status(201).json({
       success: true,
@@ -73,13 +91,13 @@ export const pingSosAlert = async (
       return;
     }
 
-    const pointText = `POINT(${lng} ${lat})`;
+    const pointText = `POINT(${lat} ${lng})`;
     const alertId = Number(body.alert_id);
 
     if (Number.isFinite(alertId)) {
       await pool.query<ResultSetHeader>(
         `UPDATE sos_alerts
-         SET location_coordinates = ST_GeomFromText(?),
+         SET location_coordinates = ST_GeomFromText(?, 4326),
              location_text = ?,
              message = ?,
              status = IF(status = 'resolved', 'processing', status)
@@ -109,7 +127,7 @@ export const pingSosAlert = async (
     if (existingId) {
       await pool.query<ResultSetHeader>(
         `UPDATE sos_alerts
-         SET location_coordinates = ST_GeomFromText(?),
+         SET location_coordinates = ST_GeomFromText(?, 4326),
              location_text = ?,
              message = ?,
              status = 'processing'
@@ -127,7 +145,7 @@ export const pingSosAlert = async (
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO sos_alerts (user_id, location_coordinates, location_text, message, status)
-       VALUES (?, ST_GeomFromText(?), ?, ?, 'processing')`,
+       VALUES (?, ST_GeomFromText(?, 4326), ?, ?, 'processing')`,
       [
         userId,
         pointText,
@@ -135,6 +153,21 @@ export const pingSosAlert = async (
         body.message ?? "SOS ping",
       ],
     );
+
+    try {
+      const { publishToUsers } = require("../utils/realtime");
+      const [adminRows] = await pool.query<RowDataPacket[]>(
+        `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
+      );
+      const adminIds = adminRows.map(r => r.user_id);
+      publishToUsers(adminIds, {
+        type: "sos_alert",
+        alert_id: result.insertId,
+        location: body.location_text || "Không xác định",
+        lat,
+        lng
+      });
+    } catch (e) {}
 
     res.json({ success: true, data: { alert_id: result.insertId } });
   } catch (error) {

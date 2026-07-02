@@ -267,7 +267,7 @@ export default function ProfileScreen() {
               <View className="w-8 h-8 rounded-full bg-purple-50 justify-center items-center">
                 <Ionicons name="journal" size={16} color="#7c3aed" />
               </View>
-              <Text className="text-[15px] font-bold text-slate-800">Nhật ký hành trình & Check-in</Text>
+              <Text className="text-[15px] font-bold text-slate-800">Nhật ký hành trình</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
           </Pressable>

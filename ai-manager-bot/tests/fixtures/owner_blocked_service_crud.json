@@ -1,0 +1,13 @@
+{
+  "role": "owner",
+  "route": "/owner/services",
+  "text": "tạo dịch vụ cafe sữa 20k cho quán",
+  "screen_context": {
+    "page_key": "owner_services",
+    "selected_location_id": 1
+  },
+  "available_actions": [
+    "owner_voucher_draft"
+  ]
+}
+
