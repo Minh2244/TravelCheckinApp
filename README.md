@@ -424,8 +424,8 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
 - ✔️ **Phase 2** — Web Dashboard for Admin & Owner management module
 - ✔️ **Phase 3** — Complete database schema (60 tables) and restore full functionality
 - ✔️ **Phase 4** — Mobile App Development (Auth, Home, Map, Booking & Unified Wallet)
-- ❌ **Phase 5** — Mobile App (User Utilities, Saved Locations, Diary, SOS & Vouchers)
-- ❌ **Phase 6** — Mobile App (AI Chat, Location Chat & Itinerary Planner)
+- ✔️ **Phase 5** — Mobile App (User Utilities, Saved Locations, Diary, SOS & Vouchers)
+- ✔️ **Phase 6** — Mobile App (AI Chat, Location Chat & Itinerary Planner)
 - ✔️ **Phase 7** — Hotel PMS and Restaurant POS drag-and-drop refinement
 - ✔️ **Phase 8** — AI Integration across Web and Mobile with Google Gemini
 
@@ -495,18 +495,18 @@ This project uses the following open-source technologies: Node.js, Express, Reac
 - [x] **Element:** Reusable UI components (Ant Design customized)
 - [x] **User:** Booking, location discovery, ticket wallet, chat
 
-### 3. Mobile User (75%)
+### 3. Mobile User (100%)
 - [x] Interactive Maps & Navigation
 - [x] Smart Check-in
 - [x] QR Ticket Wallet
-- [ ] User Utilities (SOS, Diary, Favorites)
+- [x] User Utilities (SOS, Diary, Favorites)
 
 ### 4. AI Ecosystem (100%)
 - [x] **AI User (Gemini):** Google Gemini API integration for user recommendations and itinerary planning
 - [x] **ai-manager-bot (GPT):** Admin & Owner AI assistant using OpenAI GPT (Sentiment analysis, Intent prediction, semantic search, business insights)
 
 ### Summary
-- **Core Modules Progress (Backend, Website, Mobile User):** 91.6% (11/12 core modules completed)
+- **Core Modules Progress (Backend, Website, Mobile User):** 100% (12/12 core modules completed)
 - *(Note: Modules in Phase 7 (PMS/POS) and Phase 8 (AI Ecosystem) are considered extra/bonus phases and are not included in the overall core progress percentage).*
 
 
