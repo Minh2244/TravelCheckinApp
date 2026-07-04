@@ -258,53 +258,53 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
 
 | # | Table | Description |
 |---|-------|-------------|
-| 27 | `checkins` | GPS-based location check-ins with photo and geofence data |
-| 28 | `sos_alerts` | Emergency alerts with real-time GPS coordinates and resolution status |
+| 28 | `checkins` | GPS-based location check-ins with photo and geofence data |
+| 29 | `sos_alerts` | Emergency alerts with real-time GPS coordinates and resolution status |
 
 #### 7. Reviews and Reports (4 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
-| 29 | `reviews` | User reviews and ratings for locations |
-| 30 | `review_replies` | Owner responses to user reviews |
-| 31 | `reports` | User-submitted reports (content violations, abuse) |
-| 32 | `owner_violations` | Tracked violations and warnings issued to owners |
+| 30 | `reviews` | User reviews and ratings for locations |
+| 31 | `review_replies` | Owner responses to user reviews |
+| 32 | `reports` | User-submitted reports (content violations, abuse) |
+| 33 | `owner_violations` | Tracked violations and warnings issued to owners |
 
 #### 8. Voucher System (5 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
-| 33 | `vouchers` | Voucher definitions with type, discount, and validity |
-| 34 | `voucher_locations` | Voucher-to-location mapping (which locations accept which vouchers) |
-| 35 | `voucher_usage_history` | Redemption tracking per user per voucher |
-| 36 | `voucher_reviews` | User reviews tied to voucher usage |
-| 37 | `user_voucher_wallet` | User's claimed vouchers stored in personal wallet |
+| 34 | `vouchers` | Voucher definitions with type, discount, and validity |
+| 35 | `voucher_locations` | Voucher-to-location mapping (which locations accept which vouchers) |
+| 36 | `voucher_usage_history` | Redemption tracking per user per voucher |
+| 37 | `voucher_reviews` | User reviews tied to voucher usage |
+| 38 | `user_voucher_wallet` | User's claimed vouchers stored in personal wallet |
 
 #### 9. Chat and Notifications (6 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
-| 38 | `chat_messages` | General real-time chat messages (Socket.IO) |
-| 39 | `location_chat_messages` | Location-specific chat between users and owners |
-| 40 | `push_notifications` | Push notification records (Firebase Cloud Messaging) |
-| 41 | `user_notification_reads` | Read status tracking for user notifications |
-| 42 | `user_notification_dismissed` | Dismissed notification tracking for users |
-| 43 | `owner_notification_reads` | Read status tracking for owner notifications |
+| 39 | `chat_messages` | General real-time chat messages (Socket.IO) |
+| 40 | `location_chat_messages` | Location-specific chat between users and owners |
+| 41 | `push_notifications` | Push notification records (Firebase Cloud Messaging) |
+| 42 | `user_notification_reads` | Read status tracking for user notifications |
+| 43 | `user_notification_dismissed` | Dismissed notification tracking for users |
+| 44 | `owner_notification_reads` | Read status tracking for owner notifications |
 
 #### 10. Image Storage (3 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
-| 44 | `images` | Binary image data stored as LONGBLOB with metadata |
-| 45 | `entity_images` | Polymorphic junction table linking images to any entity |
-| 46 | `image_categories` | Image type definitions with size/quality constraints |
+| 45 | `images` | Binary image data stored as LONGBLOB with metadata |
+| 46 | `entity_images` | Polymorphic junction table linking images to any entity |
+| 47 | `image_categories` | Image type definitions with size/quality constraints |
 
 #### 11. Itinerary (2 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
-| 47 | `itineraries` | User-created travel itineraries with date range |
-| 48 | `itinerary_items` | Day-by-day itinerary items with location and notes |
+| 48 | `itineraries` | User-created travel itineraries with date range |
+| 49 | `itinerary_items` | Day-by-day itinerary items with location and notes |
 
 #### 12. System and Utilities (11 tables)
 
@@ -320,6 +320,7 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
 | 57 | `background_schedules` | Scheduled tasks (auto-confirm, auto-cancel, cleanup) |
 | 58 | `owner_notification_dismissed` | Dismissed notification tracking for owners |
 | 59 | `employee_locations` | Employee-to-location permission assignments |
+| 60 | `ai_action_runs` | Logs of automated actions taken by AI Manager Bot |
 
 ### B. Core Entity Relationships
 
@@ -441,7 +442,7 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
 | **Author** | **Mai Nhut Minh** (minhmap3367@gmail.com) |
 | **Institution** | Tay Do University |
 | **Class** | CNTT17A |
-| **Year** | 2026 |
+| **Year** | 61 |
 | **Project Type** | Graduation Thesis |
 
 ### Copyright Notice
