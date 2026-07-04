@@ -426,8 +426,6 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
 - ✔️ **Phase 4** — Mobile App Development (Auth, Home, Map, Booking & Unified Wallet)
 - ✔️ **Phase 5** — Mobile App (User Utilities, Saved Locations, Diary, SOS & Vouchers)
 - ✔️ **Phase 6** — Mobile App (AI Chat, Location Chat & Itinerary Planner)
-- ✔️ **Phase 7** — Hotel PMS and Restaurant POS drag-and-drop refinement
-- ✔️ **Phase 8** — AI Integration across Web and Mobile with Google Gemini
 
 ---
 
@@ -507,7 +505,6 @@ This project uses the following open-source technologies: Node.js, Express, Reac
 
 ### Summary
 - **Core Modules Progress (Backend, Website, Mobile User):** 100% (12/12 core modules completed)
-- *(Note: Modules in Phase 7 (PMS/POS) and Phase 8 (AI Ecosystem) are considered extra/bonus phases and are not included in the overall core progress percentage).*
 
 
 *This README was last updated on July 04, 2026.*
