@@ -291,6 +291,31 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
   });
 
   useEffect(() => {
+    const token = sessionStorage.getItem("accessToken");
+    if (!token) return;
+    const url = resolveBackendUrl(`/api/events?token=${encodeURIComponent(token)}`);
+    if (!url) return;
+
+    const es = new EventSource(url);
+    es.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data) as { type?: string };
+        if (
+          data?.type === "booking_checked_in" ||
+          data?.type === "ticket_used" ||
+          data?.type === "booking_cancelled" ||
+          data?.type === "booking_expired"
+        ) {
+          void loadTickets();
+        }
+      } catch {
+        // ignore
+      }
+    };
+    return () => es.close();
+  }, [loadTickets]);
+
+  useEffect(() => {
     const cached = readCachedTickets();
     if (!cached.length) return;
 

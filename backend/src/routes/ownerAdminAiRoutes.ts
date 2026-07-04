@@ -11,6 +11,7 @@ export function createOwnerAdminAiRouter(role: ManagerAiRole): Router {
   router.get("/suggestions", controller.suggestions);
   router.post("/chat", controller.chat);
   router.post("/plan-action", controller.planAction);
+  router.post("/execute-action", controller.executeAction);
 
   return router;
 }

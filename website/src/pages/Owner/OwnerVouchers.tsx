@@ -27,6 +27,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
+import ManagerAiBubble from "../../components/ManagerAiBubble";
 import ownerApi from "../../api/ownerApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import dayjs from "dayjs";
@@ -209,6 +210,31 @@ const OwnerVouchers = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const managerAiContext = useMemo(() => {
+    const computedStatus = (value: OwnerVoucherRow) =>
+      String(value.computed_status || value.status || "").toLowerCase();
+    return {
+      totalVouchers: items.length,
+      activeVouchers: items.filter((item) => computedStatus(item) === "active").length,
+      inactiveVouchers: items.filter((item) => computedStatus(item) === "inactive").length,
+      expiredVouchers: items.filter((item) => computedStatus(item) === "expired").length,
+      locationCount: locations.length,
+      voucherStats: stats || null,
+      statusFilter,
+      searchText: search,
+      topVouchers: items.slice(0, 6).map((item) => ({
+        voucher_id: item.voucher_id,
+        code: item.code,
+        campaign_name: item.campaign_name,
+        discount_type: item.discount_type,
+        discount_value: item.discount_value,
+        used_count: item.used_count,
+        status: item.computed_status || item.status,
+      })),
+      adminVoucherCount: adminVouchers.length,
+    };
+  }, [adminVouchers.length, items, locations.length, search, stats, statusFilter]);
 
   // Realtime: SSE để Owner thấy trạng thái mới ngay sau khi Admin duyệt/xóa
   useEffect(() => {
@@ -1324,6 +1350,7 @@ const OwnerVouchers = () => {
           className="mt-4"
         />
       </Modal>
+      <ManagerAiBubble screenContext={managerAiContext} />
     </MainLayout>
   );
 };

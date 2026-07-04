@@ -25,6 +25,8 @@ export interface InvoiceData {
   contact_name?: string;
   contact_phone?: string;
   food_items?: Array<{ name: string; quantity: number; price: number }>;
+  owner_receivable?: number | string;
+  status?: string;
 }
 
 const cellBorder: Partial<ExcelJS.Borders> = {
@@ -60,7 +62,7 @@ export const handleExportBatchExcel = async (
     selectedTypes.includes("hotel") &&
     selectedTypes.includes("tourist");
 
-  const data = allTypesSelected
+  let data = allTypesSelected
     ? filteredInvoices
     : filteredInvoices.filter((inv) => {
         const type = inv.booking_service_type || "other";
@@ -78,6 +80,9 @@ export const handleExportBatchExcel = async (
           return true;
         return false;
       });
+
+  // Chỉ lấy đơn đã thanh toán thành công (completed) để đồng nhất với Dashboard
+  data = data.filter((inv) => String(inv.status || "").toLowerCase() === "completed");
 
   if (data.length === 0) {
     throw new Error("Không có dữ liệu phù hợp với bộ lọc dịch vụ!");
@@ -97,13 +102,13 @@ export const handleExportBatchExcel = async (
   const sheet = workbook.addWorksheet("Báo cáo doanh thu");
 
   // 3. Title rows
-  sheet.mergeCells("A1:I1");
+  sheet.mergeCells("A1:J1");
   const titleCell = sheet.getCell("A1");
   titleCell.value = "BÁO CÁO DOANH THU TỔNG HỢP GIAO DỊCH";
   titleCell.font = { bold: true, size: 14 };
   titleCell.alignment = { horizontal: "center" };
 
-  sheet.mergeCells("A2:I2");
+  sheet.mergeCells("A2:J2");
   const subtitleCell = sheet.getCell("A2");
   subtitleCell.value = `Khoảng thời gian: từ ${dateRange[0].format("DD/MM/YYYY")} đến ${dateRange[1].format("DD/MM/YYYY")} | Tổng số đơn: ${data.length}`;
   subtitleCell.alignment = { horizontal: "center" };
@@ -119,6 +124,8 @@ export const handleExportBatchExcel = async (
     "Thời Gian",
     "Phương Thức",
     "Doanh Thu (VND)",
+    "Hoa Hồng (VND)",
+    "Thực Nhận (VND)",
   ];
   const headerRow = sheet.addRow(headers);
   headerRow.eachCell((cell) => {
@@ -243,12 +250,24 @@ export const handleExportBatchExcel = async (
         return details || "—";
       })(),
       dayjs(inv.payment_time).tz(TZ).format("DD/MM/YYYY HH:mm"),
-      inv.payment_method === "cash" ? "Tiền mặt" : "Chuyển khoản",
+      (() => {
+        const pm = inv.payment_method || "";
+        if (pm === "cash") return "Tiền mặt";
+        if (pm === "momo") return "MoMo";
+        if (pm === "vnpay") return "VNPay";
+        if (pm === "bank_transfer" || pm === "transfer") return "Chuyển khoản";
+        if (pm === "credit_card") return "Thẻ tín dụng";
+        if (pm === "pos") return "Quẹt thẻ (POS)";
+        if (pm === "system") return "Gán nợ (Hệ thống)";
+        return pm ? (pm.charAt(0).toUpperCase() + pm.slice(1)) : "Chuyển khoản (Không xác định)";
+      })(),
       Number(inv.amount || 0),
+      Number((inv as any).commission_amount || 0),
+      Number((inv.owner_receivable ?? inv.amount) || 0),
     ]);
     row.eachCell((cell, colNumber) => {
       cell.border = cellBorder;
-      if (colNumber === 9) {
+      if (colNumber === 9 || colNumber === 10 || colNumber === 11) {
         cell.numFmt = "#,##0";
         cell.alignment = { horizontal: "right" };
       }
@@ -258,6 +277,14 @@ export const handleExportBatchExcel = async (
   // 6. Total row
   const totalAmount = data.reduce(
     (sum, item) => sum + Number(item.amount || 0),
+    0,
+  );
+  const totalCommission = data.reduce(
+    (sum, item) => sum + Number((item as any).commission_amount || 0),
+    0,
+  );
+  const totalReceivable = data.reduce(
+    (sum, item) => sum + Number((item.owner_receivable ?? item.amount) || 0),
     0,
   );
   const totalRow = sheet.addRow([
@@ -270,12 +297,19 @@ export const handleExportBatchExcel = async (
     "",
     "TỔNG CỘNG:",
     totalAmount,
+    totalCommission,
+    totalReceivable,
   ]);
+
   totalRow.eachCell((cell, colNumber) => {
     cell.font = { bold: true };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFEF3C7" }, // amber-50
+    };
     cell.border = cellBorder;
-    if (colNumber === 8) cell.alignment = { horizontal: "right" };
-    if (colNumber === 9) {
+    if (colNumber === 9 || colNumber === 10 || colNumber === 11) {
       cell.numFmt = "#,##0";
       cell.font = { bold: true, color: { argb: "FFFF0000" } };
       cell.alignment = { horizontal: "right" };

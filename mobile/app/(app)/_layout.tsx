@@ -39,8 +39,8 @@ export default function AppLayout() {
   const isLocationDetail = /^\/location\/[^/]+$/.test(pathname);
 
   const bottomOffset = isTabScreen ? 90 : Math.max(insets.bottom, 16) + 16;
-  // When on location detail, raise AI bubble to sit above owner chat FAB (extra 66px)
-  const aiBubbleBottom = isLocationDetail ? bottomOffset + 66 : bottomOffset;
+  // Khi ở chi tiết địa điểm, đưa bong bóng AI lên trên nút chat Owner (nút Owner cao 52px nằm ở insets + 70)
+  const aiBubbleBottom = isLocationDetail ? Math.max(insets.bottom, 16) + 134 : bottomOffset;
 
   return (
     <View className="flex-1 bg-surface">

@@ -11,6 +11,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
+import ManagerAiBubble from "../../components/ManagerAiBubble";
 import adminApi from "../../api/adminApi";
 import { getErrorMessage } from "../../utils/safe";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
@@ -315,6 +316,35 @@ const ReviewManagement = () => {
     [handleDelete, handleDeleteOwnerReply, rows.length],
   );
 
+  const managerAiContext = useMemo(() => {
+    const negativeReviews = rows.filter((row) => Number(row.rating || 0) <= 2);
+    const topIssues = [
+      rows.some((row) => String(row.comment || "").toLowerCase().includes("lau")) ? "phuc vu lau" : null,
+      rows.some((row) => String(row.comment || "").toLowerCase().includes("cham")) ? "phuc vu cham" : null,
+      rows.some((row) => String(row.comment || "").toLowerCase().includes("thai do")) ? "thai do phuc vu" : null,
+    ].filter(Boolean);
+
+    return {
+      selectedOwnerId: ownerId,
+      selectedOwnerName: owners.find((item) => item.owner_id === ownerId)?.owner_name || null,
+      selectedLocationId: locationId,
+      selectedLocationName:
+        locations.find((item) => item.location_id === locationId)?.location_name || null,
+      totalReviews: rows.length,
+      badReviewCount: negativeReviews.length,
+      repliedCount: rows.filter((row) => Boolean(String(row.reply_content || "").trim())).length,
+      topIssues,
+      recentFlaggedReviews: negativeReviews.slice(0, 6).map((row) => ({
+        review_id: row.review_id,
+        owner_name: row.owner_name,
+        location_name: row.location_name,
+        rating: row.rating,
+        comment: row.comment,
+        created_at: row.created_at,
+      })),
+    };
+  }, [locationId, locations, ownerId, owners, rows]);
+
   return (
     <MainLayout>
       <Card title="Quản lí đánh giá">
@@ -402,6 +432,7 @@ const ReviewManagement = () => {
           </Card>
         </div>
       </Card>
+      <ManagerAiBubble screenContext={managerAiContext} />
     </MainLayout>
   );
 };

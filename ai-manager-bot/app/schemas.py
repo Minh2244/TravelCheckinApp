@@ -8,6 +8,12 @@ Role = Literal["owner", "admin"]
 
 
 @dataclass
+class ChatHistoryTurn:
+    from_role: str
+    text: str
+
+
+@dataclass
 class BotRequest:
     role: Role
     route: str
@@ -15,6 +21,7 @@ class BotRequest:
     screen_context: dict[str, Any] = field(default_factory=dict)
     available_actions: list[str] = field(default_factory=list)
     mock_context: dict[str, Any] = field(default_factory=dict)
+    chat_history: list[ChatHistoryTurn] = field(default_factory=list)
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "BotRequest":
@@ -26,6 +33,22 @@ class BotRequest:
         if len(text) < 2:
             raise ValueError("text or message is required")
 
+        history_payload = payload.get("chat_history") or payload.get("history") or []
+        chat_history: list[ChatHistoryTurn] = []
+        if isinstance(history_payload, list):
+            for item in history_payload[-8:]:
+                if not isinstance(item, dict):
+                    continue
+                turn_text = str(item.get("text") or "").strip()
+                if not turn_text:
+                    continue
+                chat_history.append(
+                    ChatHistoryTurn(
+                        from_role=str(item.get("from") or item.get("role") or ""),
+                        text=turn_text,
+                    ),
+                )
+
         return cls(
             role=role,
             route=str(payload.get("route") or ""),
@@ -33,7 +56,18 @@ class BotRequest:
             screen_context=dict(payload.get("screen_context") or {}),
             available_actions=list(payload.get("available_actions") or []),
             mock_context=dict(payload.get("mock_context") or {}),
+            chat_history=chat_history,
         )
+
+    def recent_history_text(self, *, only_user: bool = True, limit: int = 4) -> str:
+        values: list[str] = []
+        for item in reversed(self.chat_history):
+            if only_user and item.from_role not in ("user", "owner", "admin"):
+                continue
+            values.append(item.text)
+            if len(values) >= limit:
+                break
+        return " ".join(reversed(values))
 
 
 @dataclass
@@ -66,6 +100,7 @@ class BotResponse:
     answer: str
     action_plan: ActionPlan
     warnings: list[str] = field(default_factory=list)
+    llm: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,4 +119,5 @@ class BotResponse:
                 "warnings": self.action_plan.warnings,
             },
             "warnings": self.warnings,
+            "llm": self.llm,
         }

@@ -1,4 +1,6 @@
 import type { Response } from "express";
+import { pool } from "../config/database";
+import type { RowDataPacket } from "mysql2/promise";
 
 export type RealtimeEvent = {
   type: string;
@@ -87,3 +89,17 @@ export const publishToAll = (event: RealtimeEvent) => {
     }
   }
 };
+
+export const notifyAdmins = async (event: RealtimeEvent) => {
+  try {
+    const [adminRows] = await pool.query<RowDataPacket[]>(
+      `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
+    );
+    for (const row of adminRows) {
+      publishToUser(row.user_id, event);
+    }
+  } catch (err) {
+    console.error("[SSE] Error notifying admins:", err);
+  }
+};
+

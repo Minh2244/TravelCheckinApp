@@ -85,7 +85,14 @@ SLANG_MAP: dict[str, str] = {
 
 PHRASE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (r"\bdoang\s+thu\b", " doanh thu "),
+    (r"\bdanh\s+thua\b", " doanh thu "),
+    (r"\bdoanh\s+thua\b", " doanh thu "),
+    (r"\bdanh\s+thu\b", " doanh thu "),
+    (r"\bdoanh\s+tu\b", " doanh thu "),
+    (r"\bdonh\s+thu\b", " doanh thu "),
+    (r"\bdoan\s+thu\b", " doanh thu "),
     (r"\bdoanh\s+thuu\b", " doanh thu "),
+    (r"\bso\s+sanh\b", " so sanh "),
     (r"\bdanh\s+gai\b", " danh gia "),
     (r"\bdanh\s+giaa\b", " danh gia "),
     (r"\bkhuyen\s+mai\b", " khuyen mai "),

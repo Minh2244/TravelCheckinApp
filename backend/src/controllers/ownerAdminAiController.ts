@@ -34,11 +34,26 @@ function buildBotPayload(req: Request, role: ManagerAiRole, route: string): Mana
     process.env.NODE_ENV === "production"
       ? {}
       : sanitizeManagerAiContext(req.body?.mock_context || {});
+  const rawHistory = Array.isArray(req.body?.chat_history) ? req.body.chat_history : [];
+  const chatHistory = rawHistory
+    .slice(-8)
+    .map((item: unknown) => {
+      if (!item || typeof item !== "object") return null;
+      const value = item as { from?: unknown; text?: unknown };
+      const text = String(value.text || "").trim();
+      if (!text) return null;
+      return {
+        from: String(value.from || "user"),
+        text,
+      };
+    })
+    .filter(Boolean) as Array<{ from: string; text: string }>;
 
   return {
     role,
     route,
     message: getMessageFromRequest(req),
+    chat_history: chatHistory,
     screen_context: screenContext,
     mock_context: mockContext,
     available_actions: getAvailableManagerAiActions({ role, route }),
@@ -135,6 +150,12 @@ export function createOwnerAdminAiController(role: ManagerAiRole) {
           sendPolicyBlocked(res, actionPolicy);
           return;
         }
+
+        const actionPlan = data.action_plan as any;
+        if (actionPlan && actionPlan.requires_confirmation) {
+          actionPlan.command_id = require("crypto").randomUUID();
+        }
+
         res.json({ success: true, ...data });
       } catch (error) {
         handleBotError(res, error);
@@ -165,9 +186,56 @@ export function createOwnerAdminAiController(role: ManagerAiRole) {
           sendPolicyBlocked(res, actionPolicy);
           return;
         }
+
+        const actionPlan = data.action_plan as any;
+        if (actionPlan && actionPlan.requires_confirmation) {
+          actionPlan.command_id = require("crypto").randomUUID();
+        }
+
         res.json({ success: true, preview_only: true, ...data });
       } catch (error) {
         handleBotError(res, error);
+      }
+    },
+
+    executeAction: async (req: Request, res: Response): Promise<void> => {
+      const route = getRouteFromRequest(req);
+      const policy = evaluateManagerAiPolicy({ role, actualRole: req.userRole, route });
+      if (!policy.allowed) {
+        sendPolicyBlocked(res, policy);
+        return;
+      }
+
+      const { command_id, action_key, action_plan } = req.body;
+      if (!command_id || !action_key || !action_plan) {
+        res.status(400).json({ success: false, message: "Thiếu thông tin command_id, action_key, hoặc action_plan" });
+        return;
+      }
+
+      const actionPolicy = validateReturnedAction(role, action_key, getAvailableManagerAiActions({ role, route }));
+      if (!actionPolicy.allowed) {
+        sendPolicyBlocked(res, actionPolicy);
+        return;
+      }
+
+      try {
+        // Thực tế nên ghi DB action run với status awaiting_confirmation ở bước chat/planAction
+        // Ở đây execute trực tiếp từ payload FE truyền lên (nếu chưa lưu DB).
+        const { executeManagerAiAction } = await import("../services/ai-manager/actionExecutor");
+
+        // Ensure ai_action_runs record exists or is created before execute
+        // For simplicity we create it in executeManagerAiAction if needed
+        const result = await executeManagerAiAction({
+          command_id,
+          actor_user_id: req.userId || 1, // Fallback to 1 if req.userId is not set by auth middleware
+          role,
+          route,
+          action_key,
+          action_plan,
+        });
+        res.json({ success: true, ...result });
+      } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message || "Lỗi thực thi action" });
       }
     },
   };

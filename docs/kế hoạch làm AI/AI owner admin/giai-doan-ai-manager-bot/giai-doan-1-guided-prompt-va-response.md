@@ -1,164 +1,58 @@
-# Giai đoạn 1 - Guided prompt và câu trả lời tự nhiên
+# Giai doan 1 - Guided prompt, response tu nhien va GPT reasoning
 
-## Mục tiêu
+## Muc tieu
 
-Làm bot dễ dùng hơn trước khi nối Backend thật:
+Nang cap bot tu muc "intent classifier + template" len muc tro ly noi chuyen on hon.
 
-- Có câu hỏi gợi ý theo role/route.
-- Người dùng bấm chip gợi ý thì bot hiểu intent tốt hơn.
-- Câu trả lời bớt thô, giống trợ lý hơn.
-- Có mock context đủ để test doanh thu, review, voucher, admin.
+## Huong lam
 
-## Trạng thái hiện tại
+### 1. Guided prompt theo role/route
 
-Đã làm:
+- Owner dashboard
+- Owner reviews
+- Owner vouchers
+- Admin dashboard
+- Admin reviews
+- Admin users
+- Admin vouchers
 
-- Tạo `ai-manager-bot/app/prompt_suggestions.py`.
-- Thêm endpoint `GET /suggestions`.
-- Owner route cấm trả suggestion rỗng.
-- Owner dashboard/reviews/vouchers có guided prompt.
-- Admin có guided prompt read và critical preview.
-- Sửa `response_composer.py` để trả lời tự nhiên hơn và có dấu.
-- Thêm unit test cho suggestions và response.
-- Tạo `ai-manager-bot/tests/fixtures/evaluation_cases.json` để có bộ câu cố định.
-- Tạo `ai-manager-bot/app/evaluator.py`.
-- Thêm endpoint `GET /evaluate/default` để chạy nhanh bộ câu cố định.
-- Sửa matcher từ khóa để tránh lỗi dính từ ngắn như `hi` trong `tình hình`, `cấu hình`.
-- Bổ sung rule cho câu miền Nam/viết tắt như `rep`, `chê`, `ưu đãi`, `hoa hồng`.
+Route cam cua Owner thi khong hien bubble, khong hien prompt.
 
-Chưa làm:
+### 2. GPT lo phan ngon ngu
 
-- Chưa mở rộng `evaluation_cases.json` lên bộ lớn 20+ câu cho mỗi nhóm.
-- Chưa nối guided prompt lên Website.
+GPT API duoc dung cho:
 
-## Chức năng cần làm
+- hieu cau hoi tu nhien
+- hieu follow-up
+- dien dat lai cau tra loi
+- tom tat de doc de hieu
+- soan draft review/voucher
 
-### 1. Guided prompt trong `ai-manager-bot`
+GPT API khong duoc:
 
-Tạo module:
+- tu doc database
+- tu quyet dinh quyen
+- tu execute action
 
-```text
-ai-manager-bot/app/prompt_suggestions.py
-```
+### 3. ai-manager-bot van giu guard
 
-Endpoint:
+`ai-manager-bot` van phai:
 
-```text
-GET /suggestions?role=owner&route=/owner/dashboard
-GET /suggestions?role=admin&route=/admin/users
-```
+- gan intent
+- gan risk level
+- chan route cam
+- tao action plan
+- ep warning/xac nhan
 
-Response:
+## API can co
 
-```json
-{
-  "suggestions": [
-    {
-      "id": "owner_dashboard_revenue_today",
-      "title": "Doanh thu hôm nay",
-      "prompt": "Hôm nay doanh thu quán tăng hay giảm?",
-      "intent_hint": "owner_revenue_summary",
-      "risk_level": "read",
-      "requires_confirmation": false
-    }
-  ]
-}
-```
+- `GET /suggestions`
+- `POST /chat`
+- `POST /plan-action`
 
-### 2. Route policy cho suggestion
+## Tieu chi hoan thanh
 
-Owner không được nhận suggestion ở route cấm:
-
-```text
-/owner/front-office
-/owner/front-office/*
-/owner/bookings
-/owner/payments
-/owner/location-ops/*
-```
-
-Nếu route bị cấm:
-
-```json
-{
-  "suggestions": [],
-  "disabled_reason": "OWNER_AI_DISABLED_ON_OPERATIONS_ROUTE"
-}
-```
-
-### 3. Response composer tự nhiên hơn
-
-Sửa:
-
-```text
-ai-manager-bot/app/response_composer.py
-```
-
-Mục tiêu:
-
-- Với doanh thu: nếu có mock context thì nói số liệu, so sánh tăng/giảm, gợi ý hành động.
-- Với review: tóm tắt vấn đề, gợi ý câu trả lời.
-- Với voucher: gợi ý ưu đãi cụ thể.
-- Với small talk: trả lời thân thiện nhưng không lan man.
-- Với blocked action: nói rõ vì sao không làm được và hướng dẫn user tự thao tác.
-
-### 4. Evaluation cases
-
-Tạo:
-
-```text
-ai-manager-bot/tests/fixtures/evaluation_cases.json
-```
-
-Nội dung nên có tối thiểu:
-
-- 20 câu Owner doanh thu.
-- 20 câu Owner review.
-- 20 câu Owner voucher.
-- 20 câu Owner bị cấm.
-- 20 câu Admin read.
-- 20 câu Admin critical.
-- 20 câu small talk.
-
-## Lệnh cần chạy
-
-Trong terminal đang activate `.venv`:
-
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-python -m unittest discover -s tests -p "test_*.py"
-```
-
-Chạy API:
-
-```powershell
-uvicorn app.main:app --reload --port 8090
-```
-
-Test suggestions:
-
-```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:8090/suggestions?role=owner&route=/owner/dashboard' -Method Get
-```
-
-Test chat:
-
-```powershell
-$body = @{ role = 'owner'; message = 'hôm nay doanh thu quán tăng hay giảm'; route = '/owner/dashboard' } | ConvertTo-Json -Compress
-Invoke-RestMethod -Uri 'http://127.0.0.1:8090/chat' -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
-```
-
-Test bộ câu cố định:
-
-```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:8090/evaluate/default' -Method Get
-```
-
-## Tiêu chí hoàn thành
-
-- `/suggestions` trả đúng prompt theo role/route.
-- Owner route cấm không có suggestion.
-- `/chat` trả câu tự nhiên hơn, không còn câu thô kiểu “Action đề xuất”.
-- `/evaluate/default` chạy được và không có case fail ở bộ test hiện tại.
-- Unit test OK.
-- Không cần nối Backend thật.
+- Prompt goi y ra dung theo role/route
+- Cac cau hoi follow-up nhu `thang 5 thi sao`, `so voi thang 6` duoc hieu tot hon
+- Cac cau capability nhu `ban lam duoc gi` tra loi dung man hinh hien tai
+- Neu GPT loi, bot van tra fallback an toan

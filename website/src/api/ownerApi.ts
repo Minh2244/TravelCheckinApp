@@ -209,7 +209,7 @@ const ownerApi = {
     return res.data;
   },
 
-  getBookings: async (params?: { status?: string; location_id?: number }) => {
+  getBookings: async (params?: { status?: string; location_id?: number; limit?: number | "all" }) => {
     const res = await axiosClient.get("/owner/bookings", { params });
     return res.data;
   },
@@ -240,7 +240,7 @@ const ownerApi = {
     return res.data;
   },
 
-  getPayments: async (params?: { status?: string }) => {
+  getPayments: async (params?: { status?: string; limit?: number | "all" }) => {
     const res = await axiosClient.get("/owner/payments", { params });
     return res.data;
   },

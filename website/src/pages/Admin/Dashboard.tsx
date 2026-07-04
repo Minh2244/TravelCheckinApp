@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Button,
@@ -31,6 +31,7 @@ import {
 } from "recharts";
 import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
+import ManagerAiBubble from "../../components/ManagerAiBubble";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
 import InvoiceExportModal from "../../components/InvoiceExportModal";
@@ -178,6 +179,51 @@ const AdminDashboard = () => {
     else if (val === "year") setDateRange([today.startOf('year'), today.endOf('year')]);
     else if (val === "all") setDateRange([dayjs('2020-01-01'), today]);
   };
+
+  const monthlyRevenue = useMemo(() => {
+    const map = new Map<string, { monthKey: string; month: number; year: number; total: number }>();
+    for (const invoice of invoices) {
+      const date = dayjs(invoice.payment_time);
+      if (!date.isValid()) continue;
+      const key = date.format("YYYY-MM");
+      const prev = map.get(key) || {
+        monthKey: key,
+        month: date.month() + 1,
+        year: date.year(),
+        total: 0,
+      };
+      prev.total += Number(invoice.amount || 0);
+      map.set(key, prev);
+    }
+    return Array.from(map.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  }, [invoices]);
+
+  const managerAiContext = useMemo(
+    () => ({
+      periodLabel:
+        rangeType === "today"
+          ? "hôm nay"
+          : rangeType === "7days"
+            ? "7 ngày"
+            : rangeType === "month"
+              ? "1 tháng"
+              : rangeType === "year"
+                ? "1 năm"
+                : rangeType === "all"
+                  ? "tất cả"
+                  : `${dateRange[0].format("DD/MM/YYYY")} - ${dateRange[1].format("DD/MM/YYYY")}`,
+      activeLocations: stats?.kpis?.activeLocations || 0,
+      totalUsers: stats?.kpis?.totalUsers || 0,
+      totalReviews: stats?.kpis?.totalReviews || 0,
+      activeVouchers: stats?.kpis?.activeVouchers || 0,
+      serviceTrends: stats?.serviceTrends || {},
+      revenueTrend: stats?.charts?.revenueTrend || [],
+      monthlyRevenue,
+      topUsers: stats?.top?.users || [],
+      topOwners: stats?.top?.owners || [],
+    }),
+    [dateRange, monthlyRevenue, rangeType, stats],
+  );
 
   if (!user || loading) {
     return (
@@ -516,6 +562,7 @@ const AdminDashboard = () => {
         locations={locations}
         owners={owners}
       />
+      <ManagerAiBubble screenContext={managerAiContext} />
     </MainLayout>
   );
 };

@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse
 from .evaluator import evaluate_cases, evaluate_default_cases
 from .inference import predict_payload, process_payload
 from .prompt_suggestions import get_prompt_suggestions
+from .settings import get_settings
 
 
 class Utf8JSONResponse(JSONResponse):
@@ -21,7 +22,15 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "service": "ai-manager-bot", "mode": "sandbox"}
+    settings = get_settings()
+    return {
+        "ok": True,
+        "service": "ai-manager-bot",
+        "mode": "sandbox",
+        "llm_provider": settings.llm_provider,
+        "llm_enabled": settings.openai_enabled,
+        "model": settings.openai_model if settings.openai_enabled else None,
+    }
 
 
 @app.post("/predict")

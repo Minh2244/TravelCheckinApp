@@ -326,6 +326,7 @@ export const getLocationServicesPublic = async (
          FROM bookings b
          WHERE b.location_id = ?
            AND b.status IN ('pending', 'confirmed')
+           AND (b.notes IS NULL OR b.notes NOT LIKE '%PREPAY_UNCONFIRMED%')
            AND DATE(b.check_in_date) <= ?
            AND (b.check_out_date IS NULL OR DATE(b.check_out_date) > ?)
          GROUP BY b.service_id

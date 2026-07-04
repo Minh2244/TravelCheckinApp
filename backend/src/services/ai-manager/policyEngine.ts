@@ -14,6 +14,7 @@ export interface ManagerAiPolicyDecision {
 
 const OWNER_BLOCKED_ROUTE_PREFIXES = [
   "/owner/front-office",
+  "/owner/navigate",
   "/owner/bookings",
   "/owner/payments",
   "/owner/location-ops",

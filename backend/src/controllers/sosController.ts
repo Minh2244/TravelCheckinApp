@@ -197,6 +197,23 @@ export const stopSosAlert = async (
          WHERE alert_id = ? AND user_id = ?`,
         [alertId, userId],
       );
+
+      // Gửi sự kiện SSE realtime cho tất cả Admin
+      try {
+        const { publishToUsers } = require("../utils/realtime");
+        const [adminRows] = await pool.query<any[]>(
+          `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
+        );
+        const adminIds = adminRows.map((r) => r.user_id);
+        publishToUsers(adminIds, {
+          type: "sos_status_update",
+          alert_id: alertId,
+          status: "resolved",
+        });
+      } catch (sseErr: any) {
+        console.error("Lỗi gửi SSE dừng SOS:", sseErr.message);
+      }
+
       res.json({ success: true, data: { alert_id: alertId } });
       return;
     }
@@ -207,6 +224,22 @@ export const stopSosAlert = async (
        WHERE user_id = ? AND status IN ('pending','processing')`,
       [userId],
     );
+
+    // Gửi sự kiện SSE realtime cho tất cả Admin
+    try {
+      const { publishToUsers } = require("../utils/realtime");
+      const [adminRows] = await pool.query<any[]>(
+        `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
+      );
+      const adminIds = adminRows.map((r) => r.user_id);
+      publishToUsers(adminIds, {
+        type: "sos_status_update",
+        alert_id: null,
+        status: "resolved",
+      });
+    } catch (sseErr: any) {
+      console.error("Lỗi gửi SSE dừng SOS:", sseErr.message);
+    }
 
     res.json({ success: true });
   } catch (error) {

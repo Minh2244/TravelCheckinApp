@@ -109,6 +109,41 @@ const Sos = () => {
     };
   }, [tracking, alertId]);
 
+  useEffect(() => {
+    if (!tracking) return;
+
+    const token = sessionStorage.getItem("accessToken");
+    if (!token) return;
+
+    const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
+    const sseUrl = `${base}/api/events?token=${encodeURIComponent(token)}`;
+    const sse = new EventSource(sseUrl);
+
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "sos_status_update") {
+          const newStatus = data.status;
+          if (newStatus === "processing") {
+            setStatus("Đang xử lý - Đội cứu hộ đang di chuyển đến vị trí của bạn!");
+          } else if (newStatus === "resolved") {
+            setStatus("Cứu hộ thành công! Bạn đã an toàn.");
+            setTimeout(() => {
+              setTracking(false);
+              setAlertId(null);
+            }, 3500);
+          }
+        }
+      } catch (err) {
+        console.error("SSE parse error in Sos.tsx:", err);
+      }
+    };
+
+    return () => {
+      sse.close();
+    };
+  }, [tracking]);
+
   return (
     <UserLayout title="SOS" activeKey="/user/sos">
       <section className="user-section p-6 sm:p-8">

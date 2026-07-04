@@ -1,28 +1,58 @@
-# Lộ trình giai đoạn AI Manager Bot
+# Lo trinh giai doan AI Manager Bot
 
-Đây là bộ file tách riêng từ kế hoạch AI Owner/Admin để triển khai theo từng giai đoạn nhỏ, dễ kiểm tra và dễ dừng nếu có lỗi.
+Bo file nay dung de trien khai AI Owner/Admin theo tung giai doan nho, de test va dung lai an toan neu co loi.
 
-Nguyên tắc chung:
+## Huong chot moi
 
-- `ai-manager-bot` là service AI riêng, chạy độc lập trước.
-- Backend Node.js vẫn là lớp kiểm quyền, lấy dữ liệu thật, preview, xác nhận, execute và audit.
-- Bot không tự đọc MySQL production, không tự execute action.
-- Owner bị chặn tuyệt đối khỏi vận hành, booking/payment/front-office, location/service CRUD và bảo mật/tài chính.
-- Admin có phạm vi rộng hơn nhưng action nguy hiểm luôn phải preview và xác nhận.
+- `ai-manager-bot` van la service AI noi bo chinh cua du an.
+- GPT API duoc them de lo phan:
+  - hieu ngon ngu tu nhien
+  - nho ngu canh chat tot hon
+  - soan cau tra loi tu nhien hon
+- Backend Node.js van la lop quyet dinh cuoi:
+  - auth
+  - RBAC
+  - context sanitizer
+  - read data that
+  - preview
+  - confirm
+  - execute
+  - audit
 
-## Thứ tự làm
+## Nguyen tac chung
 
-1. [Giai đoạn 0 - Sandbox và nền train model](./giai-doan-0-sandbox-va-train-model.md)
-2. [Giai đoạn 1 - Guided prompt và câu trả lời tự nhiên](./giai-doan-1-guided-prompt-va-response.md)
-3. [Giai đoạn 2 - Backend adapter an toàn](./giai-doan-2-backend-adapter-an-toan.md)
-4. [Giai đoạn 3 - Owner read/draft ngoài vận hành](./giai-doan-3-owner-read-draft.md)
-5. [Giai đoạn 4 - Admin read và critical preview](./giai-doan-4-admin-read-critical-preview.md)
-6. [Giai đoạn 5 - Action registry, confirmation và audit](./giai-doan-5-action-registry-confirmation-audit.md)
-7. [Giai đoạn 6 - Quality dashboard và rollout](./giai-doan-6-quality-dashboard-rollout.md)
+- Bot khong duoc tu doc MySQL production.
+- Bot khong duoc tu execute action.
+- GPT API khong duoc vuot quyen.
+- Owner bi chan tuyet doi khoi van hanh, booking/payment/front-office, location/service CRUD va bank/security.
+- Admin co pham vi rong hon nhung action nguy hiem luon phai preview va xac nhan.
 
-## Trạng thái hiện tại
+## Thu tu lam moi
 
-- Giai đoạn 0: Đã làm phần lớn và đã test chạy được.
-- Giai đoạn 1: Đã có guided prompt, response tự nhiên hơn, bộ evaluate mặc định và endpoint `/evaluate/default`. Còn có thể mở rộng dataset lên bộ lớn hơn.
-- Giai đoạn 2: Đã có backend adapter an toàn và build pass. Chưa nối UI Website, chưa execute action thật.
-- Giai đoạn 3 trở đi: Chưa triển khai.
+1. Giai doan 0 - Sandbox, model local, env va LLM provider
+2. Giai doan 1 - Guided prompt, response tu nhien, GPT reasoning layer
+3. Giai doan 2 - Backend adapter an toan
+4. Giai doan 3 - Owner read/draft ngoai van hanh
+5. Giai doan 4 - Admin read va critical preview
+6. Giai doan 5 - Action registry, confirmation va audit
+7. Giai doan 6 - Quality dashboard va rollout
+
+## Y nghia cua huong hybrid
+
+Huong nay van duoc tinh la AI minh tu lam vi:
+
+- Minh tu xay `ai-manager-bot`
+- Minh tu xay policy engine
+- Minh tu xay action registry
+- Minh tu xay context builder va sanitizer
+- Minh tu xay prompt suggestions theo role/route
+- Minh tu xay preview/confirmation/audit
+
+GPT API chi la lop hieu ngon ngu va soan cau.
+
+## Trang thai chot
+
+- Giai doan 0: da co nen sandbox va train model local.
+- Giai doan 1: da co guided prompt va response co ban, can nang cap theo huong GPT.
+- Giai doan 2: da co adapter backend co ban, can chot lai contract cho hybrid mode.
+- Giai doan 3 tro di: tiep tuc lam tren nen moi.

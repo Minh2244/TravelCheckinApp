@@ -13,7 +13,7 @@ A comprehensive full-stack travel ecosystem connecting tourists with service pro
 - [III. Backend API & AI Services](#iii-backend-api--ai-services)
 - [IV. Mobile App (Tourist Client)](#iv-mobile-app-tourist-client)
 - [V. System Architecture & Roles](#v-system-architecture--roles)
-- [VI. Database Schema (59 Tables)](#vi-database-schema-59-tables)
+- [VI. Database Schema (60 Tables)](#vi-database-schema-60-tables)
 - [VII. Development Progress](#vii-development-progress)
 - [VIII. Author & License](#viii-author--license)
 
@@ -29,7 +29,7 @@ This project is a full-stack travel ecosystem consisting of three main component
 | **Backend API & AI** | RESTful server, Real-time services & AI Bot | Node.js, Express 5, Python (AI), MySQL |
 | **Mobile App** | Tourist client for check-in & exploration | Expo (React Native), TypeScript |
 
-The system enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, plan itineraries, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations. The platform integrates Google Gemini AI for intelligent chatbot assistance and personalized recommendations.
+The system enables tourists to discover locations, book services (hotel rooms, restaurant tables, tourist tickets), check in via QR codes, plan itineraries, earn rewards through a leaderboard system, and receive emergency assistance through SOS alerts. Service owners are equipped with a full POS/PMS system to manage their business operations. The platform integrates Google Gemini AI (for users) and OpenAI GPT (for admin/owners) for intelligent chatbot assistance and personalized recommendations.
 
 ---
 
@@ -109,16 +109,19 @@ The backend serves as the central nervous system, handling data persistence, bus
 | Database | MySQL (mysql2, promise-based pool) |
 | Authentication | JWT (jsonwebtoken), bcrypt |
 | Real-time | Socket.IO, Server-Sent Events (SSE) |
-| AI | Google Gemini (@google/generative-ai) |
+| AI | Google Gemini (@google/generative-ai) & OpenAI GPT |
 | Push Notifications | Firebase Cloud Messaging (firebase-admin) |
 | File Storage | MySQL LONGBLOB (images table) |
 
-### 2. Key Features
-- **11 Robust API Route Groups:** Covering auth, admin, owner, user, bookings, locations, SOS, chat, geo, push, and events.
+### 2. Key Features\n- **11 Robust API Route Groups:** Covering auth, admin, owner, user, bookings, locations, SOS, chat, geo, push, and events.
 - **Role-Based Access Control:** Strict JWT middleware to segregate Admin, Owner, Employee, and User operations.
 - **Real-Time Engine:** Websockets for location chat, SSE for booking status updates.
 - **AI Integration (Customer Assistant):** Context-aware Gemini AI integrated into the user flow.
-- **AI Manager Bot (Microservice):** Isolated Python-based AI service for Admin/Owner analytics and reviews processing.
+- **AI Manager Bot (`ai-manager-bot`):** Python (FastAPI) Microservice that acts as an intelligent assistant for Admin and Owners. It provides natural language capabilities to:
+  - Analyze and summarize customer reviews for owners.
+  - Predict user intent (e.g., locking users, modifying services) and suggest prompt actions.
+  - Evaluate system policies and extract key entities.
+  - Tech Stack: Python 3.11, FastAPI, PyTorch (for intent models), OpenAI GPT.
 - **Image Processing:** Automated resizing and compression using Sharp before storing in MySQL LONGBLOB.
 
 ---
@@ -178,22 +181,22 @@ TravelCheckinApp/
 
 ---
 
-## VI. Database Schema (59 Tables)
+## VI. Database Schema (60 Tables)
 
-The system uses a relational **MySQL** database with **59 tables** organized across 12 functional domains to ensure data integrity for complex business workflows. 
+The system uses a relational **MySQL** database with **60 tables** organized across 12 functional domains to ensure data integrity for complex business workflows. 
 
 1. **Authentication and Users (8 tables):** Core user accounts, owner profiles, JWT sessions, OTP, blacklist.
 2. **Locations and Services (3 tables):** Business locations, bookable services, service categories.
 3. **Bookings and Payments (7 tables):** Bookings, QR tickets, table reservations, pre-orders, payments, commissions.
 4. **Hotel PMS (3 tables):** Room inventory, guest stays, minibar/service charges.
-5. **Restaurant POS (5 tables):** Dining areas, drag-and-drop tables, active orders, order items.
+5. **Restaurant POS (6 tables):** Dining areas, drag-and-drop tables, active orders, order items.
 6. **Check-in and SOS (2 tables):** GPS check-ins, emergency alerts.
 7. **Reviews and Reports (4 tables):** User reviews, owner replies, reports, owner violations.
 8. **Voucher System (5 tables):** Voucher definitions, mapping, usage history, user wallet.
 9. **Chat and Notifications (6 tables):** General chat, location chat, push notifications, read tracking.
 10. **Image Storage (3 tables):** Binary image data (LONGBLOB), polymorphic links.
 11. **Itinerary (2 tables):** Travel itineraries, day-by-day items.
-12. **System and Utilities (8 tables):** Favorites, diary, AI chat history, audit logs, background tasks.
+12. **System and Utilities (11 tables):** Favorites, diary, AI chat history, audit logs, background tasks.
 
 *(The complete schema with foreign key constraints and query-optimized indexes is stored in `TravelCheckinApp.sql` at the project root).*
 
@@ -303,7 +306,7 @@ The system uses a relational **MySQL** database with **59 tables** organized acr
 | 47 | `itineraries` | User-created travel itineraries with date range |
 | 48 | `itinerary_items` | Day-by-day itinerary items with location and notes |
 
-#### 12. System and Utilities (10 tables)
+#### 12. System and Utilities (11 tables)
 
 | # | Table | Description |
 |---|-------|-------------|
@@ -418,12 +421,12 @@ The system uses a relational **MySQL** database with **59 tables** organized acr
 
 - ✔️ **Phase 1** — Database Schema Design & Core Backend API (Auth, Roles, Middleware)
 - ✔️ **Phase 2** — Web Dashboard for Admin & Owner management module
-- ✔️ **Phase 3** — Complete database schema (59 tables) and restore full functionality
+- ✔️ **Phase 3** — Complete database schema (60 tables) and restore full functionality
 - ✔️ **Phase 4** — Mobile App Development (Auth, Home, Map, Booking & Unified Wallet)
 - ❌ **Phase 5** — Mobile App (User Utilities, Saved Locations, Diary, SOS & Vouchers)
 - ❌ **Phase 6** — Mobile App (AI Chat, Location Chat & Itinerary Planner)
-- ❌ **Phase 7** — Hotel PMS and Restaurant POS drag-and-drop refinement
-- ❌ **Phase 8** — AI Integration across Web and Mobile with Google Gemini
+- ✔️ **Phase 7** — Hotel PMS and Restaurant POS drag-and-drop refinement
+- ✔️ **Phase 8** — AI Integration across Web and Mobile with Google Gemini
 
 ---
 
@@ -473,8 +476,37 @@ applicable international copyright treaties.
 The project name "Travel Check-in" and all associated logos, marks, and branding elements are the property of Mai Nhut Minh. Use of the brand name in any derivative, fork, or related project without written permission is prohibited.
 
 ### Third-Party Acknowledgments
-This project uses the following open-source technologies: Node.js, Express, React, Ant Design, Tailwind CSS, Socket.IO, MySQL, Google Gemini API, Firebase, and OpenStreetMap.
+This project uses the following open-source technologies: Node.js, Express, React, Ant Design, Tailwind CSS, Socket.IO, MySQL, Google Gemini API, OpenAI API, Firebase, and OpenStreetMap.
 
 ---
 
-*This README was last updated on June 26, 2026.*
+## IX. Development Progress Tracking
+
+### 1. Backend (100%)
+- [x] RESTful API endpoints & Controllers
+- [x] Real-time sockets (Chat, SSE)
+- [x] Role-based authentication
+- [x] Database Schema Implementation (60 tables)
+
+### 2. Website (100%)
+- [x] **Admin:** Location/service approval, commission, history, users management
+- [x] **Owner:** POS/PMS, location management, review replies, vouchers
+- [x] **Element:** Reusable UI components (Ant Design customized)
+- [x] **User:** Booking, location discovery, ticket wallet, chat
+
+### 3. Mobile User (75%)
+- [x] Interactive Maps & Navigation
+- [x] Smart Check-in
+- [x] QR Ticket Wallet
+- [ ] User Utilities (SOS, Diary, Favorites)
+
+### 4. AI Ecosystem (100%)
+- [x] **AI User (Gemini):** Google Gemini API integration for user recommendations and itinerary planning
+- [x] **ai-manager-bot (GPT):** Admin & Owner AI assistant using OpenAI GPT (Sentiment analysis, Intent prediction, semantic search, business insights)
+
+### Summary
+- **Core Modules Progress (Backend, Website, Mobile User):** 91.6% (11/12 core modules completed)
+- *(Note: Modules in Phase 7 (PMS/POS) and Phase 8 (AI Ecosystem) are considered extra/bonus phases and are not included in the overall core progress percentage).*
+
+
+*This README was last updated on July 04, 2026.*

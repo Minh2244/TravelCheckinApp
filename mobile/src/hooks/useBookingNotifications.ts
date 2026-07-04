@@ -37,6 +37,19 @@ export function useBookingNotifications() {
           DeviceEventEmitter.emit("booking_updated", data);
         }
 
+        if (type === "sos_status_update") {
+          DeviceEventEmitter.emit("sos_status_updated", data);
+          if (data.status === "processing") {
+            showToast("🆘 SOS: Đội cứu hộ đang di chuyển đến vị trí của bạn!", 6000);
+          } else if (data.status === "resolved") {
+            showToast("✅ SOS: Cứu hộ thành công! Bạn đã an toàn.", 6000);
+          }
+        }
+
+        if (type === "new_message") {
+          DeviceEventEmitter.emit("chat_unread_update", data);
+        }
+
         if (type === "booking_confirmed") {
           showToast(`🎉 ${message || `Đơn đặt bàn #${booking_id} đã được duyệt!`}`, 5000);
         } else if (type === "booking_cancelled") {

@@ -9,6 +9,7 @@ import {
   DatePicker,
   Tag,
   message,
+  Select,
 } from "antd";
 import dayjs from "dayjs";
 import type { ColumnsType } from "antd/es/table";
@@ -50,6 +51,16 @@ type AdminBankInfo = {
 };
 
 const OwnerCommissions = () => {
+  const [exportYear, setExportYear] = useState<string>("all");
+
+  const yearOptions = useMemo(() => {
+    const currentYear = dayjs().year();
+    const options = [{ label: "Tất cả các năm", value: "all" }];
+    for (let i = 0; i < 5; i++) {
+      options.push({ label: `Năm ${currentYear - i}`, value: String(currentYear - i) });
+    }
+    return options;
+  }, []);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<CommissionRow[]>([]);
   const [pendingItems, setPendingItems] = useState<PendingPaymentRow[]>([]);
@@ -187,6 +198,14 @@ const OwnerCommissions = () => {
     return pendingItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
   }, [pendingItems]);
 
+  const paidItems = useMemo(
+    () => items.filter((x) => String(x?.status || "") === "paid"),
+    [items],
+  );
+  const paidTotal = useMemo(() => {
+    return paidItems.reduce((sum, x) => sum + Number(x?.total_due || 0), 0);
+  }, [paidItems]);
+
 
 
   const createPaymentRequest = () => {
@@ -318,12 +337,12 @@ const OwnerCommissions = () => {
   return (
     <MainLayout>
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className={`rounded-2xl text-white shadow-md border-none ${unpaidTotal > 0 ? 'bg-gradient-to-r from-orange-500 to-red-600' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>
-            <div className="flex flex-col h-full justify-between gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card styles={{ body: { padding: '16px' } }} className="rounded-2xl text-white shadow-md border-none bg-gradient-to-r from-orange-500 to-red-600">
+            <div className="flex flex-col gap-2">
               <div>
                 <div className="text-white/90 text-sm font-medium mb-1">Cần thanh toán (Đã chốt)</div>
-                <div className="text-3xl font-bold">{formatMoney(unpaidTotal)}</div>
+                <div className="text-2xl font-bold">{formatMoney(unpaidTotal)}</div>
               </div>
               <div className="flex flex-wrap items-end justify-between gap-2 mt-2">
                 {unpaidItems.length > 0 && (
@@ -335,7 +354,7 @@ const OwnerCommissions = () => {
                   </div>
                 )}
                 <Button
-                  size="large"
+                  size="middle"
                   className={`border-none font-semibold shadow-sm ml-auto ${unpaidTotal > 0 ? 'bg-white text-red-600 hover:bg-red-50' : 'bg-white/40 text-white/80 hover:bg-white/40 cursor-not-allowed'}`}
                   onClick={createPaymentRequest}
                   loading={requesting}
@@ -348,11 +367,11 @@ const OwnerCommissions = () => {
           </Card>
 
           {/* Card: submitted, waiting admin approval */}
-          <Card className={`rounded-2xl text-white shadow-md border-none ${submittedTotal > 0 ? 'bg-gradient-to-r from-violet-500 to-purple-600' : 'bg-gradient-to-r from-slate-400 to-slate-500'}`}>
-            <div className="flex flex-col h-full justify-between gap-4">
+          <Card styles={{ body: { padding: '16px' } }} className="rounded-2xl text-white shadow-md border-none bg-gradient-to-r from-violet-500 to-purple-600">
+            <div className="flex flex-col gap-2">
               <div>
                 <div className="text-white/90 text-sm font-medium mb-1">Đã nộp – Chờ Admin duyệt</div>
-                <div className="text-3xl font-bold">{formatMoney(submittedTotal)}</div>
+                <div className="text-2xl font-bold">{formatMoney(submittedTotal)}</div>
               </div>
               <div className="text-white/70 text-xs mt-2">
                 {submittedItems.length > 0
@@ -362,18 +381,18 @@ const OwnerCommissions = () => {
             </div>
           </Card>
 
-          <Card className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md border-none">
-            <div className="flex flex-col h-full justify-between gap-4">
+          <Card styles={{ body: { padding: '16px' } }} className="rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md border-none">
+            <div className="flex flex-col gap-2">
               <div>
                 <div className="text-blue-100 text-sm font-medium mb-1">Tổng tạm tính (Chưa chốt)</div>
-                <div className="text-3xl font-bold">{formatMoney(pendingTotal)}</div>
+                <div className="text-2xl font-bold">{formatMoney(pendingTotal)}</div>
               </div>
               <div className="flex flex-wrap items-end justify-between gap-2 mt-2">
                 <div className="text-blue-100 text-xs opacity-80 max-w-[60%]">
                   Số tiền này là tạm tính từ các giao dịch hoàn thành và chưa được chốt đối soát.
                 </div>
                 <Button
-                  size="large"
+                  size="middle"
                   className={`border-none font-semibold shadow-sm ml-auto ${pendingTotal > 0 ? 'bg-white text-blue-600 hover:bg-blue-50' : 'bg-white/40 text-white/80 hover:bg-white/40 cursor-not-allowed'}`}
                   onClick={handleReconcileCommissions}
                   loading={reconciling}
@@ -384,25 +403,59 @@ const OwnerCommissions = () => {
               </div>
             </div>
           </Card>
+
+          <Card styles={{ body: { padding: '16px' } }} className="rounded-2xl text-white shadow-md border-none bg-gradient-to-r from-emerald-500 to-teal-600">
+            <div className="flex flex-col gap-2">
+              <div>
+                <div className="text-white/90 text-sm font-medium mb-1">Đã thanh toán (Hoàn tất)</div>
+                <div className="text-2xl font-bold">{formatMoney(paidTotal)}</div>
+              </div>
+              <div className="text-white/70 text-xs mt-2">
+                {paidItems.length > 0
+                  ? `Đã thanh toán ${paidItems.length} kỳ hoa hồng.`
+                  : 'Chưa có khoản hoa hồng nào được thanh toán.'}
+              </div>
+            </div>
+          </Card>
         </div>
 
         <Card
           title={
             <div className="flex flex-wrap justify-between items-center gap-2">
               <span>Chi tiết các khoản hoa hồng đã chốt</span>
-              <Button
-                icon={<FileExcelOutlined />}
-                onClick={async () => {
-                  try {
-                    await exportOwnerCommissions(groupedItems, "Owner");
-                  } catch (err: any) {
-                    message.error(err.message || "Lỗi khi xuất Excel");
-                  }
-                }}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
-              >
-                Xuất file
-              </Button>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={exportYear}
+                  onChange={setExportYear}
+                  options={yearOptions}
+                  className="w-36"
+                  placeholder="Chọn năm"
+                />
+                <Button
+                  icon={<FileExcelOutlined />}
+                  onClick={async () => {
+                    try {
+                      let exportData = groupedItems;
+                      if (exportYear !== "all") {
+                        exportData = groupedItems.filter((item) => {
+                          const d = dayjs(item.created_at || item.due_date);
+                          return d.isValid() && d.year() === Number(exportYear);
+                        });
+                      }
+                      if (exportData.length === 0) {
+                        message.info(`Không có dữ liệu trong ${exportYear === "all" ? "tất cả các năm" : "năm " + exportYear}`);
+                        return;
+                      }
+                      await exportOwnerCommissions(exportData, "Owner");
+                    } catch (err: any) {
+                      message.error(err.message || "Lỗi khi xuất Excel");
+                    }
+                  }}
+                  className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
+                >
+                  Xuất file
+                </Button>
+              </div>
             </div>
           }
           loading={loading}

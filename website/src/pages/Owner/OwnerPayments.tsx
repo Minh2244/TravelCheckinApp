@@ -18,7 +18,6 @@ import {
   FileTextOutlined,
   GlobalOutlined,
   ShopOutlined,
-  PrinterOutlined,
   FileExcelOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -712,13 +711,7 @@ export default function OwnerPayments() {
           </div>
         )}
         <div className="mt-4 flex justify-end gap-2 border-t pt-3">
-          <Button
-            size="small"
-            icon={<PrinterOutlined />}
-            onClick={() => handlePrintRow(row)}
-          >
-            In PDF
-          </Button>
+
           <Button
             size="small"
             icon={<FileExcelOutlined />}

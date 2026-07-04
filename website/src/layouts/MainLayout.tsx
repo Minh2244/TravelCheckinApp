@@ -225,6 +225,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           } else if (meta) {
             const body = String(data.message || data.body || data.description || "");
             addAdminNotif({ type: meta.type, title: meta.title, body, link: meta.link });
+          } else if (data.title && data.body) {
+            addAdminNotif({ 
+              type: (data.type as any) || "system", 
+              title: String(data.title), 
+              body: String(data.body), 
+              link: String(data.link || "") 
+            });
           }
         } catch {}
       };
@@ -665,7 +672,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                                     )}
                                   </div>
                                   {n.body && (
-                                    <div className="mt-0.5 text-xs text-slate-500 line-clamp-2">{n.body}</div>
+                                    <div className="mt-0.5 text-xs text-slate-500 line-clamp-3 whitespace-pre-line break-words">{n.body.trim()}</div>
                                   )}
                                   <div className="mt-1.5 text-[11px] text-slate-400">
                                     {new Date(n.at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })}
@@ -757,8 +764,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                                   <div className="text-sm font-semibold text-slate-900">
                                     {String(item.title || "Thông báo")}
                                   </div>
-                                  <div className="mt-1 text-xs leading-5 text-slate-600">
-                                    {String(item.body || "-")}
+                                  <div className="mt-1 text-xs text-slate-600 line-clamp-3 whitespace-pre-line break-words">
+                                    {String(item.body || "-").trim()}
                                   </div>
                                   <div className="mt-2 text-[11px] text-slate-400">
                                     {formatDateTimeVi(item.created_at)}

@@ -180,7 +180,7 @@ const LocationChatBubble = ({
   const activeLocationId = Number(locationId);
 
   // Vị trí định vị bong bóng
-  const positionClass = userRole === "user" ? "bottom-24 right-6" : "bottom-6 right-6";
+  const positionClass = userRole === "user" ? "bottom-24 right-6" : "bottom-6 right-24";
 
   const socketUrl = useMemo(() => resolveSocketUrl(), []);
 
@@ -238,7 +238,8 @@ const LocationChatBubble = ({
   useEffect(() => {
     if (!isOpen) return;
     void fetchHistory(true);
-  }, [isOpen, fetchHistory]);
+    locationChatApi.markRead(activeLocationId).catch(console.error);
+  }, [isOpen, fetchHistory, activeLocationId]);
 
   // 2. Duy trì kết nối Socket ngầm để nhận thông báo tin chưa đọc ngay cả khi đóng chat
   useEffect(() => {
@@ -488,8 +489,21 @@ const LocationChatBubble = ({
           {/* Message List */}
           <div
             ref={scrollRef}
-            className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fafbfc]/50"
+            className="flex-1 overflow-y-auto p-4 space-y-3 relative"
           >
+            {/* Background Image */}
+            {locationImage && (
+              <div 
+                className="absolute inset-0 z-0 opacity-10 pointer-events-none"
+                style={{ 
+                  backgroundImage: `url(${resolveBackendUrl(locationImage)})`, 
+                  backgroundSize: "cover", 
+                  backgroundPosition: "center" 
+                }}
+              />
+            )}
+            
+            <div className="relative z-10 space-y-3 min-h-full">
             {loading && (
               <div className="text-center text-xs text-slate-400 py-8 font-medium">
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mb-1" />
@@ -576,6 +590,7 @@ const LocationChatBubble = ({
                   </div>
                 );
               })}
+            </div>
           </div>
 
           {/* Preview Image block before sending */}

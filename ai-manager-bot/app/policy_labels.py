@@ -71,11 +71,25 @@ ACTION_CATALOG: dict[str, ActionDefinition] = {
         requires_confirmation=False,
         allowed_roles=("owner",),
     ),
+    "owner_export_report": ActionDefinition(
+        action_key="owner_export_report",
+        label="Chuan bi xuat bao cao owner",
+        risk_level="low",
+        requires_confirmation=True,
+        allowed_roles=("owner",),
+    ),
     "admin_revenue_analysis": ActionDefinition(
         action_key="admin_revenue_analysis",
         label="Phan tich doanh thu he thong",
         risk_level="read",
         requires_confirmation=False,
+        allowed_roles=("admin",),
+    ),
+    "admin_export_report": ActionDefinition(
+        action_key="admin_export_report",
+        label="Chuan bi xuat bao cao admin",
+        risk_level="low",
+        requires_confirmation=True,
         allowed_roles=("admin",),
     ),
     "admin_location_review": ActionDefinition(
@@ -107,4 +121,3 @@ ACTION_CATALOG: dict[str, ActionDefinition] = {
         allowed_roles=("owner", "admin"),
     ),
 }
-

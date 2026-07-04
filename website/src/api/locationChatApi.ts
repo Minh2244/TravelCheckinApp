@@ -55,7 +55,19 @@ const locationChatApi = {
     );
     return response.data;
   },
+  getUnreadCounts: async () => {
+    const response = await axiosClient.get<ApiResponse<{ ownerUnread: number; userUnread: number }>>(
+      "/chat/unread-counts"
+    );
+    return response.data;
+  },
+  markRead: async (locationId: number, customerId?: number) => {
+    const response = await axiosClient.post<ApiResponse<void>>(
+      `/chat/location/${locationId}/mark-read`,
+      { customerId }
+    );
+    return response.data;
+  },
 };
-
 
 export default locationChatApi;

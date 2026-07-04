@@ -15,6 +15,7 @@ import {
   publishToUser,
   publishToUsers,
   publishToAll,
+  notifyAdmins,
   type RealtimeEvent,
 } from "../utils/realtime";
 import { publishToLocationPublic, emitToUser } from "../utils/socketHub";
@@ -3011,6 +3012,13 @@ export const createOwnerCommissionPaymentRequest = async (
       );
     }
 
+    notifyAdmins({
+      type: "commission_reconciliation",
+      title: "Yêu cầu đối soát",
+      body: `Chủ cơ sở vừa gửi yêu cầu đối soát số tiền ${totalDue.toLocaleString()} VND.`,
+      link: "/admin/thanh-toan-hoa-hong",
+    }).catch(console.error);
+
     res.json({
       success: true,
       message:
@@ -3177,6 +3185,13 @@ export const createOwnerLocation = async (
       gallery_count: images.length,
       timestamp: new Date(),
     });
+
+    notifyAdmins({
+      type: "location_approval",
+      title: "Địa điểm mới",
+      body: `Địa điểm ${location_name} vừa được tạo và đang chờ duyệt.`,
+      link: "/admin/duyet-dia-diem",
+    }).catch(console.error);
 
     res.status(201).json({
       success: true,
@@ -3349,6 +3364,15 @@ export const updateOwnerLocation = async (
       has_sensitive_change: hasSensitiveChange,
       timestamp: new Date(),
     });
+
+    if (hasSensitiveChange) {
+      notifyAdmins({
+        type: "location_update",
+        title: "Cập nhật địa điểm",
+        body: `Một địa điểm vừa cập nhật thông tin và đang chờ duyệt lại.`,
+        link: "/admin/duyet-dia-diem",
+      }).catch(console.error);
+    }
 
     res.json({
       success: true,
@@ -3941,6 +3965,13 @@ export const createServiceForLocation = async (
       timestamp: new Date(),
     });
 
+    notifyAdmins({
+      type: "service_approval",
+      title: "Dịch vụ mới",
+      body: `Một dịch vụ mới vừa được tạo và đang chờ duyệt.`,
+      link: "/admin/duyet-dich-vu",
+    }).catch(console.error);
+
     res.status(201).json({
       success: true,
       message: "Tạo dịch vụ thành công",
@@ -4115,6 +4146,15 @@ export const updateService = async (
       timestamp: new Date(),
     });
 
+    if (shouldResetAdminApproval) {
+      notifyAdmins({
+        type: "service_update",
+        title: "Cập nhật dịch vụ",
+        body: `Một dịch vụ vừa được cập nhật và đang chờ duyệt lại.`,
+        link: "/admin/duyet-dich-vu",
+      }).catch(console.error);
+    }
+
     res.json({ success: true, message: "Cập nhật dịch vụ thành công" });
   } catch (error: any) {
     res
@@ -4234,9 +4274,10 @@ export const getOwnerBookings = async (
   try {
     const auth = await getAuth(req);
 
-    const { status, location_id } = req.query as {
+    const { status, location_id, limit } = req.query as {
       status?: string;
       location_id?: string;
+      limit?: string;
     };
 
     const params: any[] = [];
@@ -4330,7 +4371,8 @@ export const getOwnerBookings = async (
       params.push(Number(location_id));
     }
 
-    sql += ` ORDER BY b.created_at DESC LIMIT 200`;
+    const limitQuery = limit === "all" ? "" : ` LIMIT ${Number.isFinite(Number(limit)) ? Number(limit) : 200}`;
+    sql += ` ORDER BY b.created_at DESC${limitQuery}`;
 
     const [rows] = await pool.query<RowDataPacket[]>(sql, params);
 
@@ -6372,7 +6414,7 @@ export const getOwnerPayments = async (
 ): Promise<void> => {
   try {
     const auth = await getAuth(req);
-    const { status } = req.query as { status?: string };
+    const { status, limit } = req.query as { status?: string; limit?: string };
 
     const params: any[] = [];
     let sql = `
@@ -6416,7 +6458,8 @@ export const getOwnerPayments = async (
       params.push(status);
     }
 
-    sql += ` ORDER BY p.payment_time DESC LIMIT 200`;
+    const limitQuery = limit === "all" ? "" : ` LIMIT ${Number.isFinite(Number(limit)) ? Number(limit) : 200}`;
+    sql += ` ORDER BY p.payment_time DESC${limitQuery}`;
 
     const [rows] = await pool.query<RowDataPacket[]>(sql, params);
     res.json({ success: true, data: rows });
@@ -10517,8 +10560,13 @@ export const checkoutHotelStay = async (
       );
       const vatRate = Number(settings.vat_rate ?? 0);
 
-      const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 2.5;
-      const safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
+      let safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 2.5;
+      let safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
+
+      if (bookingId == null) {
+        safeCommissionRate = 0;
+        safeVatRate = 0;
+      }
 
       // Sửa công thức cấn trừ trả trước: không hoàn tiền nếu ở ít hơn thời gian đặt
       const finalSubtotal = bookingId != null ? Math.max(subtotal, prepaidCandidate) : subtotal;

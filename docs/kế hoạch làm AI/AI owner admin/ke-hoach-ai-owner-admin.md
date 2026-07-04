@@ -1,11 +1,66 @@
 # Kế hoạch chi tiết AI cho Owner và Admin
 
+## Cap nhat quyet dinh moi
+
+Ban da chot huong moi cho Owner/Admin:
+
+- `ai-manager-bot` van la service AI noi bo chinh cua du an.
+- GPT API duoc them vao de lo phan:
+  - hieu ngon ngu tu nhien
+  - nho ngu canh chat tot hon
+  - dien dat cau tra loi giong tro ly that hon
+- `ai-manager-bot` van giu vai tro:
+  - policy guard
+  - intent/risk gate
+  - action planning
+  - route allow/block
+  - xac nhan va canh bao
+- Backend Node.js van la lop quyet dinh cuoi:
+  - auth
+  - RBAC
+  - doc du lieu that
+  - preview
+  - execute
+  - audit
+
+### Tra loi ngan gon cho 2 cau hoi can chot
+
+1. Neu lam vay van di dung huong.
+   - Day la huong tot hon cho Owner/Admin vi bai toan cua ban can 2 lop:
+     - lop thong minh hoi thoai
+     - lop an toan va phan quyen
+   - Neu co API GPT, lop hoi thoai manh len ro, trong khi lop an toan cua du an van giu nguyen.
+
+2. Van tinh la AI minh tu lam.
+   - Minh khong "dua het cho GPT".
+   - Cai minh tu xay van la:
+     - `ai-manager-bot`
+     - policy engine
+     - context sanitizer
+     - action registry
+     - permission rules owner/admin
+     - preview/confirmation/audit
+     - prompt suggestions theo man hinh
+     - data adapters va read model
+   - GPT chi la engine hieu ngon ngu va soan cau.
+
+3. Khong luu API key trong file tracked.
+   - Chi dung bien moi truong local:
+
+```env
+AI_MANAGER_BOT_LLM_PROVIDER=openai
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+```
+
 **Cập nhật:** 2026-06-27
 **Phạm vi:** Website Dashboard Owner/Admin
-**Định hướng:** Trợ lý quản trị tự xây bằng `ai-manager-bot` làm AI service chính; Backend Node.js kiểm soát quyền, lấy dữ liệu thật và thực thi action
+**Định hướng:** Tro ly quan tri hybrid: `ai-manager-bot` lam guard/planner chinh, GPT API lam lop hieu ngon ngu, Backend Node.js kiem soat quyen, lay du lieu that va thuc thi action
 **Mức độ tổng thể:** Rất cao
 **Điều kiện tiên quyết:** Khóa tuyệt đối AI Owner khỏi cụm vận hành và hoàn thiện permission, confirmation, audit
 **Yêu cầu bắt buộc (Strict Requirement):** Bất cứ ai tham gia phát triển và tích hợp AI cho cụm Owner/Admin phải tuân thủ CHÍNH XÁC và NGHIÊM NGẶT 100% theo các quy tắc, phạm vi, và giới hạn đã được vạch ra trong bản kế hoạch này. Tuyệt đối không được vượt quyền hoặc tự ý nới lỏng các ràng buộc bảo mật.
+
+> Ghi chu: cac doan cu ben duoi neu con viet theo huong "khong dung OpenAI/Gemini" thi xem nhu da duoc thay bang huong hybrid moi o tren.
 
 ---
 

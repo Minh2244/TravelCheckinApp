@@ -11,9 +11,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  ImageBackground,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "../../modules/auth/store";
 import { chatApi, LocationChatMessageItem } from "../../services/chat.api";
@@ -39,6 +41,7 @@ export function LocationChatModal({
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [selectedImage, setSelectedImage] = useState<{ uri: string; base64?: string | null } | null>(null);
   const flatListRef = useRef<FlatList>(null);
   
   const token = useAuthStore((state: any) => state.accessToken);
@@ -67,8 +70,11 @@ export function LocationChatModal({
   useEffect(() => {
     if (visible) {
       fetchHistory();
+      if (activeLocationId) {
+        chatApi.markRead(activeLocationId, customerId).catch(console.error);
+      }
     }
-  }, [visible, fetchHistory]);
+  }, [visible, fetchHistory, activeLocationId, customerId]);
 
   useEffect(() => {
     if (!activeLocationId || !token || !customerId || !visible) return;
@@ -85,7 +91,7 @@ export function LocationChatModal({
     });
 
     socket.on("connect", () => {
-      socket.emit("join_location_chat", {
+      socket.emit("join_location_room", {
         locationId: activeLocationId,
         customerId,
         token,
@@ -111,12 +117,34 @@ export function LocationChatModal({
     };
   }, [activeLocationId, token, customerId, visible, fetchHistory]);
 
+  const handleImagePick = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permissionResult.granted === false) {
+      alert("Bạn cần cấp quyền truy cập thư viện ảnh!");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setSelectedImage({
+        uri: result.assets[0].uri,
+        base64: result.assets[0].base64,
+      });
+    }
+  };
+
   const handleSend = async () => {
-    if (!inputText.trim() || !activeLocationId || !customerId) return;
+    if ((!inputText.trim() && !selectedImage) || !activeLocationId || !customerId) return;
     const text = inputText.trim();
+    const imageData = selectedImage?.base64 ? `data:image/jpeg;base64,${selectedImage.base64}` : null;
     setInputText("");
+    setSelectedImage(null);
     try {
-      const res = await chatApi.sendMessage(activeLocationId, text, customerId, null);
+      const res = await chatApi.sendMessage(activeLocationId, text, customerId, imageData);
       if (res.success && res.data) {
         setMessages((prev) => {
           if (prev.some((m) => m.message_id === res.data.message_id)) return prev;
@@ -128,6 +156,15 @@ export function LocationChatModal({
       }
     } catch (err) {
       console.error("Lỗi gửi tin nhắn:", err);
+    }
+  };
+
+  const formatTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return "";
     }
   };
 
@@ -144,9 +181,28 @@ export function LocationChatModal({
              )}
           </View>
         )}
-        <View style={[styles.msgBubble, isMine ? styles.msgBubbleMine : styles.msgBubbleTheirs]}>
-          <Text style={[styles.msgText, isMine ? styles.msgTextMine : styles.msgTextTheirs]}>
-            {item.content}
+        <View style={{ alignItems: isMine ? "flex-end" : "flex-start", maxWidth: "85%", flexShrink: 1 }}>
+          {item.sender_name && !isMine && (
+            <Text style={{ fontSize: 11, fontWeight: "bold", color: "#64748b", marginBottom: 2, marginLeft: 4 }}>
+              {item.sender_name} {item.sender_role === "owner" ? "(Chủ quán)" : item.sender_role === "employee" ? "(Nhân viên)" : ""}
+            </Text>
+          )}
+          {item.image_data && (
+            <Image 
+              source={{ uri: item.image_data }} 
+              style={{ width: 160, height: 160, borderRadius: 12, marginBottom: 4 }} 
+              resizeMode="cover" 
+            />
+          )}
+          {item.content ? (
+            <View style={[styles.msgBubble, isMine ? styles.msgBubbleMine : styles.msgBubbleTheirs]}>
+              <Text style={[styles.msgText, isMine ? styles.msgTextMine : styles.msgTextTheirs]}>
+                {item.content}
+              </Text>
+            </View>
+          ) : null}
+          <Text style={{ fontSize: 10, color: "#94a3b8", marginTop: 2, marginHorizontal: 4 }}>
+            {formatTime(item.created_at)}
           </Text>
         </View>
       </View>
@@ -171,7 +227,11 @@ export function LocationChatModal({
           <View style={styles.headerBtn} />
         </View>
 
-        <View style={styles.chatArea}>
+        <ImageBackground 
+          source={locationImage ? { uri: resolveBackendUrl(locationImage) || "" } : undefined} 
+          style={styles.chatArea} 
+          imageStyle={{ opacity: 0.1 }}
+        >
           {loading && messages.length === 0 ? (
             <ActivityIndicator style={styles.loader} size="large" color="#3b82f6" />
           ) : (
@@ -185,10 +245,26 @@ export function LocationChatModal({
               onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
             />
           )}
-        </View>
+        </ImageBackground>
 
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          {selectedImage && (
+            <View style={{ padding: 12, backgroundColor: "#f8fafc", borderTopWidth: 1, borderTopColor: "#e2e8f0", flexDirection: "row", alignItems: "center" }}>
+              <View style={{ position: "relative" }}>
+                <Image source={{ uri: selectedImage.uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                <TouchableOpacity 
+                  style={{ position: "absolute", top: -8, right: -8, backgroundColor: "#ef4444", borderRadius: 12, width: 24, height: 24, justifyContent: "center", alignItems: "center" }}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Ionicons name="close" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
           <View style={styles.inputArea}>
+            <TouchableOpacity onPress={handleImagePick} style={{ marginRight: 8, justifyContent: "center", alignItems: "center", width: 44, height: 44 }}>
+              <Ionicons name="image-outline" size={24} color="#64748b" />
+            </TouchableOpacity>
             <TextInput
               style={styles.input}
               placeholder="Nhập tin nhắn..."
@@ -197,9 +273,9 @@ export function LocationChatModal({
               multiline
             />
             <TouchableOpacity
-              style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, (!inputText.trim() && !selectedImage) && styles.sendBtnDisabled]}
               onPress={handleSend}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() && !selectedImage}
             >
               <Ionicons name="send" size={20} color="#fff" />
             </TouchableOpacity>
@@ -296,7 +372,6 @@ const styles = StyleSheet.create({
     height: 32,
   },
   msgBubble: {
-    maxWidth: "75%",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 20,

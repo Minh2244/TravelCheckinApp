@@ -63,7 +63,7 @@ const FrontOfficeLayout = ({
       </Content>
 
       {/* Quản lý các khung chat nổi tự động bật lên khi có khách nhắn cho Owner */}
-      <OwnerChatManager locationId={locationId} />
+      <OwnerChatManager locationId={locationId} locationImageUrl={locationImageUrl} />
     </Layout>
   );
 };
