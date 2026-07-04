@@ -16,7 +16,6 @@ import {
   FileTextOutlined,
   GlobalOutlined,
   ShopOutlined,
-  PrinterOutlined,
   FileExcelOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -47,11 +46,12 @@ export default function AdminHistory() {
     Array<{ value: number; label: string; owner_id: number }>
   >([]);
 
-  const [selectedOwnerId, setSelectedOwnerId] = useState<number | "all" | null>(null);
-  const [selectedLocationId, setSelectedLocationId] = useState<number | "all" | null>(null);
+  const [selectedOwnerId, setSelectedOwnerId] = useState<number | "all" | null>("all");
+  const [selectedLocationId, setSelectedLocationId] = useState<number | "all" | null>("all");
 
-  const [startDate, setStartDate] = useState<dayjs.Dayjs | null>(dayjs());
-  const [endDate, setEndDate] = useState<dayjs.Dayjs | null>(dayjs());
+  const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "year" | "all" | "custom">("all");
+  const [startDate, setStartDate] = useState<dayjs.Dayjs | null>(null);
+  const [endDate, setEndDate] = useState<dayjs.Dayjs | null>(null);
 
   const [summary, setSummary] = useState<RevenueSummary | null>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -168,15 +168,25 @@ export default function AdminHistory() {
         const isHotelBatch = notesStr.startsWith("HOTEL_STAYS:");
         const isHotel = isHotelSingle || isHotelBatch;
 
+        let snapAny: any = null;
+        try {
+          snapAny = JSON.parse(row.qr_data || "null");
+        } catch {}
+
         let prefix = "POS";
         if (isHotel) prefix = "RS";
         else if (isTicket) prefix = "SB";
         else if (isFood || isTable) prefix = "DI";
 
-        const itemsRaw =
+        let itemsRaw =
           (isFood || isTable || isTicket) && notesObj && Array.isArray(notesObj.items)
             ? notesObj.items
             : [];
+            
+        if (isTicket && itemsRaw.length === 0 && snapAny?.tourist_invoice?.items) {
+          itemsRaw = snapAny.tourist_invoice.items;
+        }
+
         const items = itemsRaw.map((it: any) => ({
           service_name: String(it.service_name || ""),
           quantity: Number(it.quantity || 0),
@@ -187,11 +197,6 @@ export default function AdminHistory() {
         let hotel = null;
         let hotel_rooms: any[] = [];
         if (isHotel) {
-          let snapAny: any = null;
-          try {
-            snapAny = JSON.parse(row.qr_data || "null");
-          } catch {}
-
           if (isHotelBatch && Array.isArray(snapAny?.hotel_invoices)) {
             hotel_rooms = snapAny.hotel_invoices;
           } else if (isHotelSingle && snapAny?.hotel_invoice) {
@@ -515,13 +520,7 @@ export default function AdminHistory() {
           </div>
         ) : null}
         <div className="mt-4 flex justify-end gap-2 border-t pt-3">
-          <Button
-            size="small"
-            icon={<PrinterOutlined />}
-            onClick={() => handlePrintRow(row)}
-          >
-            In PDF
-          </Button>
+
           <Button
             size="small"
             icon={<FileExcelOutlined />}
@@ -672,37 +671,80 @@ export default function AdminHistory() {
             />
           </div>
           <div>
-            <div className="text-xs font-semibold text-slate-500 mb-1">Từ ngày</div>
-            <DatePicker
-              format={DATE_UI_FORMAT}
-              value={startDate}
-              onChange={(d) => {
-                setStartDate(d);
-                if (d && endDate && d.isAfter(endDate, "day")) {
-                  setEndDate(d);
+            <div className="text-xs font-semibold text-slate-500 mb-1">Thời gian</div>
+            <Select
+              className="w-full"
+              value={timeRange}
+              onChange={(v) => {
+                setTimeRange(v);
+                if (v === "today") {
+                  setStartDate(dayjs());
+                  setEndDate(dayjs());
+                } else if (v === "week") {
+                  setStartDate(dayjs().subtract(7, "day"));
+                  setEndDate(dayjs());
+                } else if (v === "month") {
+                  setStartDate(dayjs().startOf("month"));
+                  setEndDate(dayjs());
+                } else if (v === "year") {
+                  setStartDate(dayjs().startOf("year"));
+                  setEndDate(dayjs());
+                } else if (v === "all") {
+                  setStartDate(null);
+                  setEndDate(null);
+                } else if (v === "custom") {
+                  if (!startDate && !endDate) {
+                    setStartDate(dayjs());
+                    setEndDate(dayjs());
+                  }
                 }
               }}
-              disabledDate={(current) => current && current > dayjs().endOf("day")}
-              className="w-full"
-              allowClear={false}
+              options={[
+                { label: "Hôm nay", value: "today" },
+                { label: "7 ngày qua", value: "week" },
+                { label: "Tháng này", value: "month" },
+                { label: "Năm nay", value: "year" },
+                { label: "Tất cả thời gian", value: "all" },
+                { label: "Tùy chỉnh...", value: "custom" },
+              ]}
             />
           </div>
-          <div>
-            <div className="text-xs font-semibold text-slate-500 mb-1">Đến ngày</div>
-            <DatePicker
-              format={DATE_UI_FORMAT}
-              value={endDate}
-              onChange={(d) => {
-                setEndDate(d);
-                if (d && startDate && d.isBefore(startDate, "day")) {
-                  setStartDate(d);
-                }
-              }}
-              disabledDate={(current) => current && current > dayjs().endOf("day")}
-              className="w-full"
-              allowClear={false}
-            />
-          </div>
+          {timeRange === "custom" && (
+            <>
+              <div>
+                <div className="text-xs font-semibold text-slate-500 mb-1">Từ ngày</div>
+                <DatePicker
+                  format={DATE_UI_FORMAT}
+                  value={startDate}
+                  onChange={(d) => {
+                    setStartDate(d);
+                    if (d && endDate && d.isAfter(endDate, "day")) {
+                      setEndDate(d);
+                    }
+                  }}
+                  disabledDate={(current) => current && current > dayjs().endOf("day")}
+                  className="w-full"
+                  allowClear={false}
+                />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-500 mb-1">Đến ngày</div>
+                <DatePicker
+                  format={DATE_UI_FORMAT}
+                  value={endDate}
+                  onChange={(d) => {
+                    setEndDate(d);
+                    if (d && startDate && d.isBefore(startDate, "day")) {
+                      setStartDate(d);
+                    }
+                  }}
+                  disabledDate={(current) => current && current > dayjs().endOf("day")}
+                  className="w-full"
+                  allowClear={false}
+                />
+              </div>
+            </>
+          )}
         </div>
       </Card>
 
@@ -843,16 +885,24 @@ export default function AdminHistory() {
               Hệ thống không tải danh sách hóa đơn mặc định để tối ưu hiệu năng.<br/>
               Vui lòng sử dụng bộ lọc bên trên và bấm nút dưới đây để xem danh sách.
             </p>
-            <Button
-              type="primary"
-              size="large"
-              icon={<SearchOutlined />}
-              onClick={handleShowInvoices}
-              loading={loading}
-              className="px-8 shadow-md"
-            >
-              Hiển thị lịch sử hóa đơn
-            </Button>
+            <div className="flex justify-center gap-3">
+              <Button
+                type="primary"
+                size="large"
+                icon={<SearchOutlined />}
+                onClick={handleShowInvoices}
+                loading={loading}
+                className="px-8 shadow-md"
+              >
+                Hiển thị lịch sử hóa đơn
+              </Button>
+              {/* Nút ẩn để trigger */}
+              <button
+                id="btn-show-invoices"
+                style={{ display: "none" }}
+                onClick={handleShowInvoices}
+              ></button>
+            </div>
           </div>
         ) : (
           <div>

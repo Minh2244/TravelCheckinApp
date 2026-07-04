@@ -2721,14 +2721,29 @@ export const getVouchersByLocation = async (req: Request, res: Response): Promis
                   AND b.status IN ('pending','confirmed','completed')
               ) as user_used_count
        FROM vouchers v
-       CROSS JOIN (SELECT location_type FROM locations WHERE location_id = ? LIMIT 1) loc
+       JOIN users u ON u.user_id = v.owner_id
+       CROSS JOIN (SELECT location_type, owner_id FROM locations WHERE location_id = ? LIMIT 1) loc
        WHERE v.status = 'active'
          AND v.owner_deleted_at IS NULL
          AND v.start_date <= NOW()
          AND v.end_date >= NOW()
+         AND (u.role = 'admin' OR v.owner_id = loc.owner_id)
          AND (v.apply_to_location_type = 'all' OR v.apply_to_location_type = loc.location_type)
-         AND (
-           v.location_id = ?
+           AND (
+             v.target_group = 'all'
+             OR (
+               v.target_group = 'loyal'
+               AND (
+                 SELECT COALESCE(SUM(b2.final_amount), 0)
+                 FROM bookings b2
+                 WHERE b2.user_id = ?
+                   AND b2.location_id = ?
+                   AND b2.status = 'completed'
+               ) >= COALESCE(v.loyalty_min_spend, 0)
+             )
+           )
+           AND (
+             v.location_id = ?
            OR (
              v.location_id IS NULL
              AND (
@@ -2738,7 +2753,7 @@ export const getVouchersByLocation = async (req: Request, res: Response): Promis
            )
          )
        ORDER BY v.end_date ASC`,
-      [userId, userId, locationId, locationId, locationId],
+        [userId, userId, locationId, userId, locationId, locationId, locationId],
     );
     res.json({ success: true, data: rows });
   } catch (error) {

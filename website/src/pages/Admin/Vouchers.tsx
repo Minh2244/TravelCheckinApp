@@ -1266,11 +1266,8 @@ const AdminVouchers = () => {
                   >
                     <Select
                       options={[
-                        { value: "all", label: "Tất cả (mọi owner, mọi địa điểm)" },
-                        { value: "single", label: "Chọn 1 địa điểm" },
-                        { value: "multiple", label: "Chọn nhiều địa điểm" },
-                        { value: "owner_single", label: "Chọn 1 owner" },
-                        { value: "owner_multiple", label: "Chọn nhiều owner" },
+                        { value: "all", label: "Tất cả địa điểm (Mọi owner)" },
+                        { value: "owner_multiple", label: "Chọn địa điểm theo Owner (1 hoặc nhiều)" },
                       ]}
                     />
                   </Form.Item>
@@ -1346,10 +1343,10 @@ const AdminVouchers = () => {
 
                           {scope === "owner_multiple" ? (
                             <>
-                              <Form.Item name="owner_ids" label="Danh sách owner" rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 owner" }]}>
+                              <Form.Item name="owner_ids" label="Chọn Owner" rules={[{ required: true, message: "Vui lòng chọn ít nhất 1 owner" }]}>
                                 <Select mode="multiple" options={ownerOptions} placeholder="Chọn owner" onChange={async (ids: number[]) => { form.setFieldsValue({ location_ids: [] }); const all: LocationRow[] = []; for (const id of ids) { try { const res = await adminApi.getOwnerLocations(id); if (res?.data) all.push(...res.data); } catch { } } setOwnerLocOptions(all); }} />
                               </Form.Item>
-                              <Form.Item name="location_ids" label="Địa điểm">
+                              <Form.Item name="location_ids" label="Địa điểm (để trống là áp dụng tất cả địa điểm của owner)">
                                 <Select mode="multiple" loading={ownerLocLoading} allowClear placeholder="Tất cả địa điểm" options={ownerLocOptions.map(l => ({ value: l.location_id, label: `${l.location_name} (#${l.location_id})` }))} />
                               </Form.Item>
                             </>

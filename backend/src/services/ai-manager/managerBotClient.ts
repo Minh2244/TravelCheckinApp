@@ -5,6 +5,10 @@ export interface ManagerBotPayload {
   route: string;
   text?: string;
   message?: string;
+  chat_history?: Array<{
+    from: string;
+    text: string;
+  }>;
   screen_context?: Record<string, unknown>;
   available_actions?: string[];
   mock_context?: Record<string, unknown>;

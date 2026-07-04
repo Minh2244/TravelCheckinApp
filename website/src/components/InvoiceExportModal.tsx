@@ -93,6 +93,9 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
   const filteredInvoices = useMemo(() => {
     let data = [...invoices];
 
+    // Chỉ lấy đơn đã thanh toán thành công (completed) để đồng nhất với Dashboard
+    data = data.filter((inv) => String(inv.status || "").toLowerCase() === "completed");
+
     if (role === "admin" && selectedOwnerId !== "all") {
       const ownerLocIds = new Set(filteredLocations.map((l) => l.location_id));
       if (selectedLocationId !== "all") {
@@ -116,8 +119,10 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
   }, [invoices, selectedLocationId, dateRange, isAllTime, role, selectedOwnerId, filteredLocations]);
 
   const batchStats = useMemo(() => {
-    const total = filteredInvoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
-    return { count: filteredInvoices.length, total };
+    const grossTotal = filteredInvoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+    const commissionTotal = filteredInvoices.reduce((sum, inv) => sum + Number((inv as any).commission_amount || 0), 0);
+    const netTotal = filteredInvoices.reduce((sum, inv) => sum + Number((inv.owner_receivable ?? inv.amount) || 0), 0);
+    return { count: filteredInvoices.length, grossTotal, commissionTotal, netTotal };
   }, [filteredInvoices]);
 
   const handleExportBatch = async () => {
@@ -261,9 +266,12 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
           }}
         >
           <Text>
-            Kết quả: <Text strong>{batchStats.count} giao dịch</Text> | Tổng doanh thu:{" "}
+            Kết quả: <Text strong>{batchStats.count} giao dịch</Text><br/>
+            Tổng doanh thu: <Text strong>{batchStats.grossTotal.toLocaleString("vi-VN")} VND</Text> |{" "}
+            Tổng hoa hồng: <Text strong style={{ color: "#f59e0b" }}>{batchStats.commissionTotal.toLocaleString("vi-VN")} VND</Text> |{" "}
+            Thực nhận:{" "}
             <Text strong style={{ color: "#ef4444", fontSize: 16 }}>
-              {batchStats.total.toLocaleString("vi-VN")} VND
+              {batchStats.netTotal.toLocaleString("vi-VN")} VND
             </Text>
           </Text>
         </div>

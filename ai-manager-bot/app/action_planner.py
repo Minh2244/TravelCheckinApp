@@ -10,7 +10,9 @@ INTENT_TO_ACTION = {
     "owner_review_reply_draft": "owner_review_reply_draft",
     "owner_review_reply_publish": "owner_review_reply_publish",
     "owner_voucher_draft": "owner_voucher_draft",
+    "owner_export_report": "owner_export_report",
     "admin_read_analysis": "admin_revenue_analysis",
+    "admin_export_report": "admin_export_report",
     "admin_write_action": "admin_location_review",
     "admin_critical_action": "admin_user_lock",
 }
@@ -30,7 +32,7 @@ def build_action_plan(request: BotRequest, classification: ClassificationResult)
     action_key = INTENT_TO_ACTION.get(classification.intent, "ask_clarification")
     action = ACTION_CATALOG[action_key]
 
-    if action.action_key not in request.available_actions and request.available_actions:
+    if action.action_key != "ask_clarification" and action.action_key not in request.available_actions and request.available_actions:
         return ActionPlan(
             action_key="ask_clarification",
             requires_confirmation=False,
@@ -52,4 +54,3 @@ def build_action_plan(request: BotRequest, classification: ClassificationResult)
         summary=action.label,
         warnings=warnings,
     )
-

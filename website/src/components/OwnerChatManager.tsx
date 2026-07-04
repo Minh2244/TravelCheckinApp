@@ -6,6 +6,7 @@ import { resolveBackendUrl } from "../utils/resolveBackendUrl";
 
 interface OwnerChatManagerProps {
   locationId?: number | null;
+  locationImageUrl?: string | null;
 }
 
 const resolveSocketUrl = (): string => {
@@ -48,7 +49,7 @@ interface ChatSession {
   lastMessageAt?: string;     // Thời điểm tin nhắn cuối cùng để check dismissed state
 }
 
-export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) {
+export default function OwnerChatManager({ locationId, locationImageUrl }: OwnerChatManagerProps) {
   const [openChats, setOpenChats] = useState<ChatSession[]>([]);
   const socketRef = useRef<Socket | null>(null);
   const activeLocationId = Number(locationId);
@@ -323,6 +324,7 @@ export default function OwnerChatManager({ locationId }: OwnerChatManagerProps) 
               onMinimize={() => handleToggleMinimize(chat.customerId)}
               onAvatarLoaded={(avatarUrl) => handleAvatarLoaded(chat.customerId, avatarUrl)}
               onUnreadChange={(count) => handleUnreadChange(chat.customerId, count)}
+              locationImageUrl={locationImageUrl}
             />
           </div>
         ))}
@@ -393,6 +395,7 @@ interface OwnerChatWindowProps {
   onMinimize: () => void;
   onAvatarLoaded: (avatarUrl: string) => void;
   onUnreadChange: (count: number) => void;
+  locationImageUrl?: string | null;
 }
 
 function OwnerChatWindow({
@@ -405,6 +408,7 @@ function OwnerChatWindow({
   onMinimize,
   onAvatarLoaded,
   onUnreadChange,
+  locationImageUrl,
 }: OwnerChatWindowProps) {
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [content, setContent] = useState("");
@@ -555,6 +559,7 @@ function OwnerChatWindow({
 
     console.log(`[OwnerChatWindow - Customer ${customerId}] Tải lịch sử chat...`);
     void fetchHistory(true);
+    locationChatApi.markRead(locationId, customerId).catch(console.error);
 
     console.log(`[OwnerChatWindow - Customer ${customerId}] Đang kết nối socket chat riêng...`);
     const socket = io(socketUrl, {
@@ -751,7 +756,18 @@ function OwnerChatWindow({
       {/* Message List */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-3 space-y-2.5 bg-[#fafbfc]/50"
+        className="flex-1 overflow-y-auto p-3 space-y-2.5 relative"
+        style={
+          locationImageUrl
+            ? {
+                backgroundImage: `url(${resolveBackendUrl(locationImageUrl)})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                backgroundBlendMode: "soft-light",
+                backgroundColor: "rgba(255, 255, 255, 0.88)",
+              }
+            : { backgroundColor: "rgba(250, 251, 252, 0.5)" }
+        }
       >
         {loading && (
           <div className="text-center text-xs text-slate-400 py-6 font-medium">

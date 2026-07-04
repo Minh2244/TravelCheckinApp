@@ -8,7 +8,7 @@ export interface ActionRegistryContext {
 const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/owner/dashboard",
-    actions: ["owner_revenue_summary", "owner_review_summary", "owner_voucher_draft"],
+    actions: ["owner_revenue_summary", "owner_export_report", "owner_review_summary", "owner_voucher_draft"],
   },
   {
     prefix: "/owner/reviews",
@@ -27,7 +27,7 @@ const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
 const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/admin/dashboard",
-    actions: ["admin_revenue_analysis"],
+    actions: ["admin_revenue_analysis", "admin_export_report"],
   },
   {
     prefix: "/admin/users",
@@ -42,11 +42,23 @@ const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
     actions: ["admin_revenue_analysis", "admin_location_review"],
   },
   {
+    prefix: "/admin/owner-services",
+    actions: ["admin_revenue_analysis", "admin_location_review"],
+  },
+  {
     prefix: "/admin/reviews",
     actions: ["admin_revenue_analysis", "admin_location_review"],
   },
   {
     prefix: "/admin/vouchers",
+    actions: ["admin_revenue_analysis", "admin_location_review"],
+  },
+  {
+    prefix: "/admin/system-vouchers",
+    actions: ["admin_revenue_analysis", "admin_location_review"],
+  },
+  {
+    prefix: "/admin/owner-vouchers",
     actions: ["admin_revenue_analysis", "admin_location_review"],
   },
   {

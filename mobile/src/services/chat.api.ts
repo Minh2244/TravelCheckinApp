@@ -59,4 +59,12 @@ export const chatApi = {
     const response = await api.get<any>("/ai/history");
     return response.data;
   },
+  getUnreadCounts: async () => {
+    const response = await api.get<any>("/chat/unread-counts");
+    return response.data;
+  },
+  markRead: async (locationId: number, customerId?: number) => {
+    const response = await api.post<any>(`/chat/location/${locationId}/mark-read`, { customerId });
+    return response.data;
+  },
 };

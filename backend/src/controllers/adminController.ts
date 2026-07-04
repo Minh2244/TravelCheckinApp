@@ -5023,6 +5023,23 @@ export const approveLocation = async (
       } catch (notifyError) {
         console.error("Không gửi được thông báo duyệt địa điểm:", notifyError);
       }
+
+      // Gửi sự kiện SSE realtime cho Owner và các Admin khác
+      try {
+        const { publishToUser, publishToAll } = require("../utils/realtime");
+        publishToUser(ownerId, {
+          type: "location_approved",
+          location_id: Number(id),
+          message: `Địa điểm "${ownerRows[0]?.location_name}" của bạn đã được duyệt hoạt động!`
+        });
+        publishToAll({
+          type: "location_approved",
+          location_id: Number(id),
+          message: `Địa điểm "${ownerRows[0]?.location_name}" đã được phê duyệt.`
+        });
+      } catch (sseErr: any) {
+        console.error("Lỗi gửi SSE duyệt địa điểm:", sseErr.message);
+      }
     }
 
     res.json({
@@ -5089,6 +5106,23 @@ export const rejectLocation = async (
           "Không gửi được thông báo từ chối địa điểm:",
           notifyError,
         );
+      }
+
+      // Gửi sự kiện SSE realtime cho Owner và các Admin khác
+      try {
+        const { publishToUser, publishToAll } = require("../utils/realtime");
+        publishToUser(ownerId, {
+          type: "location_rejected",
+          location_id: Number(id),
+          message: `Địa điểm "${ownerRows[0]?.location_name}" của bạn đã bị từ chối duyệt. Lý do: ${reason || "Không có lý do chi tiết."}`
+        });
+        publishToAll({
+          type: "location_rejected",
+          location_id: Number(id),
+          message: `Địa điểm "${ownerRows[0]?.location_name}" đã bị từ chối.`
+        });
+      } catch (sseErr: any) {
+        console.error("Lỗi gửi SSE từ chối địa điểm:", sseErr.message);
       }
     }
 
@@ -8678,6 +8712,13 @@ export const updateSosAlertStatus = async (
       return;
     }
 
+    // Lấy user_id trước để gửi SSE
+    const [sosRows] = await pool.query<any[]>(
+      `SELECT user_id FROM sos_alerts WHERE alert_id = ? LIMIT 1`,
+      [id]
+    );
+    const alertUserId = sosRows?.[0]?.user_id;
+
     await pool.query(
       `UPDATE sos_alerts
        SET status = ?, resolved_at = CASE WHEN ? = 'resolved' THEN NOW() ELSE NULL END
@@ -8693,6 +8734,30 @@ export const updateSosAlertStatus = async (
         JSON.stringify({ alertId: id, status, timestamp: new Date() }),
       ],
     );
+
+    // Phát sự kiện SSE realtime để cập nhật trạng thái
+    try {
+      const { publishToUser, publishToAll } = require("../utils/realtime");
+      if (alertUserId) {
+        publishToUser(alertUserId, {
+          type: "sos_status_update",
+          alert_id: Number(id),
+          status,
+          message: status === "processing" 
+            ? "Đang xử lý - Đội cứu hộ đang di chuyển đến vị trí của bạn!" 
+            : status === "resolved" 
+              ? "Cứu hộ thành công! Bạn đã an toàn." 
+              : "Yêu cầu SOS đã được cập nhật."
+        });
+      }
+      publishToAll({
+        type: "sos_status_update",
+        alert_id: Number(id),
+        status
+      });
+    } catch (sseErr: any) {
+      console.error("Lỗi phát sự kiện SSE trong updateSosAlertStatus:", sseErr.message);
+    }
 
     res.json({
       success: true,
@@ -9318,7 +9383,15 @@ export const getSystemVouchers = async (
         v.*,
         u.full_name as created_by_name,
         u.email as created_by_email,
-        l.location_name,
+        COALESCE(
+          l.location_name,
+          (
+            SELECT GROUP_CONCAT(l2.location_name SEPARATOR ', ')
+            FROM voucher_locations vl
+            JOIN locations l2 ON vl.location_id = l2.location_id
+            WHERE vl.voucher_id = v.voucher_id
+          )
+        ) as location_name,
         l.location_type,
         (SELECT COUNT(*) FROM voucher_locations vl WHERE vl.voucher_id = v.voucher_id) as location_count,
         CASE 
@@ -9336,7 +9409,15 @@ export const getSystemVouchers = async (
         v.*,
         u.full_name as created_by_name,
         u.email as created_by_email,
-        l.location_name,
+        COALESCE(
+          l.location_name,
+          (
+            SELECT GROUP_CONCAT(l2.location_name SEPARATOR ', ')
+            FROM voucher_locations vl
+            JOIN locations l2 ON vl.location_id = l2.location_id
+            WHERE vl.voucher_id = v.voucher_id
+          )
+        ) as location_name,
         l.location_type,
         0 as location_count,
         CASE 
@@ -9781,17 +9862,8 @@ export const createSystemVoucher = async (
         }
         parsedLocationIds = [specificLocId];
       } else {
-        const [locRows] = await pool.query<RowDataPacket[]>(
-          `SELECT location_id FROM locations WHERE owner_id = ?`,
-          [ownerIdNum],
-        );
-        parsedLocationIds = (locRows as any[])
-          .map((r) => Number(r.location_id))
-          .filter((n) => Number.isFinite(n));
-        if (parsedLocationIds.length === 0) {
-          res.status(400).json({ success: false, message: "Owner không có địa điểm nào" });
-          return;
-        }
+        res.status(400).json({ success: false, message: "Vui lòng chọn 1 địa điểm cụ thể cho owner" });
+        return;
       }
     }
 

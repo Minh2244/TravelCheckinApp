@@ -37,42 +37,58 @@ type StatsState = {
 const quickActions: Array<{
   label: string;
   description: string;
-  action: "food" | "tickets" | "saved" | "itinerary";
-  icon: "restaurant-outline" | "ticket-outline" | "bookmark-outline" | "calendar-outline";
+  action: "wallet" | "vouchers" | "sos" | "diary" | "reminders" | "history";
+  icon: keyof typeof Ionicons.glyphMap;
   iconBackground: string;
   cardBackground: string;
 }> = [
   {
-    label: "Ăn uống",
-    description: "Xem nhà hàng và quán cafe",
-    action: "food",
-    icon: "restaurant-outline",
-    iconBackground: "#f97316",
-    cardBackground: "#fff7ed",
-  },
-  {
     label: "Giỏ vé",
-    description: "Quản lý vé du lịch của bạn",
-    action: "tickets",
+    description: "Vé bàn, phòng & tour",
+    action: "wallet",
     icon: "ticket-outline",
     iconBackground: "#0ea5e9",
     cardBackground: "#f0f9ff",
   },
   {
-    label: "Đã lưu",
-    description: "Mở lại địa điểm bạn đã thích",
-    action: "saved",
-    icon: "bookmark-outline",
+    label: "Ví Voucher",
+    description: "Mã giảm giá đã nhận",
+    action: "vouchers",
+    icon: "gift-outline",
+    iconBackground: "#e11d48",
+    cardBackground: "#fff5f5",
+  },
+  {
+    label: "Cứu hộ SOS",
+    description: "Hỗ trợ khẩn cấp 24/7",
+    action: "sos",
+    icon: "alert-circle-outline",
+    iconBackground: "#dc2626",
+    cardBackground: "#fef2f2",
+  },
+  {
+    label: "Nhật ký",
+    description: "Lưu giữ kỷ niệm đi đi",
+    action: "diary",
+    icon: "journal-outline",
     iconBackground: "#7c3aed",
     cardBackground: "#f5f3ff",
   },
   {
-    label: "Lịch trình",
-    description: "Quản lý kế hoạch chuyến đi",
-    action: "itinerary",
-    icon: "calendar-outline",
-    iconBackground: "#2563eb",
-    cardBackground: "#eff6ff",
+    label: "Nhắc lịch",
+    description: "Thông báo lịch đặt hẹn",
+    action: "reminders",
+    icon: "alarm-outline",
+    iconBackground: "#d97706",
+    cardBackground: "#fef3c7",
+  },
+  {
+    label: "Lịch sử GD",
+    description: "Nhật ký chi tiêu du lịch",
+    action: "history",
+    icon: "wallet-outline",
+    iconBackground: "#059669",
+    cardBackground: "#ecfdf5",
   },
 ];
 
@@ -352,22 +368,30 @@ export default function HomeScreen() {
               hitSlop={{ top: 10, left: 10, right: 10, bottom: 10 }}
               accessibilityRole="button"
               onPress={() => {
-                if (item.action === "food") {
-                  setCategory("Ẩm thực");
+                if (item.action === "wallet") {
+                  router.push("/wallet");
                   return;
                 }
-
-                if (item.action === "tickets") {
-                  router.push("/wallet?tab=tour");
+                if (item.action === "vouchers") {
+                  router.push("/profile/vouchers");
                   return;
                 }
-
-                if (item.action === "saved") {
-                  router.push("/saved");
+                if (item.action === "sos") {
+                  router.push("/profile/sos");
                   return;
                 }
-
-                router.push("/itineraries");
+                if (item.action === "diary") {
+                  router.push("/profile/diary");
+                  return;
+                }
+                if (item.action === "reminders") {
+                  router.push("/profile/reminders");
+                  return;
+                }
+                if (item.action === "history") {
+                  router.push("/profile/history");
+                  return;
+                }
               }}
               className="min-h-[112px] justify-between rounded-2xl border border-line p-4"
               style={{ width: cardWidth, backgroundColor: item.cardBackground }}

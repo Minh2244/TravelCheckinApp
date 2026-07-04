@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   View,
+  DeviceEventEmitter,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -24,6 +25,7 @@ import {
   userApi,
   type LocationVoucher,
 } from "../../../src/services/user.api";
+import { chatApi } from "../../../src/services/chat.api";
 import type { LocationItem } from "../../../src/types/location";
 import { LocationChatModal } from "../../../src/components/chat/LocationChatBubble";
 
@@ -122,6 +124,7 @@ export default function LocationDetailScreen() {
 
   const [location, setLocation] = useState<LocationItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -138,15 +141,17 @@ export default function LocationDetailScreen() {
 
     try {
       setLoading(true);
-      const [locationResponse, favoriteResponse] =
+      const [locationResponse, favoriteResponse, unreadResponse] =
         await Promise.all([
           locationApi.getLocationById(id),
           user
             ? userApi.getFavorites().catch(() => ({ success: false, data: [] }))
             : Promise.resolve({ success: false, data: [] }),
+          chatApi.getUnreadCounts().catch(() => ({ success: false, userUnread: 0 })),
         ]);
 
       setLocation(locationResponse.data);
+      setUnreadCount(unreadResponse.userUnread || 0);
       setIsFavorite(
         (favoriteResponse.data || []).some(
           (item) => Number(item.location_id) === Number(id),
@@ -162,6 +167,19 @@ export default function LocationDetailScreen() {
   useEffect(() => {
     void loadDetail();
   }, [id, user]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("chat_unread_update", () => {
+      chatApi.getUnreadCounts()
+        .then((res) => {
+          if (res.success) {
+            setUnreadCount(res.userUnread || 0);
+          }
+        })
+        .catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (!id || !user) {
@@ -702,6 +720,25 @@ export default function LocationDetailScreen() {
         accessibilityLabel="Chat với địa điểm"
       >
         <Ionicons name="chatbubbles" size={22} color="#ffffff" />
+        {unreadCount > 0 && (
+          <View style={{
+            position: "absolute",
+            top: -2,
+            right: -2,
+            backgroundColor: "#ef4444",
+            borderRadius: 10,
+            width: 20,
+            height: 20,
+            justifyContent: "center",
+            alignItems: "center",
+            borderWidth: 1.5,
+            borderColor: "#ffffff"
+          }}>
+            <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </Text>
+          </View>
+        )}
       </Pressable>
 
         <LocationChatModal
@@ -710,7 +747,10 @@ export default function LocationDetailScreen() {
           locationName={location.location_name}
           locationImage={normalizeImages(location.images)[0] || null}
           visible={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
+          onClose={() => {
+            setIsChatOpen(false);
+            setUnreadCount(0); // Đã xem
+          }}
         />
       </View>
     );

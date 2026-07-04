@@ -6,12 +6,10 @@ import {
   Modal,
   Select,
   Space,
-  Table,
   Tag,
   Typography,
   message,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import {
   MapContainer,
   Marker,
@@ -24,7 +22,7 @@ import L from "leaflet";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { statusToVi } from "../../utils/statusText";
-import { formatDateVi } from "../../utils/formatDateVi";
+import { formatDateTimeVi } from "../../utils/formatDateVi";
 
 type SosStatus = "pending" | "processing" | "resolved";
 
@@ -317,8 +315,8 @@ const SosAlerts = () => {
     try {
       setLoading(true);
       const params: Record<string, string | number> = {
-        page: pagination.current,
-        limit: pagination.pageSize,
+        page: 1,
+        limit: 1000,
       };
       if (statusFilter) params.status = statusFilter;
 
@@ -425,78 +423,6 @@ const SosAlerts = () => {
     }
   };
 
-  const columns: ColumnsType<SosAlertRow> = [
-    {
-      title: "Thời gian",
-      dataIndex: "created_at",
-      key: "created_at",
-      width: 180,
-      render: (t: string) => formatDateVi(t),
-    },
-    {
-      title: "Người gửi",
-      key: "user",
-      width: 220,
-      render: (_, r) => (
-        <div>
-          <div className="font-medium text-gray-800">{r.user_name || "-"}</div>
-          <div className="text-xs text-gray-500">{r.user_phone || "-"}</div>
-        </div>
-      ),
-    },
-    {
-      title: "Trạng thái",
-      dataIndex: "status",
-      key: "status",
-      width: 130,
-      render: (s: SosStatus) => (
-        <Tag color={statusColor[s] || "default"}>{statusToVi(s)}</Tag>
-      ),
-    },
-    {
-      title: "Vị trí",
-      key: "location",
-      ellipsis: true,
-      render: (_, r) => r.location_text || "-",
-    },
-    {
-      title: "Nội dung",
-      key: "message",
-      ellipsis: true,
-      render: (_, r) => r.message || "-",
-    },
-    {
-      title: "",
-      key: "action",
-      width: 220,
-      fixed: "right",
-      render: (_, r) => (
-        <Space size={6}>
-          <Button size="small" type="link" onClick={() => openDetails(r)}>
-            Xem
-          </Button>
-
-          <Button
-            size="small"
-            onClick={() => updateStatus(r, "processing")}
-            disabled={r.status === "resolved" || r.status === "processing"}
-          >
-            Đang xử lý
-          </Button>
-
-          <Button
-            size="small"
-            type="primary"
-            onClick={() => updateStatus(r, "resolved")}
-            disabled={r.status === "resolved"}
-          >
-            Đã xử lý
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
   return (
     <MainLayout>
       <div className="mb-6">
@@ -535,31 +461,73 @@ const SosAlerts = () => {
           <Button onClick={fetchAlerts}>Tải lại</Button>
         </div>
 
-        <Table
-          size="small"
-          tableLayout="fixed"
-          rowKey="alert_id"
-          columns={columns}
-          dataSource={rows}
-          loading={loading}
-          pagination={{
-            current: pagination.current,
-            pageSize: pagination.pageSize,
-            total: pagination.total,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50, 100],
-            showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
-            onChange: (page, pageSize) => {
-              setPagination((p) => ({
-                ...p,
-                current: page,
-                pageSize: pageSize || p.pageSize,
-              }));
-            },
-          }}
-          scroll={{ x: 1100, y: 640 }}
-        />
+        {loading ? (
+          <div className="py-12 text-center text-gray-400">Đang tải dữ liệu...</div>
+        ) : rows.length === 0 ? (
+          <div className="py-12 text-center text-gray-400">Không có dữ liệu SOS</div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {rows.map((row, index) => (
+              <div
+                key={row.alert_id}
+                className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex-1 mr-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded text-xs border border-red-200">
+                      #{rows.length - index}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-600">
+                      {formatDateTimeVi(row.created_at)}
+                    </span>
+                  </div>
+                  
+                  <div className="mb-1 text-base">
+                    <span className="font-bold text-gray-800">{row.user_name || "Người dùng ẩn danh"}</span>
+                    {row.user_phone && (
+                      <span className="text-gray-500 font-medium ml-2">- {row.user_phone}</span>
+                    )}
+                  </div>
+                  
+                  <div className="text-sm text-gray-600 mt-1">
+                    <span className="mr-1">📍</span>
+                    {row.location_text || "Không có thông tin địa chỉ"}
+                  </div>
+                </div>
+
+                <div className="mt-4 sm:mt-0 flex flex-col sm:items-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-gray-100">
+                  <div className="flex justify-between sm:justify-end items-center w-full">
+                    <span className="sm:hidden text-sm text-gray-500">Trạng thái:</span>
+                    <Tag color={statusColor[row.status] || "default"} className="m-0 text-[13px] px-3 py-0.5">
+                      {statusToVi(row.status)}
+                    </Tag>
+                  </div>
+                  
+                  <Space size={8} className="w-full justify-end">
+                    <Button size="middle" onClick={() => openDetails(row)}>
+                      Xem vị trí
+                    </Button>
+                    <Button
+                      size="middle"
+                      onClick={() => updateStatus(row, "processing")}
+                      disabled={row.status === "resolved" || row.status === "processing"}
+                    >
+                      Đang xử lý
+                    </Button>
+                    <Button
+                      size="middle"
+                      type="primary"
+                      onClick={() => updateStatus(row, "resolved")}
+                      disabled={row.status === "resolved"}
+                    >
+                      Đã xử lý
+                    </Button>
+                  </Space>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Modal

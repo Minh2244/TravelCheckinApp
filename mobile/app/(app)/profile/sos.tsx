@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -23,9 +24,41 @@ export default function SosScreen() {
   const [alertId, setAlertId] = useState<number | null>(null);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
+  const [sosStatus, setSosStatus] = useState<"pending" | "processing" | "resolved" | null>(null);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pingInterval = useRef<any>(null);
+
+  // Lắng nghe sự kiện trạng thái SOS từ Admin qua SSE phát ra
+  useEffect(() => {
+    if (!isActive) {
+      setSosStatus(null);
+      return;
+    }
+
+    const sub = DeviceEventEmitter.addListener("sos_status_updated", (data: any) => {
+      if (data.status) {
+        setSosStatus(data.status);
+        if (data.status === "resolved") {
+          setTimeout(() => {
+            if (pingInterval.current) {
+              clearInterval(pingInterval.current);
+              pingInterval.current = null;
+            }
+            setIsActive(false);
+            setAlertId(null);
+            setCoords(null);
+            setAddress(null);
+            setSosStatus(null);
+          }, 3500);
+        }
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [isActive]);
 
   // Pulse animation for active SOS state
   useEffect(() => {
@@ -233,11 +266,22 @@ export default function SosScreen() {
               </View>
             </View>
 
-            <Text className="text-red-500 font-extrabold text-xl mb-2 text-center">
-              🔴 TÍN HIỆU SOS ĐANG BẬT
+            <Text className={[
+              "font-extrabold text-xl mb-2 text-center",
+              sosStatus === "processing" ? "text-amber-500" : sosStatus === "resolved" ? "text-emerald-500" : "text-red-500"
+            ].join(" ")}>
+              {sosStatus === "processing" 
+                ? "🟡 ĐANG XỬ LÝ" 
+                : sosStatus === "resolved" 
+                  ? "🟢 ĐÃ XỬ LÝ XONG" 
+                  : "🔴 TÍN HIỆU SOS ĐANG BẬT"}
             </Text>
             <Text className="text-slate-500 text-sm text-center px-4 mb-6 leading-[22px]">
-              Vị trí GPS của bạn đang được truyền tải liên tục lên máy chủ quản trị viên Admin để kịp thời cung cấp cứu trợ.
+              {sosStatus === "processing"
+                ? "Đội cứu hộ đang di chuyển đến vị trí của bạn. Hãy giữ bình tĩnh và giữ liên lạc!"
+                : sosStatus === "resolved"
+                  ? "Cứu hộ thành công! Hệ thống ghi nhận bạn đã an toàn và chuẩn bị tắt tín hiệu."
+                  : "Vị trí GPS của bạn đang được truyền tải liên tục lên máy chủ quản trị viên Admin để kịp thời cung cấp cứu trợ."}
             </Text>
 
             {/* GPS Info details card */}

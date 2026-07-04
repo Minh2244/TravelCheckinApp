@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
+import { publishToUser } from "../utils/realtime";
 
 export const getLocationChatHistory = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -228,6 +229,21 @@ export const postLocationChatMessage = async (req: Request, res: Response): Prom
         const ownerRoom = `location_${locationId}_owners`;
         console.log(`[Socket] Phát cảnh báo tới phòng owner: ${ownerRoom}`);
         io.to(ownerRoom).emit("location_new_message_alert", socketPayload);
+        
+        if (locationObj && locationObj.owner_id) {
+          publishToUser(Number(locationObj.owner_id), {
+            type: "new_message",
+            message: "Có tin nhắn mới",
+            location_id: locationId,
+            customer_id: customerId
+          });
+        }
+      } else {
+        publishToUser(customerId, {
+          type: "new_message",
+          message: "Bạn có tin nhắn mới",
+          location_id: locationId
+        });
       }
     }
 
@@ -278,7 +294,7 @@ export const getLocationActiveSessions = async (req: Request, res: Response): Pr
     // Lấy tin nhắn của địa điểm này trong vòng 30 ngày qua để phân tích các cuộc trò chuyện đang hoạt động
     const [messages] = await pool.query<RowDataPacket[]>(
       `SELECT 
-         m.message_id, m.customer_id, m.sender_id, m.sender_name, m.sender_role, m.content, m.created_at,
+         m.message_id, m.customer_id, m.sender_id, m.sender_name, m.sender_role, m.content, m.created_at, m.is_read,
          u.full_name as customer_name, u.avatar_url, u.avatar_path, u.avatar_source
        FROM location_chat_messages m
        LEFT JOIN users u ON u.user_id = m.customer_id
@@ -324,11 +340,9 @@ export const getLocationActiveSessions = async (req: Request, res: Response): Pr
         }
       }
 
-      // Tính số tin nhắn chưa trả lời của khách hàng
-      if (msg.sender_role === "user") {
+      // Tính số tin nhắn chưa đọc của khách hàng
+      if (msg.sender_role === "user" && msg.is_read === 0) {
         sessionsMap[customerId].unreadCount += 1;
-      } else {
-        sessionsMap[customerId].unreadCount = 0;
       }
     }
 
@@ -343,3 +357,88 @@ export const getLocationActiveSessions = async (req: Request, res: Response): Pr
   }
 };
 
+export const getUnreadChatCounts = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const [locations] = await pool.query<RowDataPacket[]>(
+      'SELECT location_id FROM locations WHERE owner_id = ? UNION SELECT location_id FROM employee_locations WHERE employee_id = ?',
+      [userId, userId]
+    );
+    const locationIds = locations.map(l => l.location_id);
+
+    let ownerUnread = 0;
+    if (locationIds.length > 0) {
+      const [ownerRows] = await pool.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM location_chat_messages WHERE location_id IN (?) AND sender_role = "user" AND is_read = 0',
+        [locationIds]
+      );
+      ownerUnread = ownerRows[0].count;
+    }
+
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) as count FROM location_chat_messages WHERE customer_id = ? AND sender_role IN ("owner", "employee") AND is_read = 0',
+      [userId]
+    );
+    const userUnread = userRows[0].count;
+
+    res.json({ success: true, ownerUnread, userUnread });
+  } catch (error) {
+    console.error('Error fetching unread counts:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+export const markLocationChatRead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const locationId = Number(req.params.locationId);
+    const userId = req.userId;
+    const { customerId } = req.body;
+
+    if (!userId || !locationId) {
+      res.status(400).json({ success: false, message: 'Missing params' });
+      return;
+    }
+
+    const [locRows] = await pool.query<RowDataPacket[]>(
+      `SELECT owner_id FROM locations WHERE location_id = ? LIMIT 1`,
+      [locationId]
+    );
+    const isOwnerOfLoc = locRows?.[0] && Number(locRows[0].owner_id) === Number(userId);
+
+    let isEmployeeOfLoc = false;
+    if (!isOwnerOfLoc) {
+      const [empRows] = await pool.query<RowDataPacket[]>(
+        `SELECT employee_id FROM employee_locations WHERE employee_id = ? AND location_id = ? LIMIT 1`,
+        [userId, locationId]
+      );
+      isEmployeeOfLoc = empRows.length > 0;
+    }
+
+    const isMerchant = isOwnerOfLoc || isEmployeeOfLoc;
+
+    if (isMerchant && customerId) {
+      // Owner marking messages from user as read
+      await pool.query(
+        'UPDATE location_chat_messages SET is_read = 1 WHERE location_id = ? AND customer_id = ? AND sender_role = "user" AND is_read = 0',
+        [locationId, customerId]
+      );
+    } else {
+      // User marking messages from owner as read
+      // Nếu là User, bỏ qua customerId truyền từ body, luôn dùng userId của họ
+      await pool.query(
+        'UPDATE location_chat_messages SET is_read = 1 WHERE location_id = ? AND customer_id = ? AND sender_role IN ("owner", "employee") AND is_read = 0',
+        [locationId, userId]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking read:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};

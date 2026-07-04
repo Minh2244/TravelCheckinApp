@@ -48,6 +48,7 @@ type PaymentRow = {
   location_id?: number;
   location_name?: string;
   commission_amount?: number;
+  owner_receivable?: number;
   // Fields từ JOIN với bookings/services/users
   booking_service_name?: string;
   booking_service_type?: string;
@@ -155,8 +156,8 @@ const OwnerDashboard = () => {
       const [meRes, locRes, bookingRes, paymentRes] = await Promise.all([
         ownerApi.getMe(),
         ownerApi.getLocations(),
-        ownerApi.getBookings({}),
-        ownerApi.getPayments({}),
+        ownerApi.getBookings({ limit: "all" }),
+        ownerApi.getPayments({ limit: "all" }),
       ]);
 
       setMe(meRes);
@@ -642,9 +643,12 @@ const OwnerDashboard = () => {
         invoices={payments.map((p) => ({
           payment_id: p.payment_id,
           booking_id: (p as any).booking_id,
+          status: p.status,
           location_name: p.location_name || "",
           location_id: p.location_id,
           amount: p.amount,
+          commission_amount: p.commission_amount,
+          owner_receivable: p.owner_receivable,
           payment_time: p.payment_time || "",
           payment_method: p.payment_method || "",
           booking_service_name: p.booking_service_name,

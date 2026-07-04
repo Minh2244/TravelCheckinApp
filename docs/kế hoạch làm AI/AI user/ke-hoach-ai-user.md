@@ -1,9 +1,52 @@
-# Kế hoạch AI hỗ trợ User bằng Gemini API
+# Kế hoạch AI hỗ trợ User bằng LLM API
+
+## Cap nhat quyet dinh moi
+
+Ban cap nhat huong trien khai nhu sau:
+
+- Khong khoa cung vao Gemini nua.
+- Mac dinh uu tien dung GPT API lam lop hieu ngon ngu va hoi thoai.
+- Cho phep thay bang model API ngoai khac sau nay neu can, nhung tai lieu nay se lay GPT lam mac dinh.
+- Backend Node.js va logic retrieval cua du an van la lop chinh:
+  - tim candidates that tu database
+  - loc theo intent, vi tri, thoi tiet, role
+  - validate location/service/voucher/ticket
+  - luu lich su
+  - dieu huong den man hinh that
+
+### Ket luan ngan gon
+
+1. Van di dung huong.
+   - Vi minh khong dua AI ngoai vao de thay the he thong.
+   - Minh chi dung GPT de hieu cau hoi, giu ngu canh va viet cau tra loi thong minh hon.
+   - Toan bo du lieu that, quyen, route va hanh dong van do backend cua minh kiem soat.
+
+2. Van tinh la AI minh tu lam.
+   - Phan "bo nao hoi thoai" dung GPT API.
+   - Phan "san pham AI cua du an" van la cua minh:
+     - prompt design
+     - retrieval tu database
+     - context builder
+     - quick replies
+     - card dia diem that
+     - memory/rate limit/log
+     - tool calling/noi quy action
+   - Noi cach khac: day la mo hinh AI tich hop do minh xay, khong phai chat box goi API thuần roi de no tu xu ly tat ca.
+
+3. Tuyet doi khong hard-code API key vao source code hoac file markdown.
+   - Chi dung bien moi truong:
+
+```env
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+```
 
 **Cập nhật:** 2026-06-25
 **Phạm vi:** Website và Mobile dùng chung Backend Node.js
-**Hướng triển khai:** Gemini API tư vấn bằng ngôn ngữ tự nhiên, Backend cung cấp địa điểm thật từ database
+**Hướng triển khai:** GPT API tư vấn bằng ngôn ngữ tự nhiên, Backend cung cấp địa điểm thật từ database
 **Độ khó tổng thể:** Trung bình, khoảng 5/10
+
+> Ghi chu: trong cac phan cu ben duoi, neu con nhac "Gemini" thi hieu la "LLM provider". Ban cap nhat moi cua du an la uu tien GPT API lam mac dinh.
 
 ---
 

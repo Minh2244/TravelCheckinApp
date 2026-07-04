@@ -95,12 +95,182 @@ SECURITY_FINANCE_TERMS = (
 REVIEW_TERMS = ("review", "danh gia", "1 sao", "sao xau", "phan hoi", "phan nan", "khach chui", "feedback", "comment")
 REVIEW_REPLY_TERMS = ("soan", "viet", "tra loi", "phan hoi", "rep")
 REVIEW_COMPLAINT_TERMS = ("che", "phuc vu lau", "phuc vu cham", "khach chui", "phan nan")
-REVENUE_TERMS = ("doanh thu", "doanh so", "bao cao", "thong ke", "xu huong", "tang giam", "giam manh", "ban chay", "tien", "loi nhuan")
+REVENUE_TERMS = (
+    "doanh thu",
+    "doanh so",
+    "bao cao",
+    "thong ke",
+    "xu huong",
+    "tang giam",
+    "tang hay giam",
+    "giam manh",
+    "so sanh",
+    "doi chieu",
+    "ban chay",
+    "tien",
+    "loi nhuan",
+    "mang dich vu nao dang yeu",
+    "dich vu nao dang yeu",
+    "mang nao dang yeu",
+    "nhom dich vu nao dang yeu",
+    "dich vu nao yeu",
+    "mang nao kem",
+    "nhom nao kem",
+    "dich vu nao kem",
+)
+CANCELLATION_ANALYSIS_TERMS = (
+    "ty le huy",
+    "ti le huy",
+    "huy don bao nhieu",
+    "bao nhieu don huy",
+    "ti le huy don",
+    "ty le huy don",
+    "cancel rate",
+    "cancellation rate",
+    "don huy thang nay",
+    "huy don thang nay",
+    "huy don thang truoc",
+)
+EXPORT_REPORT_TERMS = (
+    "xuat file",
+    "xuat bao cao",
+    "xuat hoa don",
+    "xuat excel",
+    "tai file",
+    "tai bao cao",
+    "download bao cao",
+    "export",
+    "bao cao doanh thu",
+    "file bao cao",
+)
 VOUCHER_TERMS = ("voucher", "khuyen mai", "ma giam", "uu dai", "sale", "deal", "giam gia")
 WRITE_TERMS = ("dang", "gui", "luu", "tao", "sua", "an", "duyet", "tu choi", "khoa", "mo khoa", "xoa")
 ADMIN_CRITICAL_TERMS = ("khoa user", "khoa tai khoan", "xoa user", "xoa tai khoan", "xoa owner", "doi quyen", "phan quyen", "commission", "hoa hong", "hoa khong", "khoa tk", "xoa tk")
 ADMIN_WRITE_TERMS = ("duyet", "tu choi", "an dia diem", "mo khoa", "cap nhat", "sua", "xoa")
 SMALL_TALK_TERMS = ("hello", "hi", "alo", "chao", "cam on", "thanks", "hoi chan", "noi chuyen", "tam chut")
+CAPABILITY_TERMS = (
+    "co the lam gi",
+    "lam duoc gi",
+    "giup duoc gi",
+    "giup gi",
+    "lam gi duoc",
+    "bot lam gi",
+    "bot lam duoc gi",
+    "tro ly lam gi",
+    "tro ly lam duoc gi",
+    "ai lam gi",
+    "ai lam duoc gi",
+    "ban lam gi",
+    "ban lam duoc gi",
+    "ban co the giup gi",
+    "ban co the lam gi",
+    "chuc nang cua ban",
+    "huong dan tui",
+)
+
+
+INTENT_PROFILES: dict[tuple[str, str], dict[str, object]] = {
+    ("owner", "capability_help"): {
+        "label": SMALL_TALK,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("owner", "small_talk"): {
+        "label": SMALL_TALK,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("owner", "owner_revenue_summary"): {
+        "label": OWNER_ALLOWED_READ,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("owner", "owner_review_summary"): {
+        "label": OWNER_ALLOWED_READ,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("owner", "owner_review_reply_draft"): {
+        "label": OWNER_ALLOWED_DRAFT,
+        "allowed": True,
+        "risk_level": "low",
+    },
+    ("owner", "owner_review_reply_publish"): {
+        "label": OWNER_ALLOWED_WRITE_SAFE,
+        "allowed": True,
+        "risk_level": "medium",
+    },
+    ("owner", "owner_voucher_draft"): {
+        "label": OWNER_ALLOWED_DRAFT,
+        "allowed": True,
+        "risk_level": "low",
+    },
+    ("owner", "owner_export_report"): {
+        "label": OWNER_ALLOWED_WRITE_SAFE,
+        "allowed": True,
+        "risk_level": "low",
+    },
+    ("owner", "unknown"): {
+        "label": UNKNOWN,
+        "allowed": False,
+        "risk_level": "read",
+    },
+    ("admin", "capability_help"): {
+        "label": SMALL_TALK,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("admin", "small_talk"): {
+        "label": SMALL_TALK,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("admin", "admin_read_analysis"): {
+        "label": ADMIN_READ,
+        "allowed": True,
+        "risk_level": "read",
+    },
+    ("admin", "admin_export_report"): {
+        "label": ADMIN_WRITE,
+        "allowed": True,
+        "risk_level": "low",
+    },
+    ("admin", "admin_write_action"): {
+        "label": ADMIN_WRITE,
+        "allowed": True,
+        "risk_level": "medium",
+    },
+    ("admin", "admin_critical_action"): {
+        "label": ADMIN_CRITICAL,
+        "allowed": True,
+        "risk_level": "critical",
+    },
+    ("admin", "unknown"): {
+        "label": UNKNOWN,
+        "allowed": False,
+        "risk_level": "read",
+    },
+}
+
+
+def classification_from_intent(
+    role: str,
+    intent: str,
+    *,
+    confidence: float,
+    reason: str,
+) -> ClassificationResult | None:
+    profile = INTENT_PROFILES.get((role, intent))
+    if not profile:
+        return None
+    return ClassificationResult(
+        intent=intent,
+        label=str(profile["label"]),
+        confidence=confidence,
+        allowed=bool(profile["allowed"]),
+        risk_level=str(profile["risk_level"]),
+        reason=reason,
+    )
 
 
 def _owner_route_blocked(route: str) -> bool:
@@ -110,6 +280,18 @@ def _owner_route_blocked(route: str) -> bool:
 
 def classify_request(request: BotRequest) -> ClassificationResult:
     normalized = normalize_text(request.text)
+    history_normalized = normalize_text(request.recent_history_text())
+    contextual = normalized if not history_normalized else f"{history_normalized} {normalized}"
+
+    if contains_any(normalized, CAPABILITY_TERMS):
+        return ClassificationResult(
+            intent="capability_help",
+            label=SMALL_TALK,
+            confidence=0.92,
+            allowed=True,
+            risk_level="read",
+            reason="Nguoi dung hoi AI co the ho tro nhung gi tren man hinh hien tai.",
+        )
 
     if contains_any(normalized, SMALL_TALK_TERMS):
         return ClassificationResult(
@@ -132,7 +314,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Owner AI khong duoc hoat dong trong route van hanh.",
             )
 
-        if "voucher" in request.route.lower() and contains_any(normalized, VOUCHER_TERMS):
+        if "voucher" in request.route.lower() and contains_any(contextual, VOUCHER_TERMS):
             return ClassificationResult(
                 intent="owner_voucher_draft",
                 label=OWNER_ALLOWED_DRAFT,
@@ -142,7 +324,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="AI chi soan nhap voucher, khong tu publish.",
             )
 
-        if contains_any(normalized, OWNER_LOCATION_SERVICE_CRUD_TERMS):
+        if contains_any(contextual, OWNER_LOCATION_SERVICE_CRUD_TERMS):
             return ClassificationResult(
                 intent="owner_blocked_location_service_crud",
                 label=OWNER_BLOCKED_LOCATION_SERVICE_CRUD,
@@ -152,7 +334,17 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Owner AI khong duoc tao/sua/xoa dia diem hoac dich vu.",
             )
 
-        if contains_any(normalized, OWNER_OPERATION_TERMS):
+        if contains_any(contextual, CANCELLATION_ANALYSIS_TERMS):
+            return ClassificationResult(
+                intent="owner_revenue_summary",
+                label=OWNER_ALLOWED_READ,
+                confidence=0.84,
+                allowed=True,
+                risk_level="read",
+                reason="Phan tich ti le huy don duoc phep.",
+            )
+
+        if contains_any(contextual, OWNER_OPERATION_TERMS):
             return ClassificationResult(
                 intent="owner_blocked_operations",
                 label=OWNER_BLOCKED_OPERATIONS,
@@ -162,7 +354,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Yeu cau thuoc nhom van hanh/POS/booking bi cam cho Owner AI.",
             )
 
-        if contains_any(normalized, SECURITY_FINANCE_TERMS):
+        if contains_any(contextual, SECURITY_FINANCE_TERMS):
             return ClassificationResult(
                 intent="owner_blocked_security_finance",
                 label=OWNER_BLOCKED_SECURITY_FINANCE,
@@ -172,11 +364,21 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Yeu cau thuoc nhom bao mat/tai chinh bi chan.",
             )
 
+        if contains_any(contextual, EXPORT_REPORT_TERMS):
+            return ClassificationResult(
+                intent="owner_export_report",
+                label=OWNER_ALLOWED_WRITE_SAFE,
+                confidence=0.88,
+                allowed=True,
+                risk_level="low",
+                reason="Xuat bao cao la action doc/xuat file, can preview va xac nhan truoc khi thuc hien.",
+            )
+
         if (
-            contains_any(normalized, REVIEW_TERMS + REVIEW_COMPLAINT_TERMS)
-            and contains_any(normalized, REVIEW_REPLY_TERMS)
+            contains_any(contextual, REVIEW_TERMS + REVIEW_COMPLAINT_TERMS)
+            and contains_any(contextual, REVIEW_REPLY_TERMS)
         ):
-            if contains_any(normalized, ("dang", "gui luon", "luu luon")):
+            if contains_any(contextual, ("dang", "gui luon", "luu luon")):
                 return ClassificationResult(
                     intent="owner_review_reply_publish",
                     label=OWNER_ALLOWED_WRITE_SAFE,
@@ -194,7 +396,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Soan ban nhap phan hoi review duoc phep.",
             )
 
-        if contains_any(normalized, REVIEW_TERMS):
+        if contains_any(contextual, REVIEW_TERMS):
             return ClassificationResult(
                 intent="owner_review_summary",
                 label=OWNER_ALLOWED_READ,
@@ -204,7 +406,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Doc va tom tat review duoc phep.",
             )
 
-        if contains_any(normalized, REVENUE_TERMS):
+        if contains_any(contextual, REVENUE_TERMS + CANCELLATION_ANALYSIS_TERMS):
             return ClassificationResult(
                 intent="owner_revenue_summary",
                 label=OWNER_ALLOWED_READ,
@@ -214,7 +416,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Phan tich doanh thu tong hop duoc phep.",
             )
 
-        if contains_any(normalized, VOUCHER_TERMS):
+        if contains_any(contextual, VOUCHER_TERMS):
             return ClassificationResult(
                 intent="owner_voucher_draft",
                 label=OWNER_ALLOWED_DRAFT,
@@ -225,7 +427,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
             )
 
     if request.role == "admin":
-        if contains_any(normalized, ADMIN_CRITICAL_TERMS):
+        if contains_any(contextual, ADMIN_CRITICAL_TERMS):
             return ClassificationResult(
                 intent="admin_critical_action",
                 label=ADMIN_CRITICAL,
@@ -235,7 +437,17 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Admin critical action can preview + typed confirmation.",
             )
 
-        if contains_any(normalized, ADMIN_WRITE_TERMS):
+        if contains_any(contextual, EXPORT_REPORT_TERMS):
+            return ClassificationResult(
+                intent="admin_export_report",
+                label=ADMIN_WRITE,
+                confidence=0.88,
+                allowed=True,
+                risk_level="low",
+                reason="Admin xuat bao cao la action tao file/doc du lieu va can action handler rieng.",
+            )
+
+        if contains_any(contextual, ADMIN_WRITE_TERMS):
             return ClassificationResult(
                 intent="admin_write_action",
                 label=ADMIN_WRITE,
@@ -245,7 +457,7 @@ def classify_request(request: BotRequest) -> ClassificationResult:
                 reason="Admin write action can run only after preview and confirmation.",
             )
 
-        if contains_any(normalized, REVENUE_TERMS + REVIEW_TERMS + VOUCHER_TERMS):
+        if contains_any(contextual, REVENUE_TERMS + REVIEW_TERMS + VOUCHER_TERMS + CANCELLATION_ANALYSIS_TERMS):
             return ClassificationResult(
                 intent="admin_read_analysis",
                 label=ADMIN_READ,
