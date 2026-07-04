@@ -358,7 +358,7 @@ The system uses a relational **MySQL** database with **60 tables** organized acr
     |----------------|  |----------------|  |  reservations           |
     | id (PK)        |  | id (PK)        |  |-------------------------|
     | booking_id     |  | booking_id     |  | id (PK)                 |
-    | ticket_code    |  | amount         |  | commission     |  | table_id                |
+    | ticket_code    |  | amount         |  | table_id                |
     | qr_code        |  | status         |  | status                  |
     | status         |  +----------------+  +-------------------------+
     +----------------+
