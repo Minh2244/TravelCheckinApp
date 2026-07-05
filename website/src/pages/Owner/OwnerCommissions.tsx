@@ -457,7 +457,10 @@ const OwnerCommissions = () => {
                         message.info(`Không có dữ liệu để xuất`);
                         return;
                       }
-                      await exportOwnerCommissions(displayedGroupedItems, "Owner");
+                      const userStr = sessionStorage.getItem("user");
+                      const user = userStr ? JSON.parse(userStr) : null;
+                      const userName = user?.full_name || "Owner";
+                      await exportOwnerCommissions(displayedGroupedItems, userName);
                     } catch (err: any) {
                       message.error(err.message || "Lỗi khi xuất Excel");
                     }
