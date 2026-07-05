@@ -438,6 +438,16 @@ const OwnerCommissions = () => {
                       let exportData = groupedItems;
                       if (exportYear !== "all") {
                         exportData = groupedItems.filter((item) => {
+                          let yearFromPeriod = null;
+                          if (item.billing_period) {
+                            const match = item.billing_period.match(/\b(20\d{2})\b/);
+                            if (match) {
+                              yearFromPeriod = Number(match[1]);
+                            }
+                          }
+                          if (yearFromPeriod) {
+                            return yearFromPeriod === Number(exportYear);
+                          }
                           const d = dayjs(item.created_at || item.due_date);
                           return d.isValid() && d.year() === Number(exportYear);
                         });
