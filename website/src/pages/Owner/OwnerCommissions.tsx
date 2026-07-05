@@ -67,8 +67,7 @@ const OwnerCommissions = () => {
   const [adminBank, setAdminBank] = useState<AdminBankInfo | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [reconciling, setReconciling] = useState(false);
-  const [filterMonth, setFilterMonth] = useState<dayjs.Dayjs | null>(() => dayjs());
-
+  const [pendingFilterYear, setPendingFilterYear] = useState<string>("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,16 +170,13 @@ const OwnerCommissions = () => {
   }, [items]);
 
   const filteredPendingItems = useMemo(() => {
-    if (!filterMonth) return pendingItems;
-    const y = filterMonth.year();
-    const m = filterMonth.month(); // 0-11
-    const start = new Date(y, m, 1, 0, 0, 0).getTime();
-    const end = new Date(y, m + 1, 0, 23, 59, 59).getTime();
+    if (pendingFilterYear === "all") return pendingItems;
+    const targetYear = Number(pendingFilterYear);
     return pendingItems.filter((item) => {
-      const t = new Date(item.payment_time).getTime();
-      return t >= start && t <= end;
+      const d = dayjs(item.payment_time);
+      return d.isValid() && d.year() === targetYear;
     });
-  }, [pendingItems, filterMonth]);
+  }, [pendingItems, pendingFilterYear]);
   const unpaidTotal = useMemo(() => {
     return unpaidItems.reduce((sum, x) => sum + Number(x?.total_due || 0), 0);
   }, [unpaidItems]);
@@ -482,12 +478,12 @@ const OwnerCommissions = () => {
           title={
             <div className="flex flex-wrap justify-between items-center gap-2">
               <span>Các giao dịch phát sinh chờ kết toán</span>
-              <DatePicker
-                value={filterMonth}
-                onChange={setFilterMonth}
-                format="MM/YYYY"
-                placeholder="Chọn tháng"
-                allowClear
+              <Select
+                value={pendingFilterYear}
+                onChange={setPendingFilterYear}
+                options={yearOptions}
+                className="w-36"
+                placeholder="Chọn năm"
               />
             </div>
           }
