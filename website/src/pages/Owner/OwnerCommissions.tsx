@@ -334,6 +334,24 @@ const OwnerCommissions = () => {
     });
   };
 
+  const displayedGroupedItems = useMemo(() => {
+    if (exportYear === "all") return groupedItems;
+    return groupedItems.filter((item) => {
+      let yearFromPeriod = null;
+      if (item.billing_period) {
+        const match = item.billing_period.match(/\b(20\d{2})\b/);
+        if (match) {
+          yearFromPeriod = Number(match[1]);
+        }
+      }
+      if (yearFromPeriod) {
+        return yearFromPeriod === Number(exportYear);
+      }
+      const d = dayjs(item.created_at || item.due_date);
+      return d.isValid() && d.year() === Number(exportYear);
+    });
+  }, [groupedItems, exportYear]);
+
   return (
     <MainLayout>
       <div className="space-y-4">
@@ -435,28 +453,11 @@ const OwnerCommissions = () => {
                   icon={<FileExcelOutlined />}
                   onClick={async () => {
                     try {
-                      let exportData = groupedItems;
-                      if (exportYear !== "all") {
-                        exportData = groupedItems.filter((item) => {
-                          let yearFromPeriod = null;
-                          if (item.billing_period) {
-                            const match = item.billing_period.match(/\b(20\d{2})\b/);
-                            if (match) {
-                              yearFromPeriod = Number(match[1]);
-                            }
-                          }
-                          if (yearFromPeriod) {
-                            return yearFromPeriod === Number(exportYear);
-                          }
-                          const d = dayjs(item.created_at || item.due_date);
-                          return d.isValid() && d.year() === Number(exportYear);
-                        });
-                      }
-                      if (exportData.length === 0) {
-                        message.info(`Không có dữ liệu trong ${exportYear === "all" ? "tất cả các năm" : "năm " + exportYear}`);
+                      if (displayedGroupedItems.length === 0) {
+                        message.info(`Không có dữ liệu để xuất`);
                         return;
                       }
-                      await exportOwnerCommissions(exportData, "Owner");
+                      await exportOwnerCommissions(displayedGroupedItems, "Owner");
                     } catch (err: any) {
                       message.error(err.message || "Lỗi khi xuất Excel");
                     }
@@ -471,7 +472,7 @@ const OwnerCommissions = () => {
           loading={loading}
           className="rounded-2xl"
         >
-          <Table rowKey="commission_id" dataSource={groupedItems} columns={columns} pagination={false} />
+          <Table rowKey="commission_id" dataSource={displayedGroupedItems} columns={columns} pagination={false} />
         </Card>
 
         <Card
