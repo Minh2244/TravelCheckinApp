@@ -55,7 +55,10 @@ axiosClient.interceptors.response.use(
           /owner\s*đang\s*chờ\s*admin\s*duyệt/i.test(msg) ||
           /tài\s*khoản\s*đã\s*bị\s*khóa/i.test(msg)));
 
-    if (shouldForceLogout) {
+    const url = error.config?.url || "";
+    const isAuthEndpoint = url.includes("/auth/login") || url.includes("/auth/register");
+
+    if (shouldForceLogout && !isAuthEndpoint) {
       sessionStorage.removeItem("accessToken");
       sessionStorage.removeItem("refreshToken");
       sessionStorage.removeItem("user");

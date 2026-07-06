@@ -8,67 +8,67 @@ export interface ActionRegistryContext {
 const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/owner/dashboard",
-    actions: ["owner_revenue_summary", "owner_export_report", "owner_review_summary", "owner_voucher_draft"],
+    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "export_revenue_report", "owner_analyze_reviews", "owner_voucher_draft", "owner_get_order_stats", "owner_get_top_services", "owner_manage_employees", "owner_view_employees"],
   },
   {
     prefix: "/owner/reviews",
-    actions: ["owner_review_summary", "owner_review_reply_draft", "owner_review_reply_publish"],
+    actions: ["get_dashboard_stats", "owner_analyze_reviews", "owner_review_reply_draft", "owner_review_reply_publish"],
   },
   {
     prefix: "/owner/vouchers",
-    actions: ["owner_voucher_draft"],
+    actions: ["get_dashboard_stats", "owner_voucher_draft"],
   },
   {
     prefix: "/owner/profile",
-    actions: ["owner_revenue_summary"],
+    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_manage_employees", "owner_view_employees"],
   },
 ];
 
 const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/admin/dashboard",
-    actions: ["admin_revenue_analysis", "admin_export_report"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/users",
-    actions: ["admin_revenue_analysis", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_user_lock"],
   },
   {
     prefix: "/admin/owners",
-    actions: ["admin_revenue_analysis", "admin_location_review", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_location_review", "admin_user_lock"],
   },
   {
     prefix: "/admin/locations",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review"],
   },
   {
     prefix: "/admin/owner-services",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review"],
   },
   {
     prefix: "/admin/reviews",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review"],
   },
   {
     prefix: "/admin/vouchers",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/system-vouchers",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/owner-vouchers",
-    actions: ["admin_revenue_analysis", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_location_review"],
   },
   {
     prefix: "/admin/finance",
-    actions: ["admin_revenue_analysis", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_user_lock"],
   },
 ];
 
 function normalizeRoute(route: string): string {
-  const value = String(route || "").trim();
+  const value = String(route || "").trim().toLowerCase();
   return value.startsWith("/") ? value : `/${value}`;
 }
 

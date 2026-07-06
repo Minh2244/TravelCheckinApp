@@ -17,6 +17,7 @@ import aiRoutes from "./routes/aiRoutes";
 import sosRoutes from "./routes/sosRoutes";
 import ownerRoutes from "./routes/ownerRoutes";
 import geoRoutes from "./routes/geoRoutes";
+import internalAiRoutes from "./routes/internalAiRoutes";
 import { addSseClient, publishToUser, removeSseClient } from "./utils/realtime";
 import { ensureBookingTableReservationsSchema } from "./utils/tableReservations";
 import { initSocketHub } from "./utils/socketHub";
@@ -50,6 +51,7 @@ app.use("/api/owner", ownerRoutes);
 app.use("/api/geo", geoRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/user/itineraries", itineraryRoutes);
+app.use("/api/internal/ai", internalAiRoutes);
 
 // Realtime events (SSE)
 // Note: EventSource can't send Authorization headers, so token is provided via query.

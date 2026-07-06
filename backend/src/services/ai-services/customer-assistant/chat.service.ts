@@ -1,18 +1,22 @@
-﻿import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { pool } from "../../../config/database";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { CUSTOMER_ASSISTANT_PROMPT, responseSchema } from "./prompt.builder";
 import { getLocationsSearchContext, type AiRequestContext } from "./tools";
 import { classifyUserIntent, type AiIntent } from "./intent";
 
-// Khá»Ÿi táº¡o Gemini Client
-// LÆ°u Ã½: Äáº£m báº£o GEMINI_API_KEY Ä‘Ã£ cÃ³ trong process.env
-const ai = new GoogleGenAI({});
+// Removed global ai instance to support per-request rotation
+function getGoogleGenAI() {
+  const rawKeys = process.env.GEMINI_API_KEY || "";
+  const keys = rawKeys.split(",").map(k => k.trim()).filter(Boolean);
+  const apiKey = keys.length > 0 ? keys[Math.floor(Math.random() * keys.length)] : undefined;
+  return new GoogleGenAI(apiKey ? { apiKey } : {});
+}
 
 export interface AiChatRequest {
   userId: number;
   prompt: string;
-  conversationId?: number; // TÃ¹y chá»n, Ä‘á»ƒ duy trÃ¬ ngá»¯ cáº£nh
+  conversationId?: number; // TÃ¹y chá» n, Ä‘á»ƒ duy trÃ¬ ngá»¯ cáº£nh
   context?: AiRequestContext;
 }
 
@@ -227,6 +231,7 @@ CÃ¢u há»i cá»§a ngÆ°á»i dÃ¹ng:
         "Hiá»‡n há»‡ thá»‘ng chÆ°a cÃ³ Ä‘á»‹a Ä‘iá»ƒm phÃ¹ há»£p vá»›i yÃªu cáº§u nÃ y. Báº¡n thá»­ nÃ³i rÃµ khu vá»±c hoáº·c loáº¡i Ä‘á»‹a Ä‘iá»ƒm báº¡n muá»‘n tÃ¬m nha.";
       locationsResult = [];
     } else {
+      const ai = getGoogleGenAI();
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash", // Hoáº·c model máº·c Ä‘á»‹nh phÃ¹ há»£p
         contents: promptContext,

@@ -9,7 +9,9 @@ import {
   Space,
   Table,
   message,
+  Tooltip,
 } from "antd";
+import { LockOutlined, UnlockOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
@@ -107,7 +109,6 @@ const OwnerEmployees = () => {
         full_name: employee.full_name ?? row.full_name ?? "",
         email: employee.email ?? row.email ?? undefined,
         phone: employee.phone ?? row.phone ?? undefined,
-        password: undefined,
         location_id: locationId ?? row.location_id ?? undefined,
         position: position ?? row.position ?? undefined,
       });
@@ -118,20 +119,42 @@ const OwnerEmployees = () => {
     }
   };
 
+  const onToggleStatus = async (row: EmployeeRow) => {
+    const isLocked = row.status === 'locked';
+    const actionText = isLocked ? 'Mở khóa' : 'Khóa';
+    
+    Modal.confirm({
+      title: `${actionText} nhân viên`,
+      content: `Bạn chắc chắn muốn ${actionText.toLowerCase()} nhân viên ${row.full_name || ""}?`,
+      okText: actionText,
+      okButtonProps: { danger: !isLocked },
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          const res = await ownerApi.toggleOwnerEmployeeStatus(row.user_id);
+          message.success(res.message);
+          void load();
+        } catch (error: any) {
+          message.error(error?.response?.data?.message || "Lỗi server");
+        }
+      },
+    });
+  };
+
   const onDelete = async (row: EmployeeRow) => {
     Modal.confirm({
       title: "Xóa nhân viên",
-      content: `Bạn chắc chắn muốn xóa nhân viên ${row.full_name || ""}?`,
+      content: `Bạn chắc chắn muốn xóa nhân viên ${row.full_name || ""}? Tài khoản này sẽ bị ẩn khỏi danh sách nhưng vẫn giữ tên trong các hóa đơn cũ.`,
       okText: "Xóa",
       okButtonProps: { danger: true },
       cancelText: "Hủy",
       onOk: async () => {
         try {
-          await ownerApi.deleteEmployee(row.user_id);
-          message.success("Đã xóa nhân viên");
-          await load();
-        } catch (err: unknown) {
-          message.error(getErrorMessage(err, "Lỗi xóa nhân viên"));
+          const res = await ownerApi.deleteOwnerEmployee(row.user_id);
+          message.success(res.message);
+          void load();
+        } catch (error: any) {
+          message.error(error?.response?.data?.message || "Lỗi server");
         }
       },
     });
@@ -142,14 +165,10 @@ const OwnerEmployees = () => {
       const values = (await form.validateFields()) as Record<string, unknown>;
       setSaving(true);
 
-      const passwordRaw = String(values.password || "").trim();
-      const password = mode === "edit" ? passwordRaw || undefined : passwordRaw;
-
       const payload = {
         full_name: String(values.full_name || "").trim(),
         email: String(values.email || "").trim() || undefined,
         phone: String(values.phone || "").trim() || undefined,
-        password,
         location_id: Number(values.location_id),
         position: String(values.position || "").trim(),
       };
@@ -193,7 +212,12 @@ const OwnerEmployees = () => {
         width: 140,
         render: (_, r) => r.position || "-",
       },
-      { title: "Trạng thái", dataIndex: "status", width: 120 },
+      { 
+        title: "Trạng thái", 
+        dataIndex: "status", 
+        width: 140,
+        render: (status: string) => status === 'locked' ? <span style={{ color: 'red', whiteSpace: 'nowrap' }}>Đã khóa</span> : <span style={{ color: 'green', whiteSpace: 'nowrap' }}>Đang hoạt động</span>
+      },
       {
         title: "Hành động",
         key: "actions",
@@ -203,9 +227,24 @@ const OwnerEmployees = () => {
             <Button size="small" onClick={() => void onEdit(r)}>
               Sửa
             </Button>
-            <Button danger size="small" onClick={() => void onDelete(r)}>
-              Xóa
-            </Button>
+            <Tooltip title={r.status === 'locked' ? 'Mở khóa' : 'Khóa'}>
+              <Button
+                danger={r.status !== 'locked'}
+                type="text"
+                size="small" 
+                onClick={() => void onToggleStatus(r)}
+                icon={r.status === 'locked' ? <LockOutlined /> : <UnlockOutlined />}
+              />
+            </Tooltip>
+            <Tooltip title="Xóa nhân viên">
+              <Button
+                danger
+                type="text"
+                size="small"
+                onClick={() => void onDelete(r)}
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
           </Space>
         ),
       },
@@ -292,35 +331,8 @@ const OwnerEmployees = () => {
           <Form.Item name="email" label="Email">
             <Input />
           </Form.Item>
-          <Form.Item name="phone" label="SĐT">
+          <Form.Item name="phone" label="SĐT" rules={[{ required: true, message: 'Vui lòng nhập SĐT' }]}>
             <Input />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="Mật khẩu"
-            rules={[
-              {
-                validator: async (_, value) => {
-                  const v = String(value || "").trim();
-                  if (mode === "create") {
-                    if (!v) throw new Error("Nhập mật khẩu");
-                    if (v.length < 6)
-                      throw new Error("Mật khẩu phải có ít nhất 6 ký tự");
-                    return;
-                  }
-
-                  if (!v) return;
-                  if (v.length < 6)
-                    throw new Error("Mật khẩu phải có ít nhất 6 ký tự");
-                },
-              },
-            ]}
-          >
-            <Input.Password
-              placeholder={
-                mode === "create" ? "Nhập mật khẩu" : "Để trống nếu không đổi"
-              }
-            />
           </Form.Item>
 
           <Form.Item

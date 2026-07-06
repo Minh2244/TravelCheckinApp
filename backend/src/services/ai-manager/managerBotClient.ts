@@ -12,10 +12,11 @@ export interface ManagerBotPayload {
   screen_context?: Record<string, unknown>;
   available_actions?: string[];
   mock_context?: Record<string, unknown>;
+  actor_user_id?: string | number;
 }
 
 const DEFAULT_BOT_URL = "http://127.0.0.1:8090";
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 30000;
 
 function getBotBaseUrl(): string {
   return (process.env.AI_MANAGER_BOT_URL || DEFAULT_BOT_URL).replace(/\/+$/, "");

@@ -6,3 +6,7 @@ python-dotenv
 pytest
 pytest-cov
 
+
+mysql-connector-python>=9.0.0
+
+google-genai>=0.1.0

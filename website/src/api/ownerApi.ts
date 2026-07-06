@@ -823,6 +823,20 @@ const ownerApi = {
     return res.data;
   },
 
+  deleteOwnerEmployee: async (id: number) => {
+    const res = await axiosClient.delete<{ success: boolean; message: string }>(
+      `/owner/employees/${id}`,
+    );
+    return res.data;
+  },
+
+  toggleOwnerEmployeeStatus: async (id: number) => {
+    const res = await axiosClient.put<{ success: boolean; message: string }>(
+      `/owner/employees/${id}/toggle-status`,
+    );
+    return res.data;
+  },
+
   createEmployee: async (payload: unknown) => {
     const res = await axiosClient.post("/owner/employees", payload);
     return res.data;

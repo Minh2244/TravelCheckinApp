@@ -948,7 +948,7 @@ const UserLayout = ({
                                 {locs.map((loc: any, idx: number) => (
                                   <div key={idx} className="bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm flex flex-col hover:border-teal-200 transition">
                                     {loc.first_image && (
-                                      <img src={loc.first_image.startsWith('http') ? loc.first_image : `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/images/${loc.first_image}`} alt={loc.location_name || "Location"} className="h-24 w-full object-cover" />
+                                      <img src={resolveBackendUrl(loc.first_image) || ""} alt={loc.location_name || "Location"} className="h-24 w-full object-cover" />
                                     )}
                                     <div className="p-2.5">
                                       {loc.location_name ? (

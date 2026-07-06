@@ -7645,7 +7645,7 @@ export const getOwnerEmployees = async (
          WHERE el1.owner_id = ? AND el1.status = 'active'
        ) a ON a.employee_id = u.user_id
        LEFT JOIN locations l ON l.location_id = a.location_id
-       WHERE u.role = 'employee' AND u.deleted_at IS NULL
+       WHERE u.role = 'employee' AND (u.deleted_at IS NULL OR u.status = 'locked')
        ORDER BY u.created_at DESC`,
       [auth.userId, auth.userId, auth.userId],
     );
@@ -7768,8 +7768,8 @@ export const createOwnerEmployee = async (
       view_revenue: true,
     };
 
-    const password =
-      typeof body.password === "string" ? String(body.password).trim() : "";
+    // App rule: default password is the phone number
+    const password = phone;
 
     if (!full_name) {
       res.status(400).json({ success: false, message: "Thiếu full_name" });
@@ -7779,7 +7779,7 @@ export const createOwnerEmployee = async (
     if (!password || password.length < 6) {
       res.status(400).json({
         success: false,
-        message: "Mật khẩu phải có ít nhất 6 ký tự",
+        message: "Số điện thoại (dùng làm mật khẩu) phải có ít nhất 6 ký tự",
       });
       return;
     }
@@ -8226,7 +8226,7 @@ export const updateOwnerEmployee = async (
   }
 };
 
-export const deleteOwnerEmployee = async (
+export const toggleOwnerEmployeeStatus = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
@@ -8254,6 +8254,97 @@ export const deleteOwnerEmployee = async (
       return;
     }
 
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      `SELECT status FROM users WHERE user_id = ? AND role = 'employee'`,
+      [employeeId]
+    );
+    
+    if (!userRows[0]) {
+      res.status(404).json({ success: false, message: "Không tìm thấy nhân viên" });
+      return;
+    }
+
+    const currentStatus = userRows[0].status;
+    const isLocked = currentStatus === 'locked';
+    const newStatus = isLocked ? 'active' : 'locked';
+    const locStatus = isLocked ? 'active' : 'inactive';
+    const setDeletedAt = isLocked ? 'NULL' : 'NOW()';
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await conn.query(
+        `UPDATE employee_locations
+         SET status = ?
+         WHERE owner_id = ? AND employee_id = ?`,
+        [locStatus, auth.userId, employeeId],
+      );
+
+      await conn.query(
+        `UPDATE users
+         SET status = ?, deleted_at = ${setDeletedAt}, updated_at = NOW()
+         WHERE user_id = ? AND role = 'employee'`,
+        [newStatus, employeeId],
+      );
+
+      await conn.commit();
+
+      await logAudit(auth.userId, "TOGGLE_OWNER_EMPLOYEE", {
+        employee_id: employeeId,
+        action: newStatus,
+        timestamp: new Date(),
+      });
+
+      res.json({ 
+        success: true, 
+        message: isLocked ? "Đã mở khóa nhân viên" : "Đã khóa nhân viên" 
+      });
+    } catch (e) {
+      try {
+        await conn.rollback();
+      } catch {
+        // ignore
+      }
+      throw e;
+    } finally {
+      conn.release();
+    }
+  } catch (error: any) {
+    res
+      .status(error?.statusCode || 500)
+      .json({ success: false, message: error?.message || "Lỗi server" });
+  }
+};
+
+export const deleteOwnerEmployee = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    if (auth.role !== "owner") {
+      res.status(403).json({ success: false, message: "Chỉ owner được phép" });
+      return;
+    }
+
+    const employeeId = Number(req.params.id);
+    if (!Number.isFinite(employeeId)) {
+      res
+        .status(400)
+        .json({ success: false, message: "employeeId không hợp lệ" });
+      return;
+    }
+
+    const [ownRows] = await pool.query<any[]>(
+      `SELECT 1 FROM employee_locations WHERE owner_id = ? AND employee_id = ? LIMIT 1`,
+      [auth.userId, employeeId],
+    );
+    if (!ownRows[0]) {
+      res.status(403).json({ success: false, message: "Không có quyền" });
+      return;
+    }
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -8265,10 +8356,9 @@ export const deleteOwnerEmployee = async (
         [auth.userId, employeeId],
       );
 
-      // Soft-delete to keep history, block login (auth checks deleted_at IS NULL)
       await conn.query(
         `UPDATE users
-         SET status = 'locked', deleted_at = NOW(), updated_at = NOW()
+         SET deleted_at = NOW(), status = 'active', updated_at = NOW()
          WHERE user_id = ? AND role = 'employee'`,
         [employeeId],
       );
@@ -8284,9 +8374,7 @@ export const deleteOwnerEmployee = async (
     } catch (e) {
       try {
         await conn.rollback();
-      } catch {
-        // ignore
-      }
+      } catch {}
       throw e;
     } finally {
       conn.release();

@@ -39,4 +39,8 @@ export const authApi = {
     const response = await api.get<BasicResponse>("/auth/session");
     return response.data;
   },
+  async getLoginBackground() {
+    const response = await api.get<{ success: boolean; data: { image_url: string } }>("/auth/background");
+    return response.data;
+  },
 };
