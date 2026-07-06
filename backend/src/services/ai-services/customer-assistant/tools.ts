@@ -10,6 +10,8 @@ export interface LocationCandidate {
   province: string | null;
   rating: number;
   total_reviews: number;
+  starting_price?: number | null;
+  available_services?: string | null;
 }
 
 export interface AiRequestContext {
@@ -272,41 +274,30 @@ export const getLocationsSearchContext = async (
     const intent = buildSearchIntent(query, requestContext);
 
     let sql = `
-      SELECT location_id, location_name, location_type, description, address, province, rating, total_reviews
-      FROM locations
-      WHERE status = 'active'
+      SELECT 
+        l.location_id, l.location_name, l.location_type, l.description, l.address, l.province, l.rating, l.total_reviews,
+        MIN(s.price) as starting_price,
+        GROUP_CONCAT(DISTINCT CONCAT(s.service_name, ' (', CAST(s.price AS UNSIGNED), 'đ)') SEPARATOR ', ') as available_services
+      FROM locations l
+      LEFT JOIN services s ON l.location_id = s.location_id AND s.status = 'available'
+      WHERE l.status = 'active'
     `;
     const params: any[] = [];
 
-    if (intent.typeFilters.length > 0) {
-      sql += ` AND location_type IN (${intent.typeFilters.map(() => "?").join(",")})`;
-      params.push(...intent.typeFilters);
-    }
+    // Bỏ qua lọc typeFilters theo yêu cầu để lấy toàn bộ dữ liệu
 
     if (intent.province) {
-      sql += ` AND province LIKE ?`;
+      sql += ` AND l.province LIKE ?`;
       params.push(`%${intent.province}%`);
     }
 
     sql += `
+      GROUP BY l.location_id
       ORDER BY
-        CASE
-          WHEN ? = 'hot_weather_recommendation'
-            AND (
-              LOWER(COALESCE(description, '')) LIKE '%mát%'
-              OR LOWER(COALESCE(description, '')) LIKE '%cafe%'
-              OR LOWER(COALESCE(description, '')) LIKE '%cà phê%'
-              OR LOWER(COALESCE(description, '')) LIKE '%nước%'
-              OR LOWER(COALESCE(description, '')) LIKE '%trà%'
-            )
-          THEN 0
-          ELSE 1
-        END,
-        rating DESC,
-        total_reviews DESC,
-        location_id DESC
+        l.rating DESC,
+        l.total_reviews DESC,
+        l.location_id DESC
       LIMIT 15`;
-    params.push(intent.intent);
 
     const [rows] = await pool.query<RowDataPacket[]>(sql, params);
 

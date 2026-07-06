@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "npx kill-port 3000 && nodemon --exec \"ts-node --files\" src/server.ts",
+    "predev": "npx kill-port 3000 8090",
+    "dev": "concurrently \"nodemon --exec \\\"ts-node --files\\\" src/server.ts\" \"cd ../ai-manager-bot && .\\\\.venv\\\\Scripts\\\\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8090 --reload\"",
     "build": "tsc",
     "start": "node dist/server.js",
     "backfill:pos-tickets-sold-by": "node dist/scripts/backfillPosTicketsSoldBy.js",
@@ -46,6 +47,7 @@
     "@types/node": "^25.0.3",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^7.0.5",
+    "concurrently": "^10.0.3",
     "nodemon": "^3.1.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

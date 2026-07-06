@@ -12,7 +12,6 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
-import ManagerAiBubble from "../../components/ManagerAiBubble";
 import ownerApi from "../../api/ownerApi";
 import { getErrorMessage } from "../../utils/safe";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
@@ -406,7 +405,7 @@ const OwnerReviews = () => {
         />
       </Modal>
 
-      <ManagerAiBubble screenContext={managerAiContext} />
+      
     </MainLayout>
   );
 };

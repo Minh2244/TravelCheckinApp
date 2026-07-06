@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .policy_labels import BLOCKED_OWNER_ROUTE_PREFIXES
+BLOCKED_OWNER_ROUTE_PREFIXES = (
+    "/owner/front-office",
+    "/owner/pos",
+    "/owner/hotel",
+    "/owner/tourist",
+    "/owner/employees",
+    "/owner/bank",
+    "/owner/commissions"
+)
 
 
 Role = Literal["owner", "admin"]
@@ -33,40 +41,40 @@ class PromptSuggestion:
 OWNER_COMMON = (
     PromptSuggestion(
         id="owner_common_revenue_today",
-        title="Doanh thu hom nay",
-        prompt="Hom nay doanh thu quan tang hay giam?",
+        title="Doanh thu hôm nay",
+        prompt="Hôm nay doanh thu quán tăng hay giảm?",
         intent_hint="owner_revenue_summary",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_revenue_month",
-        title="Doanh thu thang nay",
-        prompt="Doanh thu thang nay sao roi?",
+        title="Doanh thu tháng này",
+        prompt="Doanh thu tháng này sao roi?",
         intent_hint="owner_revenue_summary",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_cancel_rate",
-        title="Ti le huy don",
-        prompt="Ti le huy don thang nay va thang truoc sao roi?",
+        title="Tỉ lệ hủy đơn",
+        prompt="Tỉ lệ hủy đơn thang nay va thang truoc sao roi?",
         intent_hint="owner_revenue_summary",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_review_bad",
-        title="Tom tat danh gia xau",
-        prompt="Tom tat giup tui cac danh gia xau gan day",
+        title="Tóm tắt đánh giá xấu",
+        prompt="Tóm tắt giúp tui các đánh giá xấu gần đây",
         intent_hint="owner_review_summary",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_voucher",
-        title="Goi y voucher",
-        prompt="Goi y giup tui voucher cuoi tuan",
+        title="Gợi ý voucher",
+        prompt="Gợi ý giúp tui voucher cuối tuần",
         intent_hint="owner_voucher_draft",
         risk_level="low",
         requires_confirmation=False,
@@ -76,8 +84,8 @@ OWNER_COMMON = (
 OWNER_BY_ROUTE = (
     PromptSuggestion(
         id="owner_dashboard_trend",
-        title="Thang nay tang hay giam",
-        prompt="Thang nay doanh thu tang hay giam so voi thang truoc?",
+        title="Tháng này tăng hay giảm",
+        prompt="Tháng này doanh thu tăng hay giảm so với tháng trước?",
         intent_hint="owner_revenue_summary",
         risk_level="read",
         requires_confirmation=False,
@@ -85,8 +93,8 @@ OWNER_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="owner_reviews_reply",
-        title="Soan phan hoi review",
-        prompt="Khach che phuc vu lau qua, soan giup tui cau tra loi lich su",
+        title="Soạn phản hồi review",
+        prompt="Khách chê phục vụ lâu quá, soạn giúp tui câu trả lời lịch sự",
         intent_hint="owner_review_reply_draft",
         risk_level="low",
         requires_confirmation=False,
@@ -94,8 +102,8 @@ OWNER_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="owner_vouchers_weekend",
-        title="Uu dai cuoi tuan",
-        prompt="Soan giup tui y tuong khuyen mai cuoi tuan",
+        title="Ưu đãi cuối tuần",
+        prompt="Soạn giúp tui ý tưởng khuyến mãi cuối tuần",
         intent_hint="owner_voucher_draft",
         risk_level="low",
         requires_confirmation=False,
@@ -106,32 +114,32 @@ OWNER_BY_ROUTE = (
 ADMIN_COMMON = (
     PromptSuggestion(
         id="admin_common_system_revenue",
-        title="Tong quan doanh thu",
-        prompt="Tong quan doanh thu toan he thong hom nay",
+        title="Tổng quan doanh thu",
+        prompt="Tổng quan doanh thu toan he thong hom nay",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="admin_common_month_revenue",
-        title="Doanh thu thang nay",
-        prompt="Doanh thu thang nay cua he thong sao roi?",
+        title="Doanh thu tháng này",
+        prompt="Doanh thu tháng này cua he thong sao roi?",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="admin_common_cancel_rate",
-        title="Ti le huy don",
-        prompt="Ti le huy don thang nay va thang truoc the nao?",
+        title="Tỉ lệ hủy đơn",
+        prompt="Tỉ lệ hủy đơn thang nay va thang truoc the nao?",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="admin_common_bad_locations",
-        title="Dia diem bi danh gia xau",
-        prompt="Dia diem nao dang bi danh gia xau nhieu?",
+        title="Địa điểm bị đánh giá xấu",
+        prompt="Địa điểm nào đang bị đánh giá xấu nhiều?",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -141,8 +149,8 @@ ADMIN_COMMON = (
 ADMIN_BY_ROUTE = (
     PromptSuggestion(
         id="admin_dashboard_trend",
-        title="Xu huong he thong",
-        prompt="Tom tat xu huong doanh thu va hoat dong he thong hom nay",
+        title="Xu hướng hệ thống",
+        prompt="Tóm tắt xu hướng doanh thu và hoạt động hệ thống hôm nay",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -150,8 +158,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_reviews_summary",
-        title="Tom tat danh gia",
-        prompt="Tom tat cac danh gia xau va dia diem can chu y",
+        title="Tóm tắt đánh giá",
+        prompt="Tóm tắt các đánh giá xấu và địa điểm cần chú ý",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -159,8 +167,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_vouchers_summary",
-        title="Kiem tra voucher",
-        prompt="Tom tat tinh hinh voucher va goi y diem can kiem tra",
+        title="Kiểm tra voucher",
+        prompt="Tóm tắt tình hình voucher và gợi ý điểm cần kiểm tra",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -168,8 +176,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_users_suspicious",
-        title="Kiem tra user bat thuong",
-        prompt="Tom tat hoat dong bat thuong cua user nay",
+        title="Kiểm tra user bất thường",
+        prompt="Tóm tắt hoạt động bất thường của user này",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -177,8 +185,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_users_lock_preview",
-        title="Preview khoa user",
-        prompt="Kiem tra va tao preview khoa tai khoan user nay",
+        title="Preview khóa user",
+        prompt="Kiểm tra và tạo preview khóa tài khoản user này",
         intent_hint="admin_critical_action",
         risk_level="critical",
         requires_confirmation=True,
@@ -186,8 +194,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_reviews_pending",
-        title="Ho so cho duyet",
-        prompt="Tom tat ho so dia diem hoac dich vu dang cho duyet",
+        title="Hồ sơ chờ duyệt",
+        prompt="Tóm tắt hồ sơ địa điểm hoặc dịch vụ đang chờ duyệt",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -195,8 +203,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_owners_attention",
-        title="Owner can chu y",
-        prompt="Tom tat owner nao can chu y va vi sao",
+        title="Owner cần chú ý",
+        prompt="Tóm tắt owner nào cần chú ý và vì sao",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
@@ -204,8 +212,8 @@ ADMIN_BY_ROUTE = (
     ),
     PromptSuggestion(
         id="admin_export_report",
-        title="Xuat bao cao",
-        prompt="Xuat file bao cao cho bo loc hien tai",
+        title="Xuất báo cáo",
+        prompt="Xuất file báo cáo cho bộ lọc hiện tại",
         intent_hint="admin_export_report",
         risk_level="low",
         requires_confirmation=True,
@@ -250,6 +258,6 @@ def get_prompt_suggestions(role: str, route: str) -> dict[str, object]:
     return {
         "role": role,
         "route": route,
-        "suggestions": suggestions[:6],
+        "suggestions": suggestions[:4],
         "disabled_reason": None,
     }

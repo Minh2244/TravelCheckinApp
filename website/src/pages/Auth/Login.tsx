@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Form, Input, Button, Card, Typography, message, Checkbox } from "antd";
+import { useState } from "react";
+import { Form, Input, Button, Typography, message, Checkbox } from "antd";
 import {
   UserOutlined,
   LockOutlined,
@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { useNavigate, Link } from "react-router-dom";
 import authApi from "../../api/authApi";
-import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
+import { WavyDivider } from "../../components/WavyDivider";
 
 const { Title, Text } = Typography;
 
@@ -33,29 +33,6 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [facebookLoading, setFacebookLoading] = useState(false);
-  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchBackground = async () => {
-      try {
-        const response = await authApi.getLoginBackground();
-        if (response?.success && response.data?.image_url) {
-          const raw = response.data.image_url as string;
-          const resolved = resolveBackendUrl(raw) || raw;
-
-          // Chỉ set background nếu preload OK để tránh "trắng tinh" khi ảnh lỗi.
-          const img = new Image();
-          img.onload = () => setBackgroundUrl(resolved);
-          img.onerror = () => setBackgroundUrl(null);
-          img.src = resolved;
-        }
-      } catch {
-        // Không chặn UI nếu không lấy được ảnh nền
-      }
-    };
-
-    fetchBackground();
-  }, []);
 
   const onFinish = async (values: { email: string; password: string }) => {
     setLoading(true);
@@ -330,122 +307,136 @@ const Login = () => {
   };
 
   return (
-    <div
-      className="relative min-h-screen flex items-center justify-center py-12 px-4"
-      style={
-        backgroundUrl
-          ? {
-              backgroundImage: `url(${backgroundUrl})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }
-          : undefined
-      }
-    >
-      {!backgroundUrl ? (
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600" />
-      ) : null}
-      <Card className="relative z-10 w-full max-w-md shadow-2xl rounded-2xl border-0">
-        <div className="text-center mb-6">
-          <Title
-            level={2}
-            className="text-blue-600 font-extrabold"
-            style={{ marginBottom: 0 }}
-          >
-            Đăng Nhập
-          </Title>
-          <Text type="secondary" className="text-gray-400">
-            Chào mừng bạn trở lại!
+    <div className="min-h-screen w-full flex bg-white overflow-hidden">
+      {/* Left Pane (Image/Brand) */}
+      <div className="relative hidden md:flex md:w-5/12 lg:w-[45%] bg-gradient-to-br from-blue-600 to-cyan-500 flex-col justify-center items-center overflow-hidden">
+        <div className="absolute inset-0 bg-blue-900/40 mix-blend-multiply" />
+
+        {/* Brand Content */}
+        <div className="relative z-10 flex flex-col items-center p-8 text-center mt-[-10%]">
+          <div className="w-48 h-48 mb-6 rounded-full bg-white/10 backdrop-blur-md shadow-[0_0_40px_rgba(255,255,255,0.2)] overflow-hidden flex items-center justify-center">
+            <img src="/logo-transparent.png" alt="Logo" className="w-full h-full object-cover scale-[1.05] translate-x-2" />
+          </div>
+          <Title level={1} className="!text-white !mb-2 drop-shadow-md uppercase tracking-wider font-extrabold text-3xl">Dấu Ấn Hành Trình</Title>
+          <Text className="text-blue-50 text-xl opacity-95 max-w-md drop-shadow-md italic font-semibold text-center">
+            Hành trình hôm nay - Kỷ niệm mai sau.
           </Text>
         </div>
 
-        <Form layout="vertical" onFinish={onFinish} size="large">
-          <Form.Item
-            name="email"
-            rules={[
-              { required: true, message: "Vui lòng nhập Email!" },
-              { type: "email", message: "Email không đúng định dạng!" },
-            ]}
-          >
-            <Input
-              prefix={<UserOutlined className="text-gray-400" />}
-              placeholder="Email"
-              className="rounded-lg"
-            />
-          </Form.Item>
+        {/* Wavy Divider */}
+        <WavyDivider position="left" className="!text-white z-20 left-full" />
+      </div>
 
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: "Vui lòng nhập Mật khẩu!" }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined className="text-gray-400" />}
-              placeholder="Mật khẩu"
-              className="rounded-lg"
-            />
-          </Form.Item>
-
-          <Form.Item>
-            <div className="flex justify-between items-center">
-              <Form.Item name="remember" valuePropName="checked" noStyle>
-                <Checkbox>Ghi nhớ đăng nhập</Checkbox>
-              </Form.Item>
-              <Link to="/forgot-password" className="text-blue-500">
-                Quên mật khẩu?
-              </Link>
+      {/* Right Pane (Form) */}
+      <div className="relative flex-1 flex flex-col justify-center items-center p-6 sm:p-12 z-30 bg-white">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo Header */}
+          <div className="md:hidden flex flex-col items-center mb-8">
+            <div className="w-24 h-24 mb-4 rounded-full bg-blue-50 shadow-sm overflow-hidden flex items-center justify-center">
+              <img src="/logo-transparent.png" alt="Logo" className="w-full h-full object-cover scale-[1.05] translate-x-1" />
             </div>
-          </Form.Item>
+            <Title level={2} className="!text-blue-600 !m-0 font-extrabold tracking-wide uppercase text-xl">Dấu Ấn Hành Trình</Title>
+          </div>
 
-          <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={loading}
-              block
-              className="rounded-lg h-12 text-lg"
+          <div className="mb-10">
+            <Title level={2} className="!text-slate-800 !font-extrabold !mb-1">
+              Đăng Nhập
+            </Title>
+            <Text className="text-slate-500 text-base">
+              Chào mừng bạn trở lại! Vui lòng nhập thông tin.
+            </Text>
+          </div>
+
+          <Form layout="vertical" onFinish={onFinish} size="large" className="space-y-4">
+            <Form.Item
+              name="email"
+              rules={[
+                { required: true, message: "Vui lòng nhập Email!" },
+                { type: "email", message: "Email không đúng định dạng!" },
+              ]}
+              className="mb-4"
             >
-              Đăng nhập
+              <Input
+                prefix={<UserOutlined className="text-slate-400 mr-2" />}
+                placeholder="Nhập email của bạn"
+                className="rounded-xl h-12 border-slate-200 hover:border-blue-400 focus:border-blue-500"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="password"
+              rules={[{ required: true, message: "Vui lòng nhập Mật khẩu!" }]}
+              className="mb-2"
+            >
+              <Input.Password
+                prefix={<LockOutlined className="text-slate-400 mr-2" />}
+                placeholder="Nhập mật khẩu"
+                className="rounded-xl h-12 border-slate-200 hover:border-blue-400 focus:border-blue-500"
+              />
+            </Form.Item>
+
+            <Form.Item className="mb-6">
+              <div className="flex justify-between items-center">
+                <Form.Item name="remember" valuePropName="checked" noStyle>
+                  <Checkbox className="text-slate-600">Ghi nhớ đăng nhập</Checkbox>
+                </Form.Item>
+                <Link to="/forgot-password" className="text-blue-600 font-medium hover:text-blue-700">
+                  Quên mật khẩu?
+                </Link>
+              </div>
+            </Form.Item>
+
+            <Form.Item className="mb-6">
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={loading}
+                block
+                className="rounded-xl h-12 text-lg font-bold bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg transition-all"
+              >
+                Đăng Nhập
+              </Button>
+            </Form.Item>
+          </Form>
+
+          <div className="flex items-center my-6">
+            <div className="flex-1 h-[1px] bg-slate-200"></div>
+            <span className="text-slate-400 px-4 text-sm font-medium">HOẶC TIẾP TỤC VỚI</span>
+            <div className="flex-1 h-[1px] bg-slate-200"></div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+            <Button
+              icon={<GoogleOutlined />}
+              onClick={handleGoogleLogin}
+              loading={googleLoading}
+              block
+              className="rounded-xl h-12 font-bold border-red-500 bg-red-500 hover:!bg-red-600 text-white hover:!text-white hover:!border-red-600 shadow-sm"
+            >
+              Google
             </Button>
-          </Form.Item>
-        </Form>
 
-        <div className="flex items-center my-4">
-          <div className="flex-1 h-px bg-gray-300"></div>
-          <span className="text-gray-400 px-4">Hoặc đăng nhập với</span>
-          <div className="flex-1 h-px bg-gray-300"></div>
+            <Button
+              icon={<FacebookOutlined />}
+              onClick={handleFacebookLogin}
+              loading={facebookLoading}
+              block
+              className="rounded-xl h-12 font-bold border-[#1877F2] bg-[#1877F2] hover:!bg-[#166FE5] text-white hover:!text-white hover:!border-[#166FE5] shadow-sm"
+            >
+              Facebook
+            </Button>
+          </div>
+
+          <div className="text-center">
+            <Text className="text-slate-500">
+              Chưa có tài khoản?{" "}
+              <Link to="/register" className="text-blue-600 font-bold hover:text-blue-700 hover:underline">
+                Đăng ký ngay
+              </Link>
+            </Text>
+          </div>
         </div>
-
-        <div className="flex flex-col gap-4">
-          <Button
-            icon={<GoogleOutlined />}
-            onClick={handleGoogleLogin}
-            loading={googleLoading}
-            block
-            className="rounded-lg h-12"
-          >
-            Đăng nhập với Google
-          </Button>
-
-          <Button
-            icon={<FacebookOutlined />}
-            onClick={handleFacebookLogin}
-            loading={facebookLoading}
-            block
-            className="rounded-lg h-12"
-          >
-            Đăng nhập với Facebook
-          </Button>
-        </div>
-
-        <div className="text-center mt-6">
-          <Text className="text-gray-500">
-            Chưa có tài khoản?{" "}
-            <Link to="/register" className="text-blue-500 font-semibold">
-              Đăng ký ngay
-            </Link>
-          </Text>
-        </div>
-      </Card>
+      </div>
     </div>
   );
 };

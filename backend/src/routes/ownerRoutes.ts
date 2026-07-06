@@ -40,6 +40,7 @@ import {
   getOwnerEmployees,
   updateOwnerEmployee,
   deleteOwnerEmployee,
+  toggleOwnerEmployeeStatus,
   getOwnerLocations,
   getOwnerLoginHistory,
   getOwnerMe,
@@ -304,6 +305,7 @@ router.get("/employees", getOwnerEmployees);
 router.get("/employees/:id", getOwnerEmployeeDetail);
 router.post("/employees", createOwnerEmployee);
 router.put("/employees/:id", updateOwnerEmployee);
+router.put("/employees/:id/toggle-status", toggleOwnerEmployeeStatus);
 router.delete("/employees/:id", deleteOwnerEmployee);
 router.put("/employees/:id/assignments", updateOwnerEmployeeAssignments);
 

@@ -1,15 +1,28 @@
+import { Ionicons } from "@expo/vector-icons";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useEffect, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  ImageBackground,
+  Dimensions,
+  Image,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
 import { FormField } from "../../src/components/form-field";
-import { ScreenShell } from "../../src/components/screen-shell";
 import { getErrorMessage } from "../../src/lib/error";
 import { authApi } from "../../src/modules/auth/auth.api";
+import { resolveBackendUrl } from "../../src/lib/url";
+import { WavyDivider } from "../../src/components/WavyDivider";
 
 const requestSchema = z.object({
   email: z.string().trim().email("Vui lòng nhập đúng địa chỉ email."),
@@ -44,12 +57,15 @@ type ResetValues = z.infer<typeof resetSchema>;
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [verifiedOtp, setVerifiedOtp] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
+  const { height: screenHeight } = Dimensions.get("window");
+  const topSectionHeight = screenHeight * 0.38;
 
   const requestForm = useForm<RequestValues>({
     defaultValues: {
@@ -173,161 +189,210 @@ export default function ForgotPasswordScreen() {
   });
 
   return (
-    <ScreenShell title={screenCopy.title} subtitle={screenCopy.subtitle} onBack={goBack}>
-      <View className="gap-[18px]">
-        {submitError ? (
-          <View className="rounded-xl border border-rose-200 bg-rose-50 p-3.5">
-            <Text className="leading-5 text-rose-700">{submitError}</Text>
+    <KeyboardAvoidingView
+      className="flex-1 bg-slate-50"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Top Section */}
+        <View style={{ height: topSectionHeight, width: "100%", position: "relative" }}>
+          <View className="absolute inset-0 bg-blue-600" />
+
+          {/* Logo Content */}
+          <View
+            style={{ paddingTop: insets.top + 10 }}
+            className="absolute inset-0 items-center justify-center"
+          >
+            <View className="h-20 w-20 items-center justify-center rounded-full bg-white/20 shadow-sm overflow-hidden">
+              <Image source={require("../../assets/logo-transparent.png")} style={{ width: "105%", height: "105%", resizeMode: "cover", transform: [{ translateX: 2 }] }} />
+            </View>
+            <Text className="mt-3 text-[24px] font-black tracking-widest text-white uppercase shadow-sm">Dấu Ấn Hành Trình</Text>
           </View>
-        ) : null}
 
-        {step === 1 ? (
-          <>
-            <Controller
-              control={requestForm.control}
-              name="email"
-              render={({ field }) => (
-                <FormField
-                  label="Email"
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChangeText={field.onChange}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  error={requestForm.formState.errors.email?.message}
-                  placeholder="Nhập email"
-                />
-              )}
-            />
+          {/* Wavy Divider */}
+          <WavyDivider color="#f8fafc" height={40} />
+        </View>
 
-            <Controller
-              control={requestForm.control}
-              name="phone"
-              render={({ field }) => (
-                <FormField
-                  label="Số điện thoại"
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChangeText={field.onChange}
-                  keyboardType="phone-pad"
-                  error={requestForm.formState.errors.phone?.message}
-                  placeholder="Nhập số điện thoại"
-                />
-              )}
-            />
-
-            <ActionButton
-              label="Gửi mã xác nhận"
-              loadingLabel="Đang gửi mã..."
-              onPress={submitRequest}
-              loading={requestForm.formState.isSubmitting}
-              disabled={requestForm.formState.isSubmitting}
-            />
-          </>
-        ) : null}
-
-        {step === 2 ? (
-          <>
-            <View className="gap-1 rounded-xl border border-cyan-200 bg-cyan-50 p-3.5">
-              <Text className="text-[13px] font-bold text-brand-600">Thông tin xác nhận</Text>
-              <Text className="leading-6 text-cyan-900">Email: {email}</Text>
-              <Text className="leading-6 text-cyan-900">Số điện thoại: {phone}</Text>
+        {/* Bottom Section (Form) */}
+        <View className="flex-1 bg-slate-50 px-6 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
+          <View className="mb-4 flex-row items-center justify-between">
+            <View>
+              <Text className="text-[26px] font-extrabold text-slate-800">{screenCopy.title}</Text>
+              <Text className="text-sm text-slate-500 mt-1 max-w-[250px]">{screenCopy.subtitle}</Text>
             </View>
+            <Pressable onPress={goBack} className="p-2 bg-slate-200/50 rounded-full">
+              <Ionicons name="close" size={24} color="#64748b" />
+            </Pressable>
+          </View>
 
-            <Controller
-              control={otpForm.control}
-              name="otp"
-              render={({ field }) => (
-                <FormField
-                  label="Mã xác thực"
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChangeText={field.onChange}
-                  keyboardType="number-pad"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  error={otpForm.formState.errors.otp?.message}
-                  placeholder="Nhập 6 chữ số"
-                />
-              )}
-            />
-
-            <ActionButton
-              label="Xác nhận mã"
-              loadingLabel="Đang kiểm tra mã..."
-              onPress={submitOtp}
-              loading={otpForm.formState.isSubmitting}
-              disabled={otpForm.formState.isSubmitting}
-            />
-
-            <View className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-              {countdown > 0 ? (
-                <Text className="leading-5 text-slate-600">
-                  Nếu chưa thấy email, hãy kiểm tra lại sau {countdown} giây.
-                </Text>
-              ) : (
-                <Text className="leading-5 text-slate-600">
-                  Backend hiện chưa có route gửi lại mã riêng. Bạn có thể quay lại bước đầu để yêu cầu lại.
-                </Text>
-              )}
+          {submitError ? (
+            <View className="mb-4 flex-row items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3.5">
+              <Ionicons name="alert-circle" size={20} color="#be123c" />
+              <Text className="flex-1 leading-5 text-rose-700">{submitError}</Text>
             </View>
-          </>
-        ) : null}
+          ) : null}
 
-        {step === 3 ? (
-          <>
-            <View className="gap-1 rounded-xl border border-cyan-200 bg-cyan-50 p-3.5">
-              <Text className="text-[13px] font-bold text-brand-600">Email đang đổi mật khẩu</Text>
-              <Text className="leading-6 text-cyan-900">{email}</Text>
-            </View>
-
-            <Controller
-              control={resetForm.control}
-              name="newPassword"
-              render={({ field }) => (
-                <FormField
-                  label="Mật khẩu mới"
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChangeText={field.onChange}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  error={resetForm.formState.errors.newPassword?.message}
-                  placeholder="Nhập mật khẩu mới"
+          <View className="gap-4">
+            {step === 1 ? (
+              <>
+                <Controller
+                  control={requestForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormField
+                      label="Email"
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChangeText={field.onChange}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      error={requestForm.formState.errors.email?.message}
+                      placeholder="Nhập email"
+                    />
+                  )}
                 />
-              )}
-            />
 
-            <Controller
-              control={resetForm.control}
-              name="confirmPassword"
-              render={({ field }) => (
-                <FormField
-                  label="Nhập lại mật khẩu mới"
-                  value={field.value}
-                  onBlur={field.onBlur}
-                  onChangeText={field.onChange}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  error={resetForm.formState.errors.confirmPassword?.message}
-                  placeholder="Nhập lại mật khẩu mới"
+                <Controller
+                  control={requestForm.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormField
+                      label="Số điện thoại"
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChangeText={field.onChange}
+                      keyboardType="phone-pad"
+                      error={requestForm.formState.errors.phone?.message}
+                      placeholder="Nhập số điện thoại"
+                    />
+                  )}
                 />
-              )}
-            />
 
-            <ActionButton
-              label="Xác nhận đổi mật khẩu"
-              loadingLabel="Đang đổi mật khẩu..."
-              onPress={submitReset}
-              loading={resetForm.formState.isSubmitting}
-              disabled={resetForm.formState.isSubmitting}
-            />
-          </>
-        ) : null}
-      </View>
-    </ScreenShell>
+                <View className="mt-4">
+                  <ActionButton
+                    label="Gửi mã xác nhận"
+                    loadingLabel="Đang gửi mã..."
+                    onPress={submitRequest}
+                    loading={requestForm.formState.isSubmitting}
+                    disabled={requestForm.formState.isSubmitting}
+                  />
+                </View>
+              </>
+            ) : null}
+
+            {step === 2 ? (
+              <>
+                <View className="gap-1 rounded-2xl border border-blue-200 bg-blue-50 p-4 mb-2">
+                  <Text className="text-sm font-bold text-blue-600">Thông tin xác nhận</Text>
+                  <Text className="leading-6 text-blue-900">Email: {email}</Text>
+                  <Text className="leading-6 text-blue-900">Số điện thoại: {phone}</Text>
+                </View>
+
+                <Controller
+                  control={otpForm.control}
+                  name="otp"
+                  render={({ field }) => (
+                    <FormField
+                      label="Mã xác thực"
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChangeText={field.onChange}
+                      keyboardType="number-pad"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      error={otpForm.formState.errors.otp?.message}
+                      placeholder="Nhập 6 chữ số"
+                    />
+                  )}
+                />
+
+                <View className="mt-3 gap-3">
+                  <ActionButton
+                    label="Xác nhận mã"
+                    loadingLabel="Đang kiểm tra mã..."
+                    onPress={submitOtp}
+                    loading={otpForm.formState.isSubmitting}
+                    disabled={otpForm.formState.isSubmitting}
+                  />
+
+                  <View className="rounded-2xl border border-slate-200 bg-white p-4">
+                    {countdown > 0 ? (
+                      <Text className="text-sm leading-5 text-slate-500">
+                        Nếu chưa thấy email, hãy kiểm tra lại sau {countdown} giây.
+                      </Text>
+                    ) : (
+                      <Text className="text-sm leading-5 text-slate-500">
+                        Bạn có thể quay lại bước đầu để yêu cầu gửi lại mã.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </>
+            ) : null}
+
+            {step === 3 ? (
+              <>
+                <View className="gap-1 rounded-2xl border border-blue-200 bg-blue-50 p-4 mb-2">
+                  <Text className="text-sm font-bold text-blue-600">Email đang đổi mật khẩu</Text>
+                  <Text className="leading-6 text-blue-900">{email}</Text>
+                </View>
+
+                <Controller
+                  control={resetForm.control}
+                  name="newPassword"
+                  render={({ field }) => (
+                    <FormField
+                      label="Mật khẩu mới"
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChangeText={field.onChange}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      error={resetForm.formState.errors.newPassword?.message}
+                      placeholder="Nhập mật khẩu mới"
+                    />
+                  )}
+                />
+
+                <Controller
+                  control={resetForm.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormField
+                      label="Nhập lại mật khẩu mới"
+                      value={field.value}
+                      onBlur={field.onBlur}
+                      onChangeText={field.onChange}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      error={resetForm.formState.errors.confirmPassword?.message}
+                      placeholder="Nhập lại mật khẩu mới"
+                    />
+                  )}
+                />
+
+                <View className="mt-4">
+                  <ActionButton
+                    label="Xác nhận đổi mật khẩu"
+                    loadingLabel="Đang đổi mật khẩu..."
+                    onPress={submitReset}
+                    loading={resetForm.formState.isSubmitting}
+                    disabled={resetForm.formState.isSubmitting}
+                  />
+                </View>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

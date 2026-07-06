@@ -1985,7 +1985,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
         ) as employee_owners
       FROM users u
       WHERE u.role IN ('user','owner','employee')
-        AND u.deleted_at IS NULL
+        AND (u.deleted_at IS NULL OR (u.role = 'employee' AND u.status = 'locked'))
         AND (
           u.role <> 'user'
           OR u.email IS NOT NULL

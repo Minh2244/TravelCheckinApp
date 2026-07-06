@@ -10,9 +10,13 @@ import {
   ScrollView,
   Text,
   View,
+  Image,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { z } from "zod";
+
+import { WavyDivider } from "../../src/components/WavyDivider";
 
 import { ActionButton } from "../../src/components/action-button";
 import { FormField } from "../../src/components/form-field";
@@ -35,6 +39,8 @@ export default function SignInScreen() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  const { height: screenHeight } = Dimensions.get("window");
+  const topSectionHeight = screenHeight * 0.38;
 
   const {
     control,
@@ -85,27 +91,34 @@ export default function SignInScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          justifyContent: "center",
-          paddingHorizontal: 24,
-          paddingTop: insets.top + 40,
-          paddingBottom: Math.max(insets.bottom, 24) + 24,
-        }}
+        contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View className="mb-8 items-center">
-          <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-teal-100">
-            <Ionicons name="planet" size={48} color="#0d9488" />
+        <View style={{ height: topSectionHeight, width: "100%", position: "relative" }}>
+          <View className="absolute inset-0 bg-blue-600" />
+
+          <View
+            style={{ paddingTop: insets.top + 10 }}
+            className="absolute inset-0 items-center justify-center"
+          >
+            <View className="h-20 w-20 items-center justify-center rounded-full bg-white/20 shadow-sm overflow-hidden">
+              <Image source={require("../../assets/logo-transparent.png")} style={{ width: "105%", height: "105%", resizeMode: "cover", transform: [{ translateX: 2 }] }} />
+            </View>
+            <Text className="mt-3 text-[24px] font-black tracking-widest text-white uppercase shadow-sm">Dấu Ấn Hành Trình</Text>
+            <Text className="mt-1 px-8 text-center text-[13px] italic text-blue-50 font-serif">
+              Hành trình hôm nay - Kỷ niệm mai sau.
+            </Text>
           </View>
-          <Text className="mb-2 text-[28px] font-black text-slate-900">Chào mừng trở lại!</Text>
-          <Text className="px-5 text-center text-[15px] leading-[22px] text-slate-500">
-            Đăng nhập để khám phá hàng ngàn điểm đến hấp dẫn.
-          </Text>
+
+          <WavyDivider color="#f8fafc" height={40} />
         </View>
 
-        <View className="rounded-3xl border border-slate-100 bg-white p-6 shadow-soft">
+        <View className="flex-1 bg-slate-50 px-6 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
+          <View className="mb-4">
+            <Text className="text-[28px] font-extrabold text-slate-800 mb-1">Đăng Nhập</Text>
+            <Text className="text-[15px] text-slate-500 mt-1">Chào mừng bạn trở lại!</Text>
+          </View>
 
           {submitError ? (
             <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5">
@@ -121,7 +134,7 @@ export default function SignInScreen() {
             </View>
           ) : null}
 
-          <View className="gap-5">
+          <View className="gap-3.5">
             <Controller
               control={control}
               name="email"
@@ -159,7 +172,7 @@ export default function SignInScreen() {
             />
           </View>
 
-          <View className="mb-6 mt-3 items-end">
+          <View className="mb-4 mt-2 items-end">
             <Pressable onPress={() => router.push("/forgot-password")}>
               <Text className="text-sm font-bold text-brand-600">Quên mật khẩu?</Text>
             </Pressable>
@@ -194,13 +207,13 @@ export default function SignInScreen() {
               </Text>
             </Pressable>
           </View>
-        </View>
 
-        <View className="mt-8 flex-row items-center justify-center gap-2">
-          <Text className="text-[15px] text-slate-500">Chưa có tài khoản?</Text>
-          <Pressable onPress={() => router.push("/sign-up")}>
-            <Text className="text-[15px] font-extrabold text-brand-600">Đăng ký ngay</Text>
-          </Pressable>
+          <View className="mt-5 flex-row items-center justify-center gap-2">
+            <Text className="text-[15px] text-slate-500">Chưa có tài khoản?</Text>
+            <Pressable onPress={() => router.push("/sign-up")}>
+              <Text className="text-[15px] font-extrabold text-brand-600">Đăng ký ngay</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -1,15 +1,28 @@
+import { Ionicons } from "@expo/vector-icons";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  ImageBackground,
+  Dimensions,
+  Image,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { z } from "zod";
 
 import { ActionButton } from "../../src/components/action-button";
 import { FormField } from "../../src/components/form-field";
-import { ScreenShell } from "../../src/components/screen-shell";
 import { getErrorMessage } from "../../src/lib/error";
 import { authApi } from "../../src/modules/auth/auth.api";
+import { resolveBackendUrl } from "../../src/lib/url";
+import { WavyDivider } from "../../src/components/WavyDivider";
 
 const signUpSchema = z
   .object({
@@ -32,7 +45,11 @@ type SignUpValues = z.infer<typeof signUpSchema>;
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const { height: screenHeight } = Dimensions.get("window");
+  const topSectionHeight = screenHeight * 0.38;
+
   const {
     control,
     handleSubmit,
@@ -71,118 +88,159 @@ export default function SignUpScreen() {
   });
 
   return (
-    <ScreenShell
-      title="Tạo tài khoản"
-      subtitle="Tạo tài khoản mới để tiếp tục hành trình trên mobile."
-      onBack={() => router.back()}
+    <KeyboardAvoidingView
+      className="flex-1 bg-slate-50"
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View className="gap-[18px]">
-        {submitError ? (
-          <View className="rounded-xl border border-rose-200 bg-rose-50 p-3.5">
-            <Text className="leading-5 text-rose-700">{submitError}</Text>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Top Section */}
+        <View style={{ height: topSectionHeight, width: "100%", position: "relative" }}>
+          <View className="absolute inset-0 bg-blue-600" />
+
+          {/* Logo Content */}
+          <View
+            style={{ paddingTop: insets.top + 10 }}
+            className="absolute inset-0 items-center justify-center"
+          >
+            <View className="h-20 w-20 items-center justify-center rounded-full bg-white/20 shadow-sm overflow-hidden">
+              <Image source={require("../../assets/logo-transparent.png")} style={{ width: "105%", height: "105%", resizeMode: "cover", transform: [{ translateX: 2 }] }} />
+            </View>
+            <Text className="mt-3 text-[24px] font-black tracking-widest text-white uppercase shadow-sm">Dấu Ấn Hành Trình</Text>
           </View>
-        ) : null}
 
-        <Controller
-          control={control}
-          name="full_name"
-          render={({ field }) => (
-            <FormField
-              label="Họ và tên"
-              value={field.value}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              error={errors.full_name?.message}
-              placeholder="Nhập họ và tên"
-            />
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="email"
-          render={({ field }) => (
-            <FormField
-              label="Email"
-              value={field.value}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              error={errors.email?.message}
-              placeholder="Nhập email"
-            />
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="phone"
-          render={({ field }) => (
-            <FormField
-              label="Số điện thoại"
-              value={field.value}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              keyboardType="phone-pad"
-              error={errors.phone?.message}
-              placeholder="Nhập số điện thoại"
-            />
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="password"
-          render={({ field }) => (
-            <FormField
-              label="Mật khẩu"
-              value={field.value}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              error={errors.password?.message}
-              placeholder="Tạo mật khẩu"
-            />
-          )}
-        />
-
-        <Controller
-          control={control}
-          name="confirmPassword"
-          render={({ field }) => (
-            <FormField
-              label="Nhập lại mật khẩu"
-              value={field.value}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              error={errors.confirmPassword?.message}
-              placeholder="Nhập lại mật khẩu"
-            />
-          )}
-        />
-
-        <ActionButton
-          label="Đăng ký"
-          loadingLabel="Đang gửi đăng ký..."
-          onPress={onSubmit}
-          loading={isSubmitting}
-          disabled={isSubmitting}
-        />
-
-        <View className="flex-row items-center justify-center gap-2 pt-1.5">
-          <Text className="text-sm text-slate-600">Đã có tài khoản?</Text>
-          <Pressable onPress={() => router.replace("/sign-in")}>
-            <Text className="text-sm font-bold text-brand-600">Đăng nhập ngay</Text>
-          </Pressable>
+          {/* Wavy Divider */}
+          <WavyDivider color="#f8fafc" height={40} />
         </View>
-      </View>
-    </ScreenShell>
+
+        {/* Bottom Section (Form) */}
+        <View className="flex-1 bg-slate-50 px-6 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
+          <View className="mb-4 flex-row items-center justify-between">
+            <View>
+              <Text className="text-[26px] font-extrabold text-slate-800">Đăng Ký</Text>
+              <Text className="text-sm text-slate-500 mt-1">Tạo tài khoản mới</Text>
+            </View>
+            <Pressable onPress={() => router.back()} className="p-2 bg-slate-200/50 rounded-full">
+              <Ionicons name="close" size={24} color="#64748b" />
+            </Pressable>
+          </View>
+
+          {submitError ? (
+            <View className="mb-4 flex-row items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 p-3.5">
+              <Ionicons name="alert-circle" size={20} color="#be123c" />
+              <Text className="flex-1 leading-5 text-rose-700">{submitError}</Text>
+            </View>
+          ) : null}
+
+          <View className="gap-3.5">
+            <Controller
+              control={control}
+              name="full_name"
+              render={({ field }) => (
+                <FormField
+                  label="Họ và tên"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  error={errors.full_name?.message}
+                  placeholder="Nhập họ và tên"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="email"
+              render={({ field }) => (
+                <FormField
+                  label="Email"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={errors.email?.message}
+                  placeholder="Nhập email"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="phone"
+              render={({ field }) => (
+                <FormField
+                  label="Số điện thoại"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  keyboardType="phone-pad"
+                  error={errors.phone?.message}
+                  placeholder="Nhập số điện thoại"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="password"
+              render={({ field }) => (
+                <FormField
+                  label="Mật khẩu"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={errors.password?.message}
+                  placeholder="Tạo mật khẩu"
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="confirmPassword"
+              render={({ field }) => (
+                <FormField
+                  label="Nhập lại mật khẩu"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  error={errors.confirmPassword?.message}
+                  placeholder="Nhập lại mật khẩu"
+                />
+              )}
+            />
+          </View>
+
+          <View className="mt-5 gap-3.5">
+            <ActionButton
+              label="Đăng ký"
+              loadingLabel="Đang gửi đăng ký..."
+              onPress={onSubmit}
+              loading={isSubmitting}
+              disabled={isSubmitting}
+            />
+          </View>
+
+          <View className="mt-5 flex-row items-center justify-center gap-2">
+            <Text className="text-[15px] text-slate-500">Đã có tài khoản?</Text>
+            <Pressable onPress={() => router.replace("/sign-in")}>
+              <Text className="text-[15px] font-extrabold text-blue-600">Đăng nhập ngay</Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

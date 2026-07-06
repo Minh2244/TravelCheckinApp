@@ -57,6 +57,7 @@ function buildBotPayload(req: Request, role: ManagerAiRole, route: string): Mana
     screen_context: screenContext,
     mock_context: mockContext,
     available_actions: getAvailableManagerAiActions({ role, route }),
+    actor_user_id: req.userId,
   };
 }
 

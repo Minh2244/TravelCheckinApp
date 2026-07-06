@@ -7,7 +7,6 @@ import {
   Input,
   Space,
   Spin,
-  Tag,
   Tooltip,
 } from "antd";
 import {
@@ -106,7 +105,20 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
 
   const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<ManagerAiSuggestion[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const stored = sessionStorage.getItem(`managerAiMessages_${getStoredRole()}`);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (storedRole) {
+      sessionStorage.setItem(`managerAiMessages_${storedRole}`, JSON.stringify(messages));
+    }
+  }, [messages, storedRole]);
   const [input, setInput] = useState("");
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [sending, setSending] = useState(false);
@@ -124,7 +136,6 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
       return;
     }
     setSuggestions([]);
-    setMessages([]);
     setInput("");
     setError(null);
     setSuggestionsConsumed(false);
@@ -191,6 +202,9 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
         chat_history: toHistoryPayload(nextMessages),
       });
 
+      const actionPlan = res.action_plan;
+      const commandId = actionPlan?.command_id || `cmd-${Date.now()}`;
+
       setMessages((prev) => [
         ...prev,
         {
@@ -201,17 +215,24 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
             res.message ||
             "Mình đã nhận yêu cầu, nhưng bot chưa có nội dung trả lời.",
           intent: res.intent,
-          riskLevel: res.risk_level || res.action_plan?.risk_level,
-          actionSummary: res.action_plan?.summary,
-          actionPlan: res.action_plan,
-          commandId: res.action_plan?.command_id,
-          warnings: Array.isArray(res.action_plan?.warnings)
-            ? res.action_plan?.warnings
+          riskLevel: res.risk_level || actionPlan?.risk_level,
+          actionSummary: actionPlan?.summary,
+          actionPlan: actionPlan,
+          commandId: commandId,
+          warnings: Array.isArray(actionPlan?.warnings)
+            ? actionPlan?.warnings
             : Array.isArray(res.warnings)
               ? res.warnings
               : [],
         },
       ]);
+
+      // Tự động thực thi nếu có action plan và không cần xác nhận
+      const ignoredKeys = new Set(["ask_clarification", "general_chat", "unknown_intent"]);
+      if (actionPlan && actionPlan.action_key && !actionPlan.requires_confirmation && !ignoredKeys.has(actionPlan.action_key)) {
+        // Gọi executeAction nhưng không block UI
+        executeAction(commandId, actionPlan).catch(console.error);
+      }
     } catch (err) {
       setError(getErrorMessage(err, "Không gửi được tin nhắn cho AI."));
     } finally {
@@ -238,16 +259,31 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
         },
       ]);
 
-      // Handle client side actions
-      const clientAction = res.client_action as { type: string; path: string } | undefined;
-      if (clientAction && clientAction.type === "navigate") {
-        setTimeout(() => {
-          navigate(clientAction.path);
+      const clientAction = res.client_action as { type: string; path?: string; event_name?: string; data?: any } | undefined;
+      if (clientAction) {
+        if (clientAction.type === "navigate" && clientAction.path) {
+          setTimeout(() => {
+            navigate(clientAction.path!);
+          }, 1000);
           setOpen(false);
-        }, 1500);
+        } else if (clientAction.type === "event" && clientAction.event_name) {
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent(clientAction.event_name!, { detail: clientAction.data }));
+          }, 500);
+        }
       }
     } catch (err) {
-      setError(getErrorMessage(err, "Thực thi thất bại."));
+      const errorMsg = getErrorMessage(err, "Thực thi thất bại.");
+      setError(errorMsg);
+      // Thêm tin nhắn bot vào chat để user thấy rõ lỗi (không chỉ hiện error bar)
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `bot-err-${Date.now()}`,
+          from: "bot",
+          text: `⚠️ Xin lỗi Sếp, hệ thống gặp lỗi khi thực thi: ${errorMsg}`,
+        },
+      ]);
     } finally {
       setSending(false);
     }
@@ -353,33 +389,26 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
                       }`}
                     >
                       <div className="whitespace-pre-wrap">{item.text}</div>
-                      {item.from === "bot" && item.actionSummary ? (
-                        <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          {item.actionSummary}
-                        </div>
-                      ) : null}
-                      {item.from === "bot" && item.warnings?.length ? (
-                        <div className="mt-2 space-y-1 text-xs text-amber-700">
-                          {item.warnings.map((warning, index) => (
-                            <div key={`${item.id}-warning-${index}`}>- {warning}</div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {item.from === "bot" && (item.intent || item.riskLevel) ? (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {item.intent ? <Tag color="blue">{item.intent}</Tag> : null}
-                          {item.riskLevel ? <Tag color="purple">{item.riskLevel}</Tag> : null}
-                        </div>
-                      ) : null}
                       {item.from === "bot" && item.actionPlan?.requires_confirmation && item.commandId ? (
-                        <div className="mt-3 text-right">
+                        <div className="mt-3 flex gap-2 justify-end">
+                          <Button
+                            size="small"
+                            disabled={sending}
+                            onClick={() => {
+                              setMessages(prev => prev.filter(m => m.id !== item.id));
+                            }}
+                            className="rounded-lg"
+                          >
+                            Hủy
+                          </Button>
                           <Button 
                             type="primary" 
                             size="small" 
                             disabled={sending}
                             onClick={() => void executeAction(item.commandId!, item.actionPlan!)}
+                            className="rounded-lg bg-emerald-500 border-emerald-500 hover:bg-emerald-600"
                           >
-                            Xác nhận & Thực thi
+                            ✅ Đồng ý & Thực thi
                           </Button>
                         </div>
                       ) : null}

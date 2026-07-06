@@ -421,6 +421,7 @@ const Users = () => {
 
         {String(record.status).toLowerCase() === "locked" ? (
           <Popconfirm
+            placement="topRight"
             title="Tài khoản đang bị khóa. Mở khóa tài khoản này?"
             onConfirm={() => handleStatusChange(record.user_id, "active")}
           >
@@ -430,10 +431,11 @@ const Users = () => {
           </Popconfirm>
         ) : (
           <Popconfirm
+            placement="topRight"
             title="Tài khoản đang hoạt động. Khóa tài khoản này?"
             onConfirm={() => handleStatusChange(record.user_id, "locked")}
           >
-            <Tooltip title="Đang mở">
+            <Tooltip title="Khóa tài khoản">
               <Button
                 size="small"
                 type="text"
@@ -446,6 +448,7 @@ const Users = () => {
 
         {record.role === "user" && (
           <Popconfirm
+            placement="topRight"
             title="Chuyển user này thành owner?"
             onConfirm={() => handlePromoteOwner(record.user_id)}
           >
@@ -456,6 +459,7 @@ const Users = () => {
         )}
 
         <Popconfirm
+          placement="topRight"
           title="Xóa tài khoản này?"
           description="Tài khoản sẽ bị xóa mềm (ẩn khỏi hệ thống) và có thể khôi phục khi cần."
           onConfirm={() => handleDelete(record.user_id)}

@@ -11,7 +11,6 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
-import ManagerAiBubble from "../../components/ManagerAiBubble";
 import adminApi from "../../api/adminApi";
 import { getErrorMessage } from "../../utils/safe";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
@@ -432,7 +431,7 @@ const ReviewManagement = () => {
           </Card>
         </div>
       </Card>
-      <ManagerAiBubble screenContext={managerAiContext} />
+      
     </MainLayout>
   );
 };

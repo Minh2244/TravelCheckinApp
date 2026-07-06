@@ -524,7 +524,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const [users] = await connection.query<User[]>(
-      "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL",
+      "SELECT * FROM users WHERE email = ? AND (deleted_at IS NULL OR status = 'locked')",
       [trimmedEmail],
     );
 

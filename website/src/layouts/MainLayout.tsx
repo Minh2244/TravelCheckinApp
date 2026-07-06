@@ -25,6 +25,7 @@ import { message, notification } from "antd";
 import ownerApi from "../api/ownerApi";
 import { resolveBackendUrl } from "../utils/resolveBackendUrl";
 import { formatDateTimeVi } from "../utils/formatDateVi";
+import ManagerAiBubble from "../components/ManagerAiBubble";
 
 const { Header, Sider, Content } = Layout;
 
@@ -831,6 +832,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           <Content className="m-4 p-6 bg-white rounded-lg shadow-sm overflow-auto">
             {children}
           </Content>
+          {(user?.role === "owner" || user?.role === "admin") && <ManagerAiBubble />}
         </Layout>
       </Layout>
     </div>

@@ -27,6 +27,8 @@ import { useNavigate } from "react-router-dom";
 import { asRecord, getErrorMessage } from "../../utils/safe";
 import dayjs from "dayjs";
 import InvoiceExportModal from "../../components/InvoiceExportModal";
+import { handleExportBatchExcel } from "../../utils/exportExcel";
+
 
 
 type BookingRow = {
@@ -84,6 +86,81 @@ const OwnerDashboard = () => {
 
   const role = String(asRecord(asRecord(asRecord(me).data).actor).role || "");
   const ownerName = String(asRecord(asRecord(asRecord(me).data).actor).full_name || "Chủ địa điểm");
+
+  useEffect(() => {
+    const handleOpenModal = () => setIsInvoiceModalOpen(true);
+    const handleTriggerExport = async (e?: any) => {
+      console.log("[Export DEBUG] event.detail =", JSON.stringify(e?.detail));
+      try {
+        message.loading({ content: "Đang tải báo cáo...", key: "exporting" });
+        
+        let targetPayments = payments.filter(inv => String(inv.status).toLowerCase() === "completed").map(inv => ({ ...inv, location_name: inv.location_name || "" }));
+        
+        let excelStart = dayjs("2020-01-01");
+        let excelEnd = dayjs();
+
+        // Filter by dates from AI if provided
+        if (e && e.detail) {
+          if (e.detail.start_date || e.detail.end_date) {
+            excelStart = e.detail.start_date ? dayjs(e.detail.start_date).startOf('day') : dayjs("2000-01-01");
+            excelEnd = e.detail.end_date ? dayjs(e.detail.end_date).endOf('day') : dayjs().endOf('day');
+            targetPayments = targetPayments.filter(inv => {
+               const p = dayjs(inv.payment_time);
+               return (p.isAfter(excelStart) || p.isSame(excelStart)) && (p.isBefore(excelEnd) || p.isSame(excelEnd));
+            });
+          } else {
+            const targetMonths: number[] = [];
+            if (e.detail.compare_months && Array.isArray(e.detail.compare_months)) {
+              targetMonths.push(...e.detail.compare_months.map(Number));
+            } else if (e.detail.target_month) {
+              targetMonths.push(Number(e.detail.target_month));
+            }
+
+            if (targetMonths.length > 0) {
+              targetPayments = targetPayments.filter(inv => {
+                const m = dayjs(inv.payment_time).month() + 1; // dayjs month is 0-11
+                return targetMonths.includes(m);
+              });
+              // Nếu AI chỉ đưa tháng, ta tạm thời không chỉnh sửa ngày chính xác ở tiêu đề, nhưng có thể cải thiện sau
+            } else if (e.detail.time_range) {
+              const tr = e.detail.time_range;
+              excelEnd = dayjs().endOf('day');
+              if (tr === "today") {
+                 excelStart = dayjs().startOf('day');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'day'));
+              } else if (tr === "this_week") {
+                 excelStart = dayjs().subtract(7, 'day').startOf('day');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isAfter(excelStart));
+              } else if (tr === "this_month") {
+                 excelStart = dayjs().startOf('month');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+              } else if (tr === "last_month") {
+                 excelStart = dayjs().subtract(1, 'month').startOf('month');
+                 excelEnd = dayjs().subtract(1, 'month').endOf('month');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+              }
+            }
+          }
+        }
+
+        await handleExportBatchExcel(
+          targetPayments as any,
+          ["restaurant", "hotel", "tourist"],
+          [excelStart, excelEnd],
+          ownerName
+        );
+        message.success({ content: "Tải báo cáo thành công!", key: "exporting" });
+      } catch (err: any) {
+        message.error({ content: "Lỗi tải báo cáo: " + err.message, key: "exporting" });
+      }
+    };
+    window.addEventListener("open_export_modal", handleOpenModal);
+    window.addEventListener("trigger_export_report", handleTriggerExport as any);
+    return () => {
+      window.removeEventListener("open_export_modal", handleOpenModal);
+      window.removeEventListener("trigger_export_report", handleTriggerExport as any);
+    };
+  }, [payments, ownerName]);
 
   const windowRange = useMemo(() => {
     if (rangeType === "all") return { from: null, to: null };
@@ -666,6 +743,8 @@ const OwnerDashboard = () => {
           location_name: l.location_name,
         }))}
       />
+      
+      
     </MainLayout>
   );
 };

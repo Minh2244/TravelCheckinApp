@@ -22,6 +22,7 @@ class BotRequest:
     available_actions: list[str] = field(default_factory=list)
     mock_context: dict[str, Any] = field(default_factory=dict)
     chat_history: list[ChatHistoryTurn] = field(default_factory=list)
+    actor_user_id: int | str | None = None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "BotRequest":
@@ -57,6 +58,7 @@ class BotRequest:
             available_actions=list(payload.get("available_actions") or []),
             mock_context=dict(payload.get("mock_context") or {}),
             chat_history=chat_history,
+            actor_user_id=payload.get("actor_user_id"),
         )
 
     def recent_history_text(self, *, only_user: bool = True, limit: int = 4) -> str:
@@ -117,6 +119,7 @@ class BotResponse:
                 "risk_level": self.action_plan.risk_level,
                 "summary": self.action_plan.summary,
                 "warnings": self.action_plan.warnings,
+                "entities": self.entities,
             },
             "warnings": self.warnings,
             "llm": self.llm,

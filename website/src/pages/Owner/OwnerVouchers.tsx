@@ -27,7 +27,6 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
-import ManagerAiBubble from "../../components/ManagerAiBubble";
 import ownerApi from "../../api/ownerApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import dayjs from "dayjs";
@@ -1350,7 +1349,7 @@ const OwnerVouchers = () => {
           className="mt-4"
         />
       </Modal>
-      <ManagerAiBubble screenContext={managerAiContext} />
+      
     </MainLayout>
   );
 };

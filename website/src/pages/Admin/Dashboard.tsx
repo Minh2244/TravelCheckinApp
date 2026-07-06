@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Button,
@@ -225,12 +225,12 @@ const AdminDashboard = () => {
     [dateRange, monthlyRevenue, rangeType, stats],
   );
 
-  if (!user || loading) {
+  if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <Spin size="large" />
-          <p className="mt-4 text-gray-600">Đang tải thông tin...</p>
+          <p className="mt-4 text-gray-600">Đang xác thực...</p>
         </div>
       </div>
     );
@@ -249,8 +249,33 @@ const AdminDashboard = () => {
     { name: "Du lịch", value: stats?.serviceTrends?.tourist || 0, color: "#10b981" }, // emerald-500
   ];
 
+class DashboardErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <MainLayout>
+          <div className="p-10">
+            <h1 className="text-red-500 font-bold text-2xl">Lỗi Render!</h1>
+            <pre className="bg-gray-100 p-4 mt-4 overflow-auto">{String(this.state.error?.stack || this.state.error)}</pre>
+          </div>
+        </MainLayout>
+      );
+    }
+    return this.props.children;
+  }
+}
+
   return (
+    <DashboardErrorBoundary>
     <MainLayout>
+      <Spin spinning={loading} size="large">
       <div className="mb-6 flex justify-between items-start flex-wrap gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Tổng quan hệ thống</h2>
@@ -553,6 +578,7 @@ const AdminDashboard = () => {
           <Empty description="Chưa có dữ liệu thống kê" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </Card>
       )}
+      </Spin>
       <InvoiceExportModal
         open={isInvoiceModalOpen}
         onClose={() => setIsInvoiceModalOpen(false)}
@@ -564,6 +590,7 @@ const AdminDashboard = () => {
       />
       <ManagerAiBubble screenContext={managerAiContext} />
     </MainLayout>
+    </DashboardErrorBoundary>
   );
 };
 
