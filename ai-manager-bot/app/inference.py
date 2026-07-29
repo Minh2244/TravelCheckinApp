@@ -15,6 +15,7 @@ def process_payload(payload: dict) -> dict:
     if llm_analysis and llm_analysis.intent_candidate:
         classification.intent = llm_analysis.intent_candidate
         classification.confidence = llm_analysis.confidence or 0.9
+        classification.entities = llm_analysis.entities
         
     action_plan = build_action_plan(request, classification)
     
@@ -22,6 +23,17 @@ def process_payload(payload: dict) -> dict:
         action_plan.entities = llm_analysis.entities
 
     # 3. Kết quả trả về
+    answer = llm_analysis.answer if llm_analysis else "Tôi chưa xử lý được yêu cầu này. Sếp thử nói rõ hơn một chút nhé."
+    if action_plan.action_key == "ask_clarification" and action_plan.summary.startswith("Thiếu thông tin bắt buộc"):
+        if "time_range" in action_plan.summary or "months" in action_plan.summary:
+            answer = "Sếp muốn xem dữ liệu trong khoảng thời gian nào? Ví dụ: hôm nay, tuần này, tháng này hoặc năm nay."
+        else:
+            if llm_analysis and llm_analysis.answer and len(llm_analysis.answer) > 5:
+                answer = llm_analysis.answer
+            else:
+                missing = action_plan.summary.split(': ')[1]
+                answer = f"Để thực hiện, sếp vui lòng cung cấp thêm thông tin: {missing} nhé."
+
     response = BotResponse(
         intent=classification.intent,
         label=action_plan.summary,
@@ -29,7 +41,7 @@ def process_payload(payload: dict) -> dict:
         risk_level=action_plan.risk_level,
         allowed=True,
         entities=llm_analysis.entities if llm_analysis else {},
-        answer=llm_analysis.answer if llm_analysis else "Tôi không thể xử lý yêu cầu này.",
+        answer=answer,
         action_plan=action_plan,
         warnings=action_plan.warnings,
         llm={

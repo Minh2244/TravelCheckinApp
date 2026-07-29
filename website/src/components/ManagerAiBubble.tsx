@@ -37,8 +37,14 @@ type ChatMessage = {
   commandId?: string;
 };
 
+type ExecuteOptions = {
+  allowWhileSending?: boolean;
+};
+
 const OWNER_ALLOWED_ROUTES = new Set([
   "/owner/dashboard",
+  "/owner/bookings",
+  "/owner/commissions",
   "/owner/reviews",
   "/owner/vouchers",
 ]);
@@ -204,34 +210,38 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
 
       const actionPlan = res.action_plan;
       const commandId = actionPlan?.command_id || `cmd-${Date.now()}`;
+      const ignoredKeys = new Set(["ask_clarification", "general_chat", "unknown_intent", "unknown"]);
+      const shouldAutoExecute =
+        Boolean(actionPlan?.action_key) &&
+        !actionPlan?.requires_confirmation &&
+        !ignoredKeys.has(String(actionPlan?.action_key));
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `bot-${Date.now()}`,
-          from: "bot",
-          text:
-            res.answer ||
-            res.message ||
-            "Mình đã nhận yêu cầu, nhưng bot chưa có nội dung trả lời.",
-          intent: res.intent,
-          riskLevel: res.risk_level || actionPlan?.risk_level,
-          actionSummary: actionPlan?.summary,
-          actionPlan: actionPlan,
-          commandId: commandId,
-          warnings: Array.isArray(actionPlan?.warnings)
-            ? actionPlan?.warnings
-            : Array.isArray(res.warnings)
-              ? res.warnings
-              : [],
-        },
-      ]);
+      if (!shouldAutoExecute) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `bot-${Date.now()}`,
+            from: "bot",
+            text:
+              res.answer ||
+              res.message ||
+              "Mình đã nhận yêu cầu, nhưng bot chưa có nội dung trả lời.",
+            intent: res.intent,
+            riskLevel: res.risk_level || actionPlan?.risk_level,
+            actionSummary: actionPlan?.summary,
+            actionPlan: actionPlan,
+            commandId: commandId,
+            warnings: Array.isArray(actionPlan?.warnings)
+              ? actionPlan?.warnings
+              : Array.isArray(res.warnings)
+                ? res.warnings
+                : [],
+          },
+        ]);
+      }
 
-      // Tự động thực thi nếu có action plan và không cần xác nhận
-      const ignoredKeys = new Set(["ask_clarification", "general_chat", "unknown_intent"]);
-      if (actionPlan && actionPlan.action_key && !actionPlan.requires_confirmation && !ignoredKeys.has(actionPlan.action_key)) {
-        // Gọi executeAction nhưng không block UI
-        executeAction(commandId, actionPlan).catch(console.error);
+      if (shouldAutoExecute && actionPlan) {
+        await executeAction(commandId, actionPlan, { allowWhileSending: true });
       }
     } catch (err) {
       setError(getErrorMessage(err, "Không gửi được tin nhắn cho AI."));
@@ -240,8 +250,12 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
     }
   };
 
-  const executeAction = async (commandId: string, actionPlan: Record<string, unknown>) => {
-    if (sending) return;
+  const executeAction = async (
+    commandId: string,
+    actionPlan: Record<string, unknown>,
+    options?: ExecuteOptions,
+  ) => {
+    if (sending && !options?.allowWhileSending) return;
     setSending(true);
     setError(null);
     try {

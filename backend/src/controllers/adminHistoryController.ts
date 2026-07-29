@@ -179,7 +179,6 @@ export const getAdminHistoryRevenueSummary = async (
     const summary = createAccumulator();
 
     for (const row of paymentRows) {
-      if (row.booking_status === "cancelled") continue;
 
       const amount = Number(row.amount || 0);
       if (!Number.isFinite(amount) || amount <= 0) continue;

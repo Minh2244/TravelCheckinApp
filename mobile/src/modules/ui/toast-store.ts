@@ -12,7 +12,7 @@ let activeTimer: ReturnType<typeof setTimeout> | null = null;
 export const useToastStore = create<ToastState>((set) => ({
   message: null,
   visible: false,
-  show: (message, durationMs = 2200) => {
+  show: (message, durationMs = 5000) => {
     if (activeTimer) {
       clearTimeout(activeTimer);
     }

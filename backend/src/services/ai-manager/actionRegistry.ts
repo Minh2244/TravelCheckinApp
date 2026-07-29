@@ -8,7 +8,15 @@ export interface ActionRegistryContext {
 const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/owner/dashboard",
-    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "export_revenue_report", "owner_analyze_reviews", "owner_voucher_draft", "owner_get_order_stats", "owner_get_top_services", "owner_manage_employees", "owner_view_employees"],
+    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_get_top_locations", "export_revenue_report", "owner_analyze_reviews", "owner_voucher_draft", "owner_get_order_stats", "owner_get_top_services", "owner_manage_employees", "owner_view_employees", "owner_view_bookings", "view_commissions"],
+  },
+  {
+    prefix: "/owner/bookings",
+    actions: ["owner_view_bookings"],
+  },
+  {
+    prefix: "/owner/commissions",
+    actions: ["view_commissions"],
   },
   {
     prefix: "/owner/reviews",
@@ -27,11 +35,11 @@ const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
 const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/admin/dashboard",
-    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher", "admin_get_user_growth", "admin_get_owners", "admin_view_users", "admin_get_top_locations", "admin_view_locations", "admin_view_sos_alerts", "admin_send_push_notification", "admin_user_lock", "admin_location_review"],
   },
   {
     prefix: "/admin/users",
-    actions: ["get_dashboard_stats", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_user_lock", "admin_view_users", "admin_get_user_growth", "admin_send_push_notification"],
   },
   {
     prefix: "/admin/owners",
@@ -39,27 +47,27 @@ const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   },
   {
     prefix: "/admin/locations",
-    actions: ["get_dashboard_stats", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_get_top_locations", "admin_view_locations", "admin_location_review"],
   },
   {
     prefix: "/admin/owner-services",
-    actions: ["get_dashboard_stats", "admin_location_review"],
+    actions: ["get_dashboard_stats"],
   },
   {
     prefix: "/admin/reviews",
-    actions: ["get_dashboard_stats", "admin_location_review"],
+    actions: ["get_dashboard_stats"],
   },
   {
     prefix: "/admin/vouchers",
-    actions: ["get_dashboard_stats", "admin_location_review", "admin_create_system_voucher"],
+    actions: ["get_dashboard_stats", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/system-vouchers",
-    actions: ["get_dashboard_stats", "admin_location_review", "admin_create_system_voucher"],
+    actions: ["get_dashboard_stats", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/owner-vouchers",
-    actions: ["get_dashboard_stats", "admin_location_review"],
+    actions: ["get_dashboard_stats"],
   },
   {
     prefix: "/admin/finance",
@@ -82,9 +90,13 @@ function actionsForRoute(
 }
 
 export function getAvailableManagerAiActions(context: ActionRegistryContext): string[] {
+  let actions: string[] = [];
   if (context.role === "owner") {
-    return actionsForRoute(context.route, OWNER_ACTIONS_BY_ROUTE);
+    actions = actionsForRoute(context.route, OWNER_ACTIONS_BY_ROUTE);
+  } else {
+    actions = actionsForRoute(context.route, ADMIN_ACTIONS_BY_ROUTE);
   }
-
-  return actionsForRoute(context.route, ADMIN_ACTIONS_BY_ROUTE);
+  // Cho phép trò chuyện chung ở mọi màn hình
+  actions.push("general_chat");
+  return actions;
 }

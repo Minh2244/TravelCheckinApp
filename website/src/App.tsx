@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,11 +6,11 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
-import { io, Socket } from "socket.io-client";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionKickModal from "./components/SessionKickModal";
 import authApi from "./api/authApi";
+import { SocketProvider, useSocket } from "./contexts/SocketContext";
 
 const Login = lazy(() => import("./pages/Auth/Login"));
 const Register = lazy(() => import("./pages/Auth/Register"));
@@ -32,7 +32,6 @@ const AdminPushNotifications = lazy(
 );
 const AdminSosAlerts = lazy(() => import("./pages/Admin/SosAlerts"));
 const AdminProfile = lazy(() => import("./pages/Admin/Profile"));
-const AdminAnalytics = lazy(() => import("./pages/Admin/Analytics"));
 const AdminOwnerServicesApproval = lazy(
   () => import("./pages/Admin/OwnerServicesApproval"),
 );
@@ -46,6 +45,7 @@ const UserMap = lazy(() => import("./pages/User/UserMap"));
 const LocationDetail = lazy(() => import("./pages/User/LocationDetail"));
 const BookingPage = lazy(() => import("./pages/User/BookingPage"));
 const UserProfile = lazy(() => import("./pages/User/Profile"));
+const UserSupport = lazy(() => import("./pages/User/Support"));
 const UserHistory = lazy(() => import("./pages/User/History"));
 const UserVouchers = lazy(() => import("./pages/User/Vouchers"));
 const UserSos = lazy(() => import("./pages/User/Sos"));
@@ -62,6 +62,7 @@ const UserItineraryEditor = lazy(() => import("./pages/User/ItineraryEditor"));
 
 const OwnerDashboard = lazy(() => import("./pages/Owner/OwnerDashboard"));
 const OwnerProfile = lazy(() => import("./pages/Owner/OwnerProfile"));
+const OwnerSupport = lazy(() => import("./pages/Owner/OwnerSupport"));
 const OwnerBank = lazy(() => import("./pages/Owner/OwnerBank"));
 const OwnerLocations = lazy(() => import("./pages/Owner/OwnerLocations"));
 const OwnerServices = lazy(() => import("./pages/Owner/OwnerServices"));
@@ -118,24 +119,14 @@ const PageLoader = () => (
   </div>
 );
 
-const resolveSocketUrl = (): string => {
-  const raw =
-    (import.meta.env.VITE_SOCKET_URL as string | undefined) ||
-    (import.meta.env.VITE_API_URL as string | undefined) ||
-    "http://localhost:3000";
-  return raw.replace(/\/api\/?$/, "");
-};
 
 const SessionGuard = () => {
   const location = useLocation();
-  const socketRef = useRef<Socket | null>(null);
-  const tokenRef = useRef<string | null>(null);
+  const socket = useSocket();
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState(
     "Tài khoản đang được đăng nhập tại nơi khác.",
   );
-
-  const socketUrl = useMemo(() => resolveSocketUrl(), []);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -165,45 +156,25 @@ const SessionGuard = () => {
 
   useEffect(() => {
     const token = sessionStorage.getItem("accessToken");
-    if (!token) {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-        tokenRef.current = null;
-      }
-      return;
-    }
+    if (!token) return;
 
     void authApi.checkSession();
+  }, [location.key]);
 
-    if (tokenRef.current === token && socketRef.current) {
-      return;
-    }
-
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-    }
-
-    tokenRef.current = token;
-    const socket = io(socketUrl, {
-      auth: { token },
-      transports: ["websocket"],
-    });
-
-    socket.on("session_revoked", (payload: { message?: string }) => {
+  useEffect(() => {
+    if (!socket) return;
+    const handleBookingStatus = (payload: any) => {
       window.dispatchEvent(
-        new CustomEvent("tc-session-revoked", {
-          detail: {
-            message:
-              payload?.message ||
-              "Tài khoản đang được đăng nhập tại nơi khác.",
-          },
+        new CustomEvent("tc-booking-status-changed", {
+          detail: payload,
         }),
       );
-    });
-
-    socketRef.current = socket;
-  }, [location.key, socketUrl]);
+    };
+    socket.on("booking_status_changed", handleBookingStatus);
+    return () => {
+      socket.off("booking_status_changed", handleBookingStatus);
+    };
+  }, [socket]);
 
   const handleConfirm = () => {
     sessionStorage.removeItem("accessToken");
@@ -226,10 +197,11 @@ const SessionGuard = () => {
 
 function App() {
   return (
-    <Router>
-      <Suspense fallback={<PageLoader />}>
-        <SessionGuard />
-        <Routes>
+    <SocketProvider>
+      <Router>
+        <Suspense fallback={<PageLoader />}>
+          <SessionGuard />
+          <Routes>
           {/* ==================== PUBLIC ROUTES ==================== */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -382,15 +354,6 @@ function App() {
             }
           />
 
-          <Route
-            path="/admin/analytics"
-            element={
-              <ProtectedRoute allowedRoles={["admin"]}>
-                <AdminAnalytics />
-              </ProtectedRoute>
-            }
-          />
-
           {/* User Routes */}
           <Route
             path="/user/dashboard"
@@ -453,6 +416,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["user"]}>
                 <UserProfile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/user/support"
+            element={
+              <ProtectedRoute allowedRoles={["user"]}>
+                <UserSupport />
               </ProtectedRoute>
             }
           />
@@ -622,6 +593,14 @@ function App() {
             }
           />
           <Route
+            path="/owner/support"
+            element={
+              <ProtectedRoute allowedRoles={["owner", "employee"]}>
+                <OwnerSupport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/owner/bank"
             element={
               <ProtectedRoute allowedRoles={["owner"]}>
@@ -710,9 +689,10 @@ function App() {
 
           {/* ==================== 404 ==================== */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
-    </Router>
+          </Routes>
+        </Suspense>
+      </Router>
+    </SocketProvider>
   );
 }
 

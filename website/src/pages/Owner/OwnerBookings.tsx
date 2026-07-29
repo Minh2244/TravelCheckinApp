@@ -542,20 +542,26 @@ const OwnerBookings = () => {
 
         const hasDiscount = Number(row.discount_amount || 0) > 0;
 
+        const extraAmount = paidAmount > finalAmount ? paidAmount - finalAmount : 0;
+        const displayAmount = finalAmount + extraAmount;
+
         return (
-          <div>
-            <div style={{ fontWeight: 600, color: "#1f2937" }}>
-              {formatMoney(finalAmount)}
+          <div className="flex flex-col gap-1">
+            <div className="font-semibold text-slate-800">
+              {formatMoney(displayAmount)}
               {hasDiscount && (
-                <Tag color="magenta" style={{ fontSize: "10px", padding: "0 4px", marginLeft: 4, border: 0 }}>
+                <Tag color="magenta" className="text-[10px] px-1 ml-1 border-0">
                   VC
                 </Tag>
               )}
             </div>
-            <div style={{ marginTop: 2 }}>
-              <Tag color={tagColor} style={{ fontSize: "11px", margin: 0 }}>
+            <div>
+              <Tag color={tagColor} className="text-[11px] m-0">
                 {tagText}
               </Tag>
+            </div>
+            <div className="text-[11px] font-medium text-emerald-600 mt-0.5">
+              Đã trả: {formatMoney(paidAmount)}
             </div>
           </div>
         );
@@ -717,112 +723,119 @@ const OwnerBookings = () => {
         width={480}
       >
         {activeBooking && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="flex flex-col gap-4">
             {/* Card 1: Khách hàng */}
-            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
-                <UserOutlined style={{ color: "#3b82f6", fontSize: 15 }} />
-                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Khách hàng</span>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200">
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                <UserOutlined className="text-blue-500 text-base" />
+                <span className="font-bold text-slate-700 text-sm">Khách hàng</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Họ tên:</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.user_name || "-"}</span>
+              <div className="flex flex-col gap-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Họ tên:</span>
+                  <span className="font-semibold text-slate-800">{activeBooking.user_name || "-"}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Số điện thoại:</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>
-                    <a href={`tel:${activeBooking.contact_phone || activeBooking.user_phone || ""}`} style={{ color: "#3b82f6" }}>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Số điện thoại:</span>
+                  <span className="font-semibold text-slate-800">
+                    <a href={`tel:${activeBooking.contact_phone || activeBooking.user_phone || ""}`} className="text-blue-600 hover:text-blue-700 hover:underline">
                       {activeBooking.contact_phone || activeBooking.user_phone || "-"}
                     </a>
                   </span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Email:</span>
-                  <span style={{ fontWeight: 500, color: "#1e293b" }}>{activeBooking.contact_email || activeBooking.user_email || "-"}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Email:</span>
+                  <span className="font-medium text-slate-800">{activeBooking.contact_email || activeBooking.user_email || "-"}</span>
                 </div>
               </div>
             </div>
 
             {/* Card 2: Dịch vụ */}
-            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
-                <EnvironmentOutlined style={{ color: "#10b981", fontSize: 15 }} />
-                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Dịch vụ đặt chỗ</span>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200">
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                <EnvironmentOutlined className="text-emerald-500 text-base" />
+                <span className="font-bold text-slate-700 text-sm">Dịch vụ đặt chỗ</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Địa điểm:</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.location_name || "-"}</span>
+              <div className="flex flex-col gap-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Địa điểm:</span>
+                  <span className="font-semibold text-slate-800 text-right max-w-[60%]">{activeBooking.location_name || "-"}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Tên dịch vụ:</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{activeBooking.service_name || "-"}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Tên dịch vụ:</span>
+                  <span className="font-semibold text-slate-800 text-right max-w-[60%]">{activeBooking.service_name || "-"}</span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <span style={{ color: "#64748b" }}>Chi tiết đặt:</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b", textAlign: "right" }}>
-                    {(() => {
-                      const groups = getGroupedDetailLines(
-                        activeBooking,
-                        foodItemsByBookingId[activeBooking.booking_id] || [],
-                      );
-                      if (groups.length === 0) return "-";
-                      return (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          {groups.map((group, index) => (
-                            <span key={`${group.label}-${index}`}>
-                              <Tag color="blue" style={{ margin: 0, fontWeight: 500 }}>
-                                {group.label}: {group.value}
-                              </Tag>
-                            </span>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </span>
+                
+                <div className="mt-2">
+                  <span className="text-slate-500 text-sm font-medium mb-2 block">Chi tiết đặt:</span>
+                  {(() => {
+                    const groups = getGroupedDetailLines(
+                      activeBooking,
+                      foodItemsByBookingId[activeBooking.booking_id] || [],
+                    );
+                    if (groups.length === 0) return <span className="text-slate-400 font-medium italic text-sm">Không có chi tiết</span>;
+                    return (
+                      <div className="flex flex-col gap-3">
+                        {groups.map((group, index) => {
+                          const items = group.value.split(",").map(i => i.trim());
+                          return (
+                            <div key={`${group.label}-${index}`} className="bg-slate-50 rounded-xl p-3 border border-slate-100/80">
+                              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2.5">{group.label}</div>
+                              <div className="flex flex-wrap gap-2">
+                                {items.map((item, idx) => (
+                                  <span key={idx} className="bg-white border border-slate-200 text-slate-700 text-sm font-medium px-3 py-1 rounded-lg shadow-sm">
+                                    {item}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
 
             {/* Card 3: Thời gian */}
-            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
-                <CalendarOutlined style={{ color: "#f59e0b", fontSize: 15 }} />
-                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Thời gian</span>
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-4 shadow-sm border border-orange-100/50 hover:shadow-md transition-shadow duration-200">
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-orange-200/50">
+                <CalendarOutlined className="text-orange-500 text-base" />
+                <span className="font-bold text-orange-900 text-sm">Thời gian</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>Ngày nhận / Vào</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b", fontSize: 13 }}>{formatDisplayDateTime(activeBooking.check_in_date || "")}</span>
+              <div className="flex justify-between items-center bg-white/60 rounded-xl p-3 border border-orange-100">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] text-orange-600/80 uppercase font-bold tracking-wider">Ngày nhận / Vào</span>
+                  <span className="font-bold text-slate-800 text-sm">{formatDisplayDateTime(activeBooking.check_in_date || "")}</span>
                 </div>
-                <div style={{ color: "#cbd5e1", fontSize: 16 }}>➜</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
-                  <span style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", fontWeight: 600 }}>Ngày trả / Ra</span>
-                  <span style={{ fontWeight: 600, color: "#1e293b", fontSize: 13 }}>{formatDisplayDateTime(activeBooking.check_out_date || "") || "-"}</span>
+                <div className="text-orange-300 text-lg">➜</div>
+                <div className="flex flex-col gap-1 items-end">
+                  <span className="text-[10px] text-orange-600/80 uppercase font-bold tracking-wider">Ngày trả / Ra</span>
+                  <span className="font-bold text-slate-800 text-sm">{formatDisplayDateTime(activeBooking.check_out_date || "") || "-"}</span>
                 </div>
               </div>
             </div>
 
             {/* Card 4: Thanh toán */}
-            <div style={{ backgroundColor: "#ffffff", borderRadius: 8, padding: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e2e8f0" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 8 }}>
-                <WalletOutlined style={{ color: "#8b5cf6", fontSize: 15 }} />
-                <span style={{ fontWeight: 700, color: "#475569", fontSize: 14 }}>Chi tiết thanh toán</span>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 hover:shadow-md transition-shadow duration-200">
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                <WalletOutlined className="text-violet-500 text-base" />
+                <span className="font-bold text-slate-700 text-sm">Chi tiết thanh toán</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Tiền dịch vụ gốc:</span>
-                  <span style={{ fontWeight: 500, color: "#475569" }}>{formatMoney(Number(activeBooking.total_amount || 0))}</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 text-sm">Tiền dịch vụ gốc:</span>
+                  <span className="font-medium text-slate-600">{formatMoney(Number(activeBooking.total_amount || 0))}</span>
                 </div>
 
                 {activeBooking.voucher_code && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ color: "#64748b" }}>Mã giảm giá (Voucher):</span>
-                    <div>
-                      <Tag color="magenta" style={{ margin: 0, fontWeight: 600 }}>{activeBooking.voucher_code}</Tag>
+                  <div className="flex justify-between items-center bg-pink-50/50 p-2.5 rounded-xl border border-pink-100">
+                    <span className="text-pink-600/80 text-sm font-medium">Mã giảm giá (Voucher):</span>
+                    <div className="flex items-center gap-2">
+                      <Tag color="magenta" className="m-0 font-bold px-2 py-0.5 rounded-md border-pink-200">{activeBooking.voucher_code}</Tag>
                       {Number(activeBooking.discount_amount) > 0 && (
-                        <span style={{ color: "#dc2626", marginLeft: 8, fontWeight: 600 }}>
+                        <span className="text-pink-600 font-bold text-sm">
                           -{formatMoney(Number(activeBooking.discount_amount))}
                         </span>
                       )}
@@ -830,14 +843,34 @@ const OwnerBookings = () => {
                   </div>
                 )}
 
-                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px dashed #e2e8f0" }}>
-                  <span style={{ fontWeight: 600, color: "#1e293b" }}>Tổng tiền phải trả:</span>
-                  <span style={{ fontWeight: 700, color: "#2563eb", fontSize: 15 }}>{formatMoney(Number(activeBooking.final_amount || 0))}</span>
-                </div>
+                {(() => {
+                  const finalAmount = Number(activeBooking.final_amount || 0);
+                  const paidAmount = Number(activeBooking.total_completed_paid_amount || 0);
+                  const extraAmount = paidAmount > finalAmount ? paidAmount - finalAmount : 0;
+                  
+                  return (
+                    <>
+                      {extraAmount > 0 && (
+                        <div className="flex justify-between items-center bg-orange-50/50 p-2.5 rounded-xl border border-orange-100 mt-1">
+                          <span className="text-orange-700/80 text-sm font-medium">Tiền phát sinh (Gọi món...):</span>
+                          <span className="font-bold text-orange-600 text-sm">+{formatMoney(extraAmount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center pt-3 border-t border-dashed border-slate-200 mt-2">
+                        <span className="font-semibold text-slate-800 text-sm">
+                          {extraAmount > 0 ? "Tổng cộng các khoản:" : "Tổng tiền phải trả:"}
+                        </span>
+                        <span className="font-bold text-blue-600 text-lg">
+                          {formatMoney(finalAmount + extraAmount)}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                  <span style={{ color: "#64748b" }}>Đã thanh toán thực tế:</span>
-                  <span style={{ fontWeight: 700, color: "#16a34a" }}>
+                <div className="flex justify-between items-center mt-1 bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+                  <span className="text-emerald-700/80 text-sm font-medium">Đã thanh toán thực tế:</span>
+                  <span className="font-bold text-emerald-600 text-base">
                     {formatMoney(Number(activeBooking.total_completed_paid_amount || 0))}
                   </span>
                 </div>
@@ -845,12 +878,12 @@ const OwnerBookings = () => {
             </div>
 
             {/* Card 5: Ghi chú */}
-            <div style={{ backgroundColor: "#fef08a40", borderRadius: 8, padding: 12, border: "1px solid #fef08a", display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <FileTextOutlined style={{ color: "#ca8a04", fontSize: 13 }} />
-                <span style={{ fontWeight: 600, color: "#854d0e", fontSize: 12 }}>Ghi chú / Lưu ý</span>
+            <div className="bg-yellow-50 rounded-2xl p-3.5 border border-yellow-200/60 shadow-sm flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <FileTextOutlined className="text-yellow-600 text-sm" />
+                <span className="font-bold text-yellow-800 text-xs tracking-wide uppercase">Ghi chú / Lưu ý</span>
               </div>
-              <div style={{ color: "#713f12", fontSize: 12, fontStyle: "italic", lineHeight: "1.4" }}>
+              <div className="text-yellow-900/80 text-sm italic leading-relaxed pl-5">
                 {normalizeOwnerBookingNotes(activeBooking)}
               </div>
             </div>

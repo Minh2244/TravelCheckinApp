@@ -199,7 +199,7 @@ export default function HistoryScreen() {
                       {item.location_name}
                     </Text>
                     <Text className="text-[11px] text-slate-400 mt-1">
-                      🕒 {new Date(item.checkin_time).toLocaleString("vi-VN")}
+                      Thời gian: {new Date(item.checkin_time).toLocaleString("vi-VN")}
                     </Text>
                   </View>
                   <View className="bg-teal-50 border border-teal-100 px-3 py-1 rounded-full">

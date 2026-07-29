@@ -1,5 +1,9 @@
 import { env } from "./env";
 
+const NGROK_SKIP_BROWSER_WARNING_HEADER = {
+  "ngrok-skip-browser-warning": "true",
+};
+
 export function resolveBackendUrl(value?: string | null) {
   if (!value) {
     return null;
@@ -11,7 +15,7 @@ export function resolveBackendUrl(value?: string | null) {
     return null;
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (/^(https?:|file:|content:|data:|blob:)/i.test(trimmed)) {
     return trimmed;
   }
 
@@ -20,4 +24,22 @@ export function resolveBackendUrl(value?: string | null) {
   }
 
   return `${env.apiOrigin}/${trimmed}`;
+}
+
+export function resolveBackendImageSource(value?: string | null) {
+  const uri = resolveBackendUrl(value);
+  if (!uri) {
+    return null;
+  }
+
+  if (/^(file:|content:|data:|blob:)/i.test(uri)) {
+    return { uri };
+  }
+
+  return {
+    uri,
+    headers: uri.includes("ngrok")
+      ? NGROK_SKIP_BROWSER_WARNING_HEADER
+      : undefined,
+  };
 }

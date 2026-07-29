@@ -4,10 +4,9 @@ import {
   Input,
   InputNumber,
   Modal,
-  Select,
-  Segmented,
   Space,
   Table,
+  Segmented,
   Tag,
   message,
 } from "antd";
@@ -20,7 +19,9 @@ import {
 import ownerApi from "../../api/ownerApi";
 import locationApi from "../../api/locationApi";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import { formatMoney } from "../../utils/formatMoney";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
+import { FiTrash2, FiClock, FiMessageCircle } from "react-icons/fi";
 import PosCard from "../../modules/frontOffice/components/PosCard";
 import PosStatCard from "../../modules/frontOffice/components/PosStatCard";
 import useTouristTicketSync from "../../modules/frontOffice/hooks/useTouristTicketSync";
@@ -123,7 +124,6 @@ export default function FrontOfficeTourist(props: {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [sellServiceId, setSellServiceId] = useState<number | null>(null);
-  const [sellQty, setSellQty] = useState<number>(1);
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -279,7 +279,7 @@ export default function FrontOfficeTourist(props: {
   // Guard to prevent concurrent startCamera calls
   const startingRef = useRef(false);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (signal?: AbortSignal) => {
     if (startingRef.current) return;
     const video = videoRef.current;
     if (!video) return;
@@ -303,6 +303,10 @@ export default function FrontOfficeTourist(props: {
           }
         },
       );
+      if (signal?.aborted) {
+        controls.stop();
+        return;
+      }
       scanControlsRef.current = controls;
       setCameraReady(true);
     } catch (error) {
@@ -317,6 +321,7 @@ export default function FrontOfficeTourist(props: {
 
   // Start camera when modal opens, wait for video element via rAF polling
   useEffect(() => {
+    const controller = new AbortController();
     if (!scanModalOpen) {
       stopCamera();
       return;
@@ -324,7 +329,7 @@ export default function FrontOfficeTourist(props: {
     let rafId: number;
     const tryStart = () => {
       if (videoRef.current) {
-        void startCamera();
+        void startCamera(controller.signal);
       } else {
         rafId = requestAnimationFrame(tryStart);
       }
@@ -332,6 +337,7 @@ export default function FrontOfficeTourist(props: {
     rafId = requestAnimationFrame(tryStart);
     return () => {
       cancelAnimationFrame(rafId);
+      controller.abort();
       stopCamera();
     };
   }, [scanModalOpen, startCamera, stopCamera]);
@@ -398,58 +404,39 @@ export default function FrontOfficeTourist(props: {
     return { total, sold, soldOnline, soldPos, used, usedOnline, remaining };
   }, [summary]);
 
-  const serviceOptions = useMemo(() => {
-    return (summary?.services || []).map((s) => ({
-      value: Number(s.service_id),
-      label: `${s.service_name} (còn ${Number(s.remaining_today || 0)})`,
-    }));
-  }, [summary]);
-
-  const selectedService = useMemo(() => {
-    const sid = sellServiceId;
-    if (sid == null) return null;
-    return (summary?.services || []).find((s) => Number(s.service_id) === sid);
-  }, [sellServiceId, summary]);
-
-  const addToCart = useCallback(() => {
-    if (!selectedService) {
-      message.warning("Vui lòng chọn loại vé");
-      return;
-    }
-    const qty = Math.max(1, Math.min(200, Number(sellQty ?? 1)));
-    if (!Number.isFinite(qty) || qty < 1) {
-      message.warning("Số lượng không hợp lệ");
-      return;
-    }
-    const remaining = Number(selectedService.remaining_today ?? NaN);
-    if (Number.isFinite(remaining) && qty > remaining) {
-      message.warning(`Không đủ vé. Còn lại ${remaining}`);
+  const addServiceToCart = useCallback((service: ServiceStat, qty: number = 1) => {
+    const qtyValid = Math.max(1, Math.min(200, qty));
+    const remaining = Number(service.remaining_today ?? NaN);
+    if (Number.isFinite(remaining) && qtyValid > remaining) {
+      message.warning(`Không đủ vé ${service.service_name}. Còn lại ${remaining}`);
       return;
     }
 
     setCart((prev) => {
-      const idx = prev.findIndex(
-        (x) => Number(x.service_id) === Number(selectedService.service_id),
-      );
+      const idx = prev.findIndex((x) => Number(x.service_id) === Number(service.service_id));
       if (idx >= 0) {
         const next = [...prev];
         const cur = next[idx];
-        const nextQty = Math.max(1, Math.min(200, cur.quantity + qty));
+        const nextQty = Math.max(1, Math.min(200, cur.quantity + qtyValid));
+        if (Number.isFinite(remaining) && nextQty > remaining) {
+          message.warning(`Không đủ vé ${service.service_name}. Còn lại ${remaining}`);
+          return prev;
+        }
         next[idx] = { ...cur, quantity: nextQty };
         return next;
       }
       return [
         ...prev,
         {
-          service_id: Number(selectedService.service_id),
-          service_name: String(selectedService.service_name || ""),
-          price: Number(selectedService.price || 0),
-          remaining_today: Number(selectedService.remaining_today || 0),
-          quantity: qty,
+          service_id: Number(service.service_id),
+          service_name: String(service.service_name || ""),
+          price: Number(service.price || 0),
+          remaining_today: Number(service.remaining_today || 0),
+          quantity: qtyValid,
         },
       ];
     });
-  }, [sellQty, selectedService]);
+  }, []);
 
   const cartTotals = useMemo(() => {
     const totalQty = cart.reduce((sum, x) => sum + Number(x.quantity || 0), 0);
@@ -551,19 +538,18 @@ export default function FrontOfficeTourist(props: {
         payment_time: String(inv.payment_time || ""),
         items: Array.isArray(inv.items)
           ? (inv.items as any[]).map((x: any) => ({
-              service_id: Number(x.service_id),
-              service_name: String(x.service_name || ""),
-              quantity: Number(x.quantity || 0),
-              unit_price: Number(x.unit_price || 0),
-              line_total: Number(x.line_total || 0),
-            }))
+            service_id: Number(x.service_id),
+            service_name: String(x.service_name || ""),
+            quantity: Number(x.quantity || 0),
+            unit_price: Number(x.unit_price || 0),
+            line_total: Number(x.line_total || 0),
+          }))
           : [],
         total_qty: Number(inv.total_qty || 0),
         total_amount: Number(inv.total_amount || 0),
       });
 
       setCart([]);
-      setSellQty(1);
       message.success("Thanh toán tiền mặt thành công");
       await loadToday();
     } catch (err: unknown) {
@@ -603,12 +589,12 @@ export default function FrontOfficeTourist(props: {
           payment_time: String(ctx.payment_time || ""),
           items: Array.isArray(ctx.items)
             ? (ctx.items as any[]).map((x: any) => ({
-                service_id: Number(x.service_id),
-                service_name: String(x.service_name || ""),
-                quantity: Number(x.quantity || 0),
-                unit_price: Number(x.unit_price || 0),
-                line_total: Number(x.line_total || 0),
-              }))
+              service_id: Number(x.service_id),
+              service_name: String(x.service_name || ""),
+              quantity: Number(x.quantity || 0),
+              unit_price: Number(x.unit_price || 0),
+              line_total: Number(x.line_total || 0),
+            }))
             : [],
           total_qty: Number(ctx.total_qty || 0),
           total_amount: Number(ctx.total_amount || 0),
@@ -654,19 +640,18 @@ export default function FrontOfficeTourist(props: {
         payment_time: String(inv.payment_time || ""),
         items: Array.isArray(inv.items)
           ? (inv.items as any[]).map((x: any) => ({
-              service_id: Number(x.service_id),
-              service_name: String(x.service_name || ""),
-              quantity: Number(x.quantity || 0),
-              unit_price: Number(x.unit_price || 0),
-              line_total: Number(x.line_total || 0),
-            }))
+            service_id: Number(x.service_id),
+            service_name: String(x.service_name || ""),
+            quantity: Number(x.quantity || 0),
+            unit_price: Number(x.unit_price || 0),
+            line_total: Number(x.line_total || 0),
+          }))
           : [],
         total_qty: Number(inv.total_qty || 0),
         total_amount: Number(inv.total_amount || 0),
       });
 
       setCart([]);
-      setSellQty(1);
       message.success("Đã xác nhận chuyển khoản");
       await loadToday();
     } catch (err: unknown) {
@@ -688,13 +673,13 @@ export default function FrontOfficeTourist(props: {
       {
         title: "Đơn giá",
         dataIndex: "price",
-        width: 110,
+        width: 80,
         render: (v: unknown) => Number(v || 0).toLocaleString("vi-VN"),
       },
       {
         title: "SL",
         dataIndex: "quantity",
-        width: 110,
+        width: 80,
         render: (_: unknown, r: CartItem) => (
           <InputNumber
             min={1}
@@ -708,14 +693,15 @@ export default function FrontOfficeTourist(props: {
                 ),
               );
             }}
-            style={{ width: 90 }}
+            style={{ width: 60 }}
+            size="small"
           />
         ),
       },
       {
         title: "Thành tiền",
         dataIndex: "line_total",
-        width: 130,
+        width: 90,
         render: (_: unknown, r: CartItem) =>
           (Number(r.quantity || 0) * Number(r.price || 0)).toLocaleString(
             "vi-VN",
@@ -724,17 +710,19 @@ export default function FrontOfficeTourist(props: {
       {
         title: "",
         dataIndex: "actions",
-        width: 90,
+        width: 40,
         render: (_: unknown, r: CartItem) => (
           <Button
             danger
+            type="text"
+            size="small"
             onClick={() =>
               setCart((prev) =>
                 prev.filter((x) => x.service_id !== r.service_id),
               )
             }
           >
-            Xóa
+            <FiTrash2 className="text-base" />
           </Button>
         ),
       },
@@ -744,196 +732,226 @@ export default function FrontOfficeTourist(props: {
 
   return (
     <>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="space-y-4">
-          <PosCard
-              title={
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-semibold">Soát vé</span>
-                  <span className={syncBadge.className}>{syncBadge.text}</span>
-                </div>
-              }
-              extra={
-                <span className="text-xs text-slate-500">
-                  {summary?.date ? `Ngày ${summary.date}` : "Hôm nay"}
-                </span>
-              }
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <Input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Nhập ticket_code / QR payload"
-                  style={{ maxWidth: 420 }}
-                  size="large"
-                  onPressEnter={() => void scan()}
-                />
-                <Button
-                  type="primary"
-                  size="large"
-                  className="h-12 rounded-full px-6"
-                  onClick={() => setScanModalOpen(true)}
-                >
-                  Quét QR
-                </Button>
-                <Button
-                  size="large"
-                  className="h-12 rounded-full px-6"
-                  onClick={() => void scan()}
-                  disabled={scanning || !code.trim()}
-                >
-                  Kiểm tra mã
-                </Button>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_450px] 2xl:grid-cols-[1fr_500px] gap-6 h-[calc(100vh-140px)]">
+        <div className="flex flex-col gap-6 h-full overflow-y-auto pr-2 pb-4 custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+            <div className="h-full">
+              <PosCard
+                className="h-full" bodyStyle={{ height: "100%" }}
+            title={
+              <div className="flex items-center gap-2">
+                <span className="text-base font-semibold">Soát vé</span>
+                <span className={syncBadge.className}>{syncBadge.text}</span>
               </div>
-              {lastScanInfo ? (
-                <div className="mt-3 text-sm font-semibold text-emerald-700">
-                  {lastScanInfo}
-                </div>
-              ) : (
-                <div className="mt-3 text-xs text-slate-500">
-                  Quét QR bằng camera hoặc nhập mã thủ công để soát vé.
-                </div>
-              )}
-          </PosCard>
-
-          <PosCard
-            title={`Tồn vé hôm nay${summary?.date ? ` (${summary.date})` : ""}`}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <PosStatCard
-                label="Đặt trước Online"
-                value={totalStats.soldOnline}
-                tone="sky"
-              />
-              <PosStatCard
-                label="Bán tại quầy"
-                value={totalStats.soldPos}
-                tone="emerald"
-              />
-              <PosStatCard
-                label="Đặt trước đã soát"
-                value={totalStats.usedOnline}
-                tone="slate"
-              />
-              <PosStatCard
-                label="Tổng đã soát"
-                value={totalStats.used}
-                tone="amber"
-              />
-            </div>
-
-            <div className="mt-4">
-              <Table
-                size="small"
-                rowKey={(r) => String(r.service_id)}
-                dataSource={summary?.services || []}
-                pagination={{ pageSize: 10 }}
-                columns={serviceColumns}
-                loading={loading}
-              />
-            </div>
-          </PosCard>
-        </div>
-
-        <div className="space-y-4">
-          <PosCard
-            title="Bán vé offline (tại quầy)"
+            }
             extra={
-              <div className="text-xs text-slate-500">
-                Tổng SL: <b>{cartTotals.totalQty}</b> | Tổng tiền:{" "}
-                <b>{cartTotals.totalAmount.toLocaleString("vi-VN")}</b>
-              </div>
+              <span className="text-xs text-slate-500">
+                {summary?.date ? `Ngày ${summary.date}` : "Hôm nay"}
+              </span>
             }
           >
             <div className="flex flex-wrap items-center gap-3">
-              <Select
+              <Input
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="Nhập ticket_code / QR payload"
+                style={{ maxWidth: 420 }}
                 size="large"
-                style={{ width: 320, maxWidth: "100%" }}
-                options={serviceOptions}
-                value={sellServiceId ?? undefined}
-                onChange={(v: number) => setSellServiceId(v)}
-                placeholder="Chọn loại vé"
+                className="rounded-full px-4"
+                onPressEnter={() => void scan()}
               />
-              <InputNumber
-                min={1}
-                max={200}
-                value={sellQty}
-                onChange={(v) => setSellQty(Number(v ?? 1))}
-                style={{ width: 120 }}
-                size="large"
-              />
-              <Button
-                size="large"
-                className="h-12 rounded-full px-6"
-                onClick={addToCart}
-                disabled={!sellServiceId}
-              >
-                Thêm
-              </Button>
               <Button
                 type="primary"
                 size="large"
-                className="h-12 rounded-full px-6"
-                onClick={() => void checkoutOffline()}
-                disabled={cart.length === 0}
+                className="h-10 rounded-full px-6"
+                onClick={() => setScanModalOpen(true)}
               >
-                Thanh toán
+                Quét QR
               </Button>
               <Button
                 size="large"
-                className="h-12 rounded-full px-6"
-                onClick={() => setCart([])}
-                disabled={cart.length === 0}
+                className="h-10 rounded-full px-6"
+                onClick={() => void scan()}
+                disabled={scanning || !code.trim()}
               >
-                Xóa giỏ
+                Kiểm tra mã
               </Button>
             </div>
-            <div className="mt-2 text-xs text-slate-500">
-              {selectedService
-                ? `Còn lại hôm nay: ${Number(selectedService.remaining_today || 0)}`
-                : "Chọn loại vé để xem tồn"}
-            </div>
-
-            <div className="mt-3">
-              <Table
-                size="small"
-                rowKey={(r) => String(r.service_id)}
-                dataSource={cart}
-                pagination={false}
-                columns={cartColumns}
-                locale={{ emptyText: "Chưa có vé trong giỏ" }}
-              />
-            </div>
+            {lastScanInfo ? (
+              <div className="mt-3 text-sm font-semibold text-emerald-700">
+                {lastScanInfo}
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-slate-500">
+                Quét QR bằng camera hoặc nhập mã thủ công để soát vé.
+              </div>
+            )}
           </PosCard>
 
-          <PosCard
-            title="Lịch sử vé hôm nay"
-            extra={
-              <Button
-                size="small"
-                className="rounded-full"
-                onClick={() => {
-                  const base =
-                    props.role === "employee"
-                      ? "/employee/front-office/tourist/tickets-history"
-                      : "/owner/front-office/tourist/tickets-history";
-                  navigate(
-                    `${base}?location_id=${encodeURIComponent(String(locationId))}`,
-                  );
-                }}
+
+        </div>
+
+            <div className="h-full min-h-[300px]">
+              <PosCard 
+                title={
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-semibold">Danh sách Vé</span>
+                    <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Click để thêm vào giỏ</span>
+                  </div>
+                }
+                className="h-full flex flex-col" 
+                bodyStyle={{ flex: 1, overflow: 'hidden', padding: '16px 8px 16px 16px' }}
               >
-                Xem trang lịch sử
-              </Button>
+                <div className="h-full overflow-y-auto pr-2 flex flex-col custom-scrollbar">
+                {(summary?.services || []).map((s, index, arr) => {
+                  const rem = Number(s.remaining_today || 0);
+                  const disabled = rem <= 0;
+                  const isLast = index === arr.length - 1;
+                  return (
+                    <div
+                      key={s.service_id}
+                      className={`flex items-center justify-between py-4 px-2 transition-all duration-200 select-none ${isLast ? '' : 'border-b border-slate-100'} ${
+                        disabled
+                          ? "opacity-60 cursor-not-allowed"
+                          : "bg-white cursor-pointer hover:bg-slate-50 active:bg-slate-100"
+                      }`}
+                      onClick={() => {
+                        if (!disabled) {
+                          addServiceToCart(s, 1);
+                        }
+                      }}
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium text-sm text-slate-800">{s.service_name}</span>
+                        <span className="text-xs font-medium text-slate-500 mt-1">Còn lại: <span className={disabled ? "text-red-500" : "text-emerald-600"}>{rem}</span></span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-base font-semibold text-blue-600">{formatMoney(s.price)}</span>
+                        <Button
+                          type="primary"
+                          shape="circle"
+                          disabled={disabled}
+                          icon={<span className="font-bold text-base leading-none">+</span>}
+                          className="flex items-center justify-center w-8 h-8 shadow-sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!disabled) addServiceToCart(s, 1);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              </PosCard>
+            </div>
+          </div>
+
+          <div className="w-full">
+            <PosCard
+              title={
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-semibold">
+                    Tồn vé hôm nay {summary?.date ? <span className="text-slate-500 font-medium">({summary.date})</span> : ""}
+                  </span>
+                </div>
+              }
+            >
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <PosStatCard label="Đặt trước Online" value={totalStats.soldOnline} tone="sky" size="small" />
+                <PosStatCard label="Bán tại quầy" value={totalStats.soldPos} tone="emerald" size="small" />
+                <PosStatCard label="Đặt trước đã soát" value={totalStats.usedOnline} tone="slate" size="small" />
+                <PosStatCard label="Tổng đã soát" value={totalStats.used} tone="amber" size="small" />
+              </div>
+
+              <div className="mt-4">
+                <Table
+                  size="small"
+                  rowKey={(r) => String(r.service_id)}
+                  dataSource={summary?.services || []}
+                  pagination={false}
+                  columns={serviceColumns}
+                  loading={loading}
+                  className="custom-table-minimal"
+                />
+              </div>
+            </PosCard>
+          </div>
+        </div>
+
+        <div className="space-y-4 h-full">
+          <PosCard
+            title={
+              <div className="flex items-center justify-between">
+                <span className="text-base font-semibold">Giỏ hàng</span>
+                {cart.length > 0 && (
+                  <span className="text-xs font-normal text-slate-500 cursor-pointer hover:text-red-500 transition-colors" onClick={() => setCart([])}>
+                    Xóa tất cả
+                  </span>
+                )}
+              </div>
             }
           >
-            <div className="text-sm text-slate-600">
-              Lịch sử vé chi tiết đã chuyển sang trang riêng (có biểu đồ).
+            <div className="flex flex-col min-h-[300px]">
+              <div className="flex-1">
+                <Table
+                  size="small"
+                  rowKey={(r) => String(r.service_id)}
+                  dataSource={cart}
+                  pagination={false}
+                  columns={cartColumns}
+                  locale={{ emptyText: "Chưa có vé trong giỏ" }}
+                />
+              </div>
+              
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-semibold text-slate-600">Tổng cộng ({cartTotals.totalQty} vé):</span>
+                  <span className="text-2xl font-bold text-blue-700">
+                    {cartTotals.totalAmount.toLocaleString("vi-VN")} đ
+                  </span>
+                </div>
+                
+                <Button
+                  type="primary"
+                  className="w-full h-12 rounded-xl text-base font-semibold shadow-sm"
+                  onClick={() => void checkoutOffline()}
+                  disabled={cart.length === 0}
+                >
+                  Thanh toán
+                </Button>
+              </div>
             </div>
           </PosCard>
+
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <Button
+              className="h-12 border-indigo-200 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 font-semibold !rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all"
+              onClick={() => {
+                const base =
+                  props.role === "employee"
+                    ? "/employee/front-office/tourist/tickets-history"
+                    : "/owner/front-office/tourist/tickets-history";
+                navigate(
+                  `${base}?location_id=${encodeURIComponent(String(locationId))}`,
+                );
+              }}
+            >
+              <FiClock className="text-lg" /> Lịch sử thanh toán
+            </Button>
+            <Button
+              className="h-12 border-teal-200 text-teal-700 bg-teal-50/50 hover:bg-teal-100 font-semibold !rounded-2xl flex items-center justify-center gap-2 shadow-sm transition-all"
+              onClick={() => {
+                window.dispatchEvent(new Event("tc-open-owner-chat-history"));
+              }}
+            >
+              <FiMessageCircle className="text-lg" /> Lịch sử Chat
+            </Button>
+          </div>
         </div>
       </div>
 
-      <Modal
+    <Modal
         open={payModalOpen}
         onCancel={() => {
           if (payBusy) return;
@@ -954,7 +972,7 @@ export default function FrontOfficeTourist(props: {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="text-2xl font-semibold">
-                    Thanh toán vé offline
+                    Chi tiết thanh toán
                   </div>
                 </div>
                 <div className="text-right">
@@ -1039,7 +1057,7 @@ export default function FrontOfficeTourist(props: {
           <div className="mx-auto max-w-[520px]">
             <div className="rounded-3xl border bg-white p-6">
               <div className="text-2xl font-semibold">
-                Thanh toán vé offline
+                Xác nhận thanh toán
               </div>
 
               <div className="mt-4 rounded-2xl border bg-slate-50 p-4">
@@ -1055,28 +1073,12 @@ export default function FrontOfficeTourist(props: {
                   )}
                 </div>
                 <div className="mt-3 text-center">
-                  <div className="text-sm font-semibold text-gray-800">
-                    Quét để thanh toán đúng số tiền
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Sử dụng app ngân hàng hoặc Ví điện tử
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-2xl border bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-blue-800">
-                  {transferInit.qr.bank_name || "-"}
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                  <div className="text-gray-500">STK</div>
-                  <div className="text-right font-semibold">
-                    {transferInit.qr.bank_account || "-"}
-                  </div>
-                  <div className="text-gray-500">Chủ TK</div>
-                  <div className="text-right font-semibold">
-                    {transferInit.qr.account_holder || "-"}
-                  </div>
+                  <p className="text-lg font-bold text-red-600">
+                    {formatMoney(transferInit.qr.amount)}
+                  </p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">
+                    Nội dung: <span className="text-blue-600 font-semibold">{transferInit.qr.note}</span>
+                  </p>
                 </div>
               </div>
 
@@ -1155,79 +1157,70 @@ export default function FrontOfficeTourist(props: {
           </div>
         ) : (
           <div className="mx-auto max-w-[520px]">
-            <div className="rounded-3xl border bg-white p-6">
-              <div className="text-2xl font-semibold">
-                Thanh toán vé offline
+            <div className="rounded-3xl border bg-white p-6 shadow-sm">
+              <div className="text-xl font-bold text-slate-800 border-b pb-4 mb-4">
+                Xác nhận thanh toán
               </div>
 
-              <div className="mt-4 rounded-2xl border bg-slate-50 px-5 py-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <span className="text-gray-600">Tổng SL:</span>{" "}
-                    <b>
-                      {Number(cartTotals.totalQty || 0).toLocaleString("vi-VN")}
-                    </b>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Tổng tiền:</span>{" "}
-                    <b>
-                      {Number(cartTotals.totalAmount || 0).toLocaleString(
-                        "vi-VN",
-                      )}{" "}
-                      đ
-                    </b>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-2xl border bg-slate-50 px-5 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="text-sm text-gray-600">Phương thức:</div>
-                  <Segmented
-                    value={payMethod}
-                    onChange={(v) => setPayMethod(v as PayMethod)}
-                    options={[
-                      { label: "Tiền mặt", value: "cash" },
-                      { label: "Chuyển khoản", value: "transfer" },
-                    ]}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <div className="grid grid-cols-[1fr_70px_90px_110px] border-b pb-2 text-xs font-semibold text-gray-500">
+              {/* Danh sách vé (Receipt style) */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-dashed border-slate-300 mb-5">
+                <div className="grid grid-cols-[1fr_50px_80px_100px] border-b border-dashed border-slate-300 pb-2 text-xs font-semibold text-slate-500 mb-2">
                   <div>Vé</div>
                   <div className="text-right">SL</div>
                   <div className="text-right">Giá</div>
                   <div className="text-right">Thành tiền</div>
                 </div>
-                <div className="divide-y">
+                <div className="flex flex-col gap-2">
                   {cart.map((it) => (
                     <div
                       key={`${it.service_id}-${it.service_name}`}
-                      className="grid grid-cols-[1fr_70px_90px_110px] py-3 text-sm"
+                      className="grid grid-cols-[1fr_50px_80px_100px] text-sm text-slate-700"
                     >
-                      <div className="min-w-0 truncate">{it.service_name}</div>
-                      <div className="text-right font-semibold">
+                      <div className="min-w-0 truncate font-medium">{it.service_name}</div>
+                      <div className="text-right">
                         {Number(it.quantity || 0).toLocaleString("vi-VN")}
                       </div>
                       <div className="text-right">
-                        {Number(it.price || 0).toLocaleString("vi-VN")} đ
+                        {Number(it.price || 0).toLocaleString("vi-VN")}
                       </div>
                       <div className="text-right font-semibold">
                         {(
                           Number(it.price || 0) * Number(it.quantity || 0)
-                        ).toLocaleString("vi-VN")}{" "}
-                        đ
+                        ).toLocaleString("vi-VN")}
                       </div>
                     </div>
                   ))}
                 </div>
+                <div className="mt-3 pt-3 border-t border-dashed border-slate-300 flex items-center justify-between">
+                  <div className="text-sm text-slate-600">
+                    Tổng SL: <b>{Number(cartTotals.totalQty || 0).toLocaleString("vi-VN")}</b>
+                  </div>
+                  <div className="text-lg font-bold text-blue-700">
+                    {Number(cartTotals.totalAmount || 0).toLocaleString("vi-VN")} đ
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3">
+              {/* Phương thức thanh toán */}
+              <div className="mb-6">
+                <div className="text-sm font-semibold text-slate-700 mb-2">Phương thức thanh toán:</div>
+                <Segmented
+                  block
+                  size="large"
+                  className="bg-slate-100 p-1 font-semibold text-slate-700 w-full rounded-xl"
+                  value={payMethod}
+                  onChange={(v) => setPayMethod(v as PayMethod)}
+                  options={[
+                    { label: "Tiền mặt", value: "cash" },
+                    { label: "Chuyển khoản", value: "transfer" },
+                  ]}
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="grid grid-cols-2 gap-3">
                 <Button
-                  className="h-11 rounded-full"
+                  className="h-11 rounded-xl font-medium"
                   onClick={() => {
                     if (payBusy) return;
                     setPayModalOpen(false);
@@ -1239,7 +1232,7 @@ export default function FrontOfficeTourist(props: {
                 {payMethod === "cash" ? (
                   <Button
                     type="primary"
-                    className="h-11 rounded-full"
+                    className="h-11 rounded-xl font-semibold bg-blue-600"
                     loading={payBusy}
                     onClick={() => void runCashPay()}
                   >
@@ -1248,11 +1241,11 @@ export default function FrontOfficeTourist(props: {
                 ) : (
                   <Button
                     type="primary"
-                    className="h-11 rounded-full"
+                    className="h-11 rounded-xl font-semibold bg-blue-600"
                     loading={payBusy}
                     onClick={() => void runTransferInit()}
                   >
-                    Tạo mã QR chuyển khoản
+                    Tạo mã QR
                   </Button>
                 )}
               </div>
@@ -1264,7 +1257,10 @@ export default function FrontOfficeTourist(props: {
       <Modal
         title="Quét vé"
         open={scanModalOpen}
-        onCancel={() => setScanModalOpen(false)}
+        onCancel={() => {
+          stopCamera();
+          setScanModalOpen(false);
+        }}
         footer={null}
         destroyOnHidden
       >

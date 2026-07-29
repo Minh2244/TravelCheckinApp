@@ -1,5 +1,6 @@
 // backend/src/controllers/locationController.ts
 import { Request, Response } from "express";
+import type { RowDataPacket } from "mysql2/promise";
 import { pool } from "../config/database";
 import {
   computeTableReservationEnd,
@@ -22,6 +23,11 @@ async function getLocationImages(locationId: number): Promise<{ images: string[]
 
 const PREPAY_UNCONFIRMED_MARKER = "PREPAY_UNCONFIRMED";
 
+const getOptionalUserId = (req: Request): number | null => {
+  const userId = Number((req as any).userId || (req as any).user?.user_id);
+  return Number.isFinite(userId) && userId > 0 ? userId : null;
+};
+
 const getActiveFoodLocationId = async (
   locationId: number,
 ): Promise<number | null> => {
@@ -29,7 +35,7 @@ const getActiveFoodLocationId = async (
     `SELECT location_id
      FROM locations
      WHERE location_id = ?
-       AND status = 'active'
+       AND (status = 'active' OR (status = 'pending' AND previous_status = 'active'))
        AND location_type IN ('restaurant', 'cafe')
      LIMIT 1`,
     [locationId],
@@ -50,7 +56,7 @@ export const getLocations = async (req: Request, res: Response) => {
     };
 
     let query = "SELECT l.* FROM locations l LEFT JOIN users u ON u.user_id = l.owner_id";
-    const params: Array<string> = [];
+    const params: Array<any> = [];
     const filters: string[] = [];
 
     if (type) {
@@ -72,7 +78,7 @@ export const getLocations = async (req: Request, res: Response) => {
     const isPublicConsumer =
       effectiveSource === "web" || effectiveSource === "mobile";
     if (isPublicConsumer) {
-      filters.push("l.status = 'active'");
+      filters.push("(l.status = 'active' OR (l.status = 'pending' AND l.previous_status = 'active'))");
       // Chỉ hiện địa điểm owner/admin tạo, bỏ qua OSM và địa điểm tự tạo của user
       filters.push("l.source IN ('owner', 'admin')");
       filters.push("l.location_name != 'Vị trí tự do'");
@@ -83,18 +89,28 @@ export const getLocations = async (req: Request, res: Response) => {
       query += ` WHERE ${filters.join(" AND ")}`;
     }
 
+    query += ` ORDER BY l.location_id DESC`;
+
     const [rows] = await pool.query(query, params);
 
     void source;
 
-    // Override images with URLs from entity_images table for each location
-    const locations = Array.isArray(rows) ? rows : [];
-    for (const loc of locations) {
-      const imgData = await getLocationImages((loc as Record<string, unknown>).location_id as number);
-      if (imgData.images.length > 0) {
-        (loc as Record<string, unknown>).images = imgData.images;
-        (loc as Record<string, unknown>).first_image = imgData.first_image;
-      }
+    // Removed buggy entity_images override
+    let locations = Array.isArray(rows) ? rows : [];
+
+    if (isPublicConsumer) {
+      locations = locations.map((loc) => {
+        const l = loc as Record<string, any>;
+        if (l.status === "pending" && l.backup_data) {
+          try {
+            const backup = typeof l.backup_data === "string" ? JSON.parse(l.backup_data) : l.backup_data;
+            return { ...l, ...backup, status: "active", backup_data: undefined };
+          } catch {
+            return l;
+          }
+        }
+        return l;
+      });
     }
 
     res.json({
@@ -124,9 +140,27 @@ export const getLocationById = async (req: Request, res: Response) => {
       return;
     }
 
-    const [rows] = await pool.query(
-      "SELECT * FROM locations WHERE location_id = ? LIMIT 1",
-      [locationId],
+    const effectiveSource = (source ?? "web").toLowerCase();
+    const isPublicConsumer =
+      effectiveSource === "web" || effectiveSource === "mobile";
+
+    const userId = getOptionalUserId(req);
+    let query = `SELECT l.*, upl.user_id AS private_user_id,
+                        CASE WHEN upl.location_id IS NULL THEN 0 ELSE 1 END AS is_private_location
+                 FROM locations l
+                 LEFT JOIN user_private_locations upl ON upl.location_id = l.location_id
+                 WHERE l.location_id = ? `;
+    if (isPublicConsumer) {
+      query += `AND (
+        (upl.location_id IS NULL AND (l.status = 'active' OR (l.status = 'pending' AND l.previous_status = 'active')))
+        OR (upl.user_id = ? AND l.deleted_at IS NULL)
+      ) `;
+    }
+    query += "LIMIT 1";
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      query,
+      isPublicConsumer ? [locationId, userId || 0] : [locationId],
     );
 
     const location = Array.isArray(rows) ? rows[0] : null;
@@ -140,14 +174,20 @@ export const getLocationById = async (req: Request, res: Response) => {
     // location_views đã bị loại bỏ trong DB rút gọn
     void source;
 
-    // Override images with URLs from entity_images table
-    const imgData = await getLocationImages(locationId);
-    if (imgData.images.length > 0) {
-      (location as Record<string, unknown>).images = imgData.images;
-      (location as Record<string, unknown>).first_image = imgData.first_image;
+    // Removed buggy entity_images override
+    let finalLocation = location as Record<string, any>;
+    if (isPublicConsumer && finalLocation.status === "pending" && finalLocation.backup_data) {
+      try {
+        const backup = typeof finalLocation.backup_data === "string" 
+          ? JSON.parse(finalLocation.backup_data) 
+          : finalLocation.backup_data;
+        finalLocation = { ...finalLocation, ...backup, status: "active", backup_data: undefined };
+      } catch {
+        // ignore error
+      }
     }
 
-    res.json({ success: true, data: location });
+    res.json({ success: true, data: finalLocation });
   } catch (error) {
     console.error("Lỗi lấy chi tiết địa điểm:", error);
     res.status(500).json({
@@ -169,11 +209,16 @@ export const getLocationReviewsPublic = async (req: Request, res: Response) => {
     }
 
     const [locRows] = await pool.query(
-      `SELECT location_id, status FROM locations WHERE location_id = ? LIMIT 1`,
+      `SELECT location_id, status, previous_status FROM locations WHERE location_id = ? LIMIT 1`,
       [locationId],
     );
     const loc = Array.isArray(locRows) ? (locRows as any[])[0] : null;
-    if (!loc || String(loc.status || "") !== "active") {
+    const isAvailable =
+      loc &&
+      (String(loc.status || "") === "active" ||
+        (String(loc.status || "") === "pending" &&
+          String(loc.previous_status || "") === "active"));
+    if (!isAvailable) {
       res
         .status(404)
         .json({ success: false, message: "Địa điểm không khả dụng" });
@@ -232,7 +277,7 @@ export const getLocationServicesPublic = async (
     }
 
     const [locRows] = await pool.query(
-      `SELECT location_id, status FROM locations WHERE location_id = ? LIMIT 1`,
+      `SELECT location_id, status, previous_status FROM locations WHERE location_id = ? LIMIT 1`,
       [locationId],
     );
     const loc = Array.isArray(locRows) ? (locRows as any[])[0] : null;
@@ -242,7 +287,12 @@ export const getLocationServicesPublic = async (
         .json({ success: false, message: "Không tìm thấy địa điểm" });
       return;
     }
-    if (String(loc.status || "") !== "active") {
+    const isAvailable =
+      loc &&
+      (String(loc.status || "") === "active" ||
+        (String(loc.status || "") === "pending" &&
+          String(loc.previous_status || "") === "active"));
+    if (!isAvailable) {
       res
         .status(404)
         .json({ success: false, message: "Địa điểm không khả dụng" });
@@ -258,7 +308,7 @@ export const getLocationServicesPublic = async (
       "other",
     ]);
 
-    const params: any[] = [locationId];
+    const params: any[] = [];
     const whereType =
       type && allowedTypes.has(String(type)) ? " AND s.service_type = ?" : "";
     if (whereType) params.push(String(type));
@@ -280,6 +330,8 @@ export const getLocationServicesPublic = async (
          s.service_type,
          s.description,
          s.price,
+         s.pending_updates,
+         s.admin_status,
          CASE
            WHEN s.service_type = 'ticket' AND s.quantity IS NOT NULL THEN
              GREATEST(0,
@@ -310,7 +362,7 @@ export const getLocationServicesPublic = async (
          JOIN bookings b ON b.booking_id = bt.booking_id
          WHERE bt.location_id = ?
            AND bt.status <> 'void'
-           AND DATE(b.check_in_date) = ?
+           AND b.check_in_date >= ? AND b.check_in_date < DATE_ADD(?, INTERVAL 1 DAY)
          GROUP BY bt.service_id
        ) bt_sold ON bt_sold.service_id = s.service_id AND s.service_type = 'ticket'
        LEFT JOIN (
@@ -318,7 +370,7 @@ export const getLocationServicesPublic = async (
          FROM pos_tickets pt2
          WHERE pt2.location_id = ?
            AND pt2.status <> 'void'
-           AND DATE(pt2.sold_at) = ?
+           AND pt2.sold_at >= ? AND pt2.sold_at < DATE_ADD(?, INTERVAL 1 DAY)
          GROUP BY pt2.service_id
        ) pt_sold ON pt_sold.service_id = s.service_id AND s.service_type = 'ticket'
        LEFT JOIN (
@@ -327,23 +379,37 @@ export const getLocationServicesPublic = async (
          WHERE b.location_id = ?
            AND b.status IN ('pending', 'confirmed')
            AND (b.notes IS NULL OR b.notes NOT LIKE '%PREPAY_UNCONFIRMED%')
-           AND DATE(b.check_in_date) <= ?
-           AND (b.check_out_date IS NULL OR DATE(b.check_out_date) > ?)
+           AND b.check_in_date < DATE_ADD(?, INTERVAL 1 DAY)
+           AND (b.check_out_date IS NULL OR b.check_out_date >= DATE_ADD(?, INTERVAL 1 DAY))
          GROUP BY b.service_id
        ) pb ON pb.service_id = s.service_id AND s.service_type = 'room'
        WHERE s.location_id = ?
          AND s.deleted_at IS NULL
-         AND s.admin_status = 'approved'
+         AND (
+           s.admin_status = 'approved'
+           OR (s.admin_status = 'pending' AND s.pending_updates IS NOT NULL)
+         )
          AND (
            s.status = 'available'
            OR (s.service_type IN ('food','combo','other') AND s.status = 'reserved')
          )
          ${whereType}
        ORDER BY c.sort_order ASC, s.created_at DESC`,
-      [locationId, todayStr, locationId, todayStr, locationId, todayStr, todayStr, ...params],
+      [locationId, todayStr, todayStr, locationId, todayStr, todayStr, locationId, todayStr, todayStr, locationId, ...params],
     );
+    const mergedRows = (rows as any[]).map((svc: any) => {
+      if (svc.admin_status === "pending" && svc.pending_updates) {
+        try {
+          const pending = typeof svc.pending_updates === "string" ? JSON.parse(svc.pending_updates) : svc.pending_updates;
+          return { ...svc, ...pending, admin_status: "pending", pending_updates: undefined, is_pending_update: true };
+        } catch {
+          return svc;
+        }
+      }
+      return svc;
+    });
 
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: mergedRows });
   } catch (error) {
     console.error("Lỗi lấy danh sách dịch vụ theo location:", error);
     res.status(500).json({
@@ -390,7 +456,7 @@ export const getLocationPosTablesPublic = async (
            JOIN bookings b ON b.booking_id = r.booking_id
            WHERE r.status = 'active'
              AND r.actual_end_time IS NULL
-             AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.created_at <= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
+             AND (b.status = 'confirmed' OR (b.status = 'pending' AND b.created_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
          )`,
       [resolvedLocationId]
     );
@@ -423,7 +489,7 @@ export const getLocationPosTablesPublic = async (
              OR b.status = 'confirmed'
              OR (
                b.status = 'pending'
-               AND b.created_at <= DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+               AND b.created_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)
                AND NOT (
                  b.status = 'pending'
                  AND b.notes LIKE ?
@@ -561,15 +627,10 @@ export const getLocationTicketsStock = async (
       `SELECT
          s.service_id,
          s.service_type,
-         CASE
-           WHEN s.service_type = 'ticket' AND s.quantity IS NOT NULL THEN
-             GREATEST(0,
-               CAST(s.quantity AS SIGNED)
-               - COALESCE(bt_sold.cnt, 0)
-               - COALESCE(pt_sold.cnt, 0)
-             )
-           ELSE s.quantity
-         END AS remaining_today
+         s.quantity,
+         s.admin_status,
+         s.pending_updates,
+         COALESCE(bt_sold.cnt, 0) + COALESCE(pt_sold.cnt, 0) AS sold_today
        FROM services s
        LEFT JOIN (
          SELECT bt.service_id, COUNT(*) AS cnt
@@ -577,7 +638,7 @@ export const getLocationTicketsStock = async (
          JOIN bookings b ON b.booking_id = bt.booking_id
          WHERE bt.location_id = ?
            AND bt.status <> 'void'
-           AND DATE(b.check_in_date) = ?
+           AND b.check_in_date >= ? AND b.check_in_date < DATE_ADD(?, INTERVAL 1 DAY)
          GROUP BY bt.service_id
        ) bt_sold ON bt_sold.service_id = s.service_id AND s.service_type = 'ticket'
        LEFT JOIN (
@@ -585,20 +646,131 @@ export const getLocationTicketsStock = async (
          FROM pos_tickets pt2
          WHERE pt2.location_id = ?
            AND pt2.status <> 'void'
-           AND DATE(pt2.sold_at) = ?
+           AND pt2.sold_at >= ? AND pt2.sold_at < DATE_ADD(?, INTERVAL 1 DAY)
          GROUP BY pt2.service_id
        ) pt_sold ON pt_sold.service_id = s.service_id AND s.service_type = 'ticket'
        WHERE s.location_id = ?
          AND s.service_type = 'ticket'
          AND s.deleted_at IS NULL
-         AND s.admin_status = 'approved'
+         AND (
+           s.admin_status = 'approved'
+           OR (s.admin_status = 'pending' AND s.pending_updates IS NOT NULL)
+         )
          AND s.status = 'available'`,
-      [locationId, todayStr, locationId, todayStr, locationId],
+      [locationId, todayStr, todayStr, locationId, todayStr, todayStr, locationId],
     );
 
-    res.json({ success: true, data: rows });
+    const mergedRows = (rows as any[]).map((row) => {
+      let qty = row.quantity;
+      if (row.admin_status === "pending" && row.pending_updates) {
+        try {
+          const pending = typeof row.pending_updates === "string" ? JSON.parse(row.pending_updates) : row.pending_updates;
+          if (pending.quantity !== undefined) {
+             qty = pending.quantity;
+          }
+        } catch {}
+      }
+      
+      let remaining_today = qty;
+      if (qty !== null && qty !== undefined) {
+         remaining_today = Math.max(0, Number(qty) - Number(row.sold_today));
+      }
+      
+      return {
+         service_id: row.service_id,
+         service_type: row.service_type,
+         remaining_today
+      };
+    });
+
+    res.json({ success: true, data: mergedRows });
   } catch (error) {
     console.error("Lỗi lấy realtime stock:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+export const createCustomLocation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = Number((req as any).userId || (req as any).user?.user_id);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    const { location_name, latitude, longitude } = req.body;
+    if (latitude === undefined || longitude === undefined) {
+      res.status(400).json({ success: false, message: "Missing coordinates" });
+      return;
+    }
+
+    const name = location_name?.trim() || "Vị trí tự do";
+    const address = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+    const [result] = await pool.query<any>(
+      `INSERT INTO locations (
+        location_name, location_type, address, latitude, longitude,
+        status, source, owner_id, created_by_user_id
+      ) VALUES (?, 'other', ?, ?, ?, 'active', 'user', NULL, ?)`,
+      [name, address, latitude, longitude, userId]
+    );
+
+    const insertId = result.insertId;
+
+    await pool.query(
+      `INSERT IGNORE INTO user_private_locations (location_id, user_id)
+       VALUES (?, ?)`,
+      [insertId, userId],
+    );
+
+    // Tự động đưa vào danh sách Đã lưu
+    await pool.query(
+      `INSERT IGNORE INTO favorite_locations (user_id, location_id)
+       VALUES (?, ?)`,
+      [userId, insertId]
+    );
+
+    res.json({ success: true, location_id: insertId, message: "Đã tạo vị trí tự do" });
+  } catch (error) {
+    console.error("[createCustomLocation] Error:", error);
+    res.status(500).json({ success: false, message: "Lỗi máy chủ" });
+  }
+};
+
+export const updateCustomLocationName = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const locationId = Number(req.params.id);
+    const userId = Number((req as any).userId || (req as any).user?.user_id);
+    const { location_name } = req.body;
+
+    if (!Number.isFinite(locationId) || !Number.isFinite(userId) || userId <= 0) {
+      res.status(401).json({ success: false, message: "Unauthorized" });
+      return;
+    }
+
+    if (!location_name || !location_name.trim()) {
+      res.status(400).json({ success: false, message: "Tên địa điểm không được để trống" });
+      return;
+    }
+
+    const [result] = await pool.query<any>(
+      `UPDATE locations 
+       SET location_name = ? 
+       WHERE location_id = ?
+         AND location_id IN (
+           SELECT upl.location_id FROM user_private_locations upl WHERE upl.user_id = ?
+         )`,
+      [location_name.trim(), locationId, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      res.status(404).json({ success: false, message: "Không tìm thấy vị trí tự do hoặc bạn không có quyền sửa" });
+      return;
+    }
+
+    res.json({ success: true, message: "Đã cập nhật tên vị trí tự do" });
+  } catch (error) {
+    console.error("[updateCustomLocationName] Error:", error);
+    res.status(500).json({ success: false, message: "Lỗi máy chủ" });
   }
 };

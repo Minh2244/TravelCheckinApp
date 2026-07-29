@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   DeviceEventEmitter,
   FlatList,
   Image,
@@ -15,6 +14,7 @@ import {
 
 import { formatDate } from "../../../src/lib/booking-utils";
 import { getErrorMessage } from "../../../src/lib/error";
+import { AppAlert as Alert } from "../../modules/ui/app-alert";
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { QRCodeModal } from "../../../src/components/ui/QRCodeModal";
 import { bookingApi } from "../../../src/services/booking.api";
@@ -54,7 +54,11 @@ export function RoomPassTab() {
 
   useEffect(() => {
     fetchPasses();
-    const sub = DeviceEventEmitter.addListener("booking_updated", fetchPasses);
+    const sub = DeviceEventEmitter.addListener("realtime_event", (event: any) => {
+      if (event?.type?.startsWith("booking_")) {
+        fetchPasses();
+      }
+    });
     return () => sub.remove();
   }, [fetchPasses]);
 

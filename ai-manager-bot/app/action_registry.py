@@ -65,10 +65,9 @@ REGISTRY: List[ActionDefinition] = [
         parameters_schema={
             "type": "object",
             "properties": {
-                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"}
-            },
-            "required": ["time_range"]
-        }
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"},
+                "months": {"type": "array", "items": {"type": "integer"}}, "start_date": {"type": "string"}, "end_date": {"type": "string"}
+            } }
     ),
     ActionDefinition(
         name="owner_get_revenue_structure",
@@ -78,10 +77,9 @@ REGISTRY: List[ActionDefinition] = [
         parameters_schema={
             "type": "object",
             "properties": {
-                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"}
-            },
-            "required": ["time_range"]
-        }
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"},
+                "months": {"type": "array", "items": {"type": "integer"}}, "start_date": {"type": "string"}, "end_date": {"type": "string"}
+            } }
     ),
     ActionDefinition(
         name="owner_get_top_services",
@@ -92,10 +90,9 @@ REGISTRY: List[ActionDefinition] = [
             "type": "object",
             "properties": {
                 "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"},
-                "location_name": {"type": "string", "description": "Tên địa điểm khách hàng muốn xem (nếu có)"}
-            },
-            "required": ["time_range"]
-        }
+                "location_name": {"type": "string", "description": "Tên địa điểm khách hàng muốn xem (nếu có)"},
+                "months": {"type": "array", "items": {"type": "integer"}}, "start_date": {"type": "string"}, "end_date": {"type": "string"}
+            } }
     ),
     ActionDefinition(
         name="owner_analyze_reviews",
@@ -107,9 +104,7 @@ REGISTRY: List[ActionDefinition] = [
             "properties": {
                 "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year"], "description": "Khoảng thời gian cần xem"},
                 "months": {"type": "array", "items": {"type": "integer"}, "description": "Danh sách các tháng cụ thể nếu có (ví dụ: [5,6])"}
-            },
-            "required": ["time_range"]
-        }
+            } }
     ),
 
     # ==========================================
@@ -165,7 +160,14 @@ REGISTRY: List[ActionDefinition] = [
                 "discount_value": {"type": "number", "description": "Số tiền giảm giá (VND). Ví dụ: 200000, 50000, 100000"},
                 "start_date": {"type": "string", "description": "Ngày bắt đầu hiệu lực (YYYY-MM-DD). Mặc định: hôm nay"},
                 "end_date": {"type": "string", "description": "Ngày hết hạn (YYYY-MM-DD). Mặc định: 7 ngày sau"},
-                "min_order_value": {"type": "number", "description": "Giá trị đơn hàng tối thiểu được áp dụng (VND). Mặc định: 0"}
+                "min_order_value": {"type": "number", "description": "Giá trị đơn hàng tối thiểu được áp dụng (VND). Mặc định: 0"},
+                "apply_to_service_type": {"type": "string", "enum": ["room", "food", "ticket", "all"], "description": "Loại dịch vụ áp dụng"},
+                "apply_to_location_type": {"type": "string", "enum": ["hotel", "restaurant", "tourist", "cafe", "resort", "all"], "description": "Loại hình cơ sở áp dụng"},
+                "max_discount_amount": {"type": "number", "description": "Số tiền giảm tối đa (cho voucher dạng phần trăm)"},
+                "usage_limit": {"type": "integer", "description": "Giới hạn tổng số lượt sử dụng voucher"},
+                "max_uses_per_user": {"type": "integer", "description": "Giới hạn số lần dùng tối đa cho mỗi user"},
+                "target_group": {"type": "string", "enum": ["all", "loyal"], "description": "Đối tượng khách hàng áp dụng"},
+                "quantity": {"type": "integer", "description": "Số lượng voucher riêng biệt cần tạo (nếu tạo hàng loạt)"}
             },
             "required": ["discount_value"]
         }
@@ -190,13 +192,6 @@ REGISTRY: List[ActionDefinition] = [
             "required": ["action"]
         }
     ),
-    ActionDefinition(
-        name="owner_manage_front_office",
-        description="Mở màn hình điều hành trực tiếp (Front Office) cho Lễ tân/Thu ngân.",
-        roles=["owner"],
-        requires_confirmation=False
-    ),
-
     # ==========================================
     # DÀNH RIÊNG CHO ADMIN TỔNG
     # ==========================================
@@ -208,16 +203,17 @@ REGISTRY: List[ActionDefinition] = [
     ),
     ActionDefinition(
         name="admin_user_lock",
-        description="Khóa tạm thời tài khoản người dùng/chủ cơ sở vi phạm (Cấm XÓA).",
+        description="Khóa tạm thời hoặc hàng loạt tài khoản người dùng/chủ cơ sở (Cấm XÓA).",
         roles=["admin"],
         requires_confirmation=True,
         parameters_schema={
             "type": "object",
             "properties": {
-                "user_id": {"type": "integer"},
-                "reason": {"type": "string"}
+                "user_id": {"type": "integer", "description": "ID người dùng cụ thể cần khóa (nếu có)"},
+                "target_role": {"type": "string", "enum": ["all", "user", "owner"], "description": "Nhóm tài khoản cần khóa (nếu khóa hàng loạt, ví dụ: all, user, owner)"},
+                "reason": {"type": "string", "description": "Lý do khóa tài khoản"}
             },
-            "required": ["user_id", "reason"]
+            "required": []
         }
     ),
     ActionDefinition(
@@ -229,7 +225,7 @@ REGISTRY: List[ActionDefinition] = [
     ActionDefinition(
         name="admin_location_review",
         description="Duyệt (Approve) cho phép địa điểm mới hoạt động.",
-        roles=["admin"],
+        roles=[],
         requires_confirmation=True,
         parameters_schema={
             "type": "object",
@@ -268,9 +264,94 @@ REGISTRY: List[ActionDefinition] = [
             "type": "object",
             "properties": {
                 "code": {"type": "string"},
-                "discount_value": {"type": "number"}
+                "discount_value": {"type": "number"},
+                "apply_to_service_type": {"type": "string", "enum": ["room", "food", "ticket", "all"]},
+                "apply_to_location_type": {"type": "string", "enum": ["hotel", "restaurant", "tourist", "cafe", "resort", "all"]},
+                "max_discount_amount": {"type": "number"},
+                "usage_limit": {"type": "integer", "description": "Tổng số lượt dùng của một mã voucher"},
+                "max_uses_per_user": {"type": "integer", "description": "Giới hạn số lần dùng tối đa cho mỗi user"},
+                "target_group": {"type": "string", "enum": ["all", "loyal"]},
+                "quantity": {"type": "integer", "description": "Số lượng mã voucher độc lập cần tạo"}
             },
-            "required": ["code", "discount_value"]
+            "required": ["discount_value"]
+        }
+    ),
+    ActionDefinition(
+        name="general_chat",
+        description="Dùng khi người dùng muốn trò chuyện thông thường, hỏi đáp linh tinh không liên quan đến hệ thống.",
+        roles=["admin", "owner"],
+        requires_confirmation=False
+    ),
+    ActionDefinition(
+        name="admin_get_user_growth",
+        description="Thống kê tổng số và danh sách người dùng đăng ký mới. BẮT BUỘC trích xuất thời gian (tháng này, năm nay, từ ngày A đến B).",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"], "description": "Khoảng thời gian"},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_owners",
+        description="Thống kê top chủ cơ sở (owner) kinh doanh tốt nhất hệ thống.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Số lượng top owner cần lấy (ví dụ 10, 20). Mặc định 5."}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_top_locations",
+        description="Thống kê top địa điểm (locations) có doanh thu cao nhất hệ thống.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"], "description": "Khoảng thời gian"},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "limit": {"type": "integer", "description": "Số lượng top địa điểm cần lấy. Mặc định 3."}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_adjust_commission_rate",
+        description="Điều chỉnh chính sách tỷ lệ hoa hồng (commission_rate) cho một địa điểm hoặc một chủ cơ sở.",
+        roles=["admin"],
+        requires_confirmation=True,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "commission_rate": {"type": "number", "description": "Tỷ lệ hoa hồng mới (phần trăm, ví dụ 10, 12.5)"},
+                "location_id": {"type": "integer", "description": "ID địa điểm cụ thể cần chỉnh sửa (nếu có)"},
+                "owner_id": {"type": "integer", "description": "ID chủ cơ sở cần chỉnh sửa toàn bộ địa điểm (nếu có)"}
+            },
+            "required": ["commission_rate"]
+        }
+    ),
+    ActionDefinition(
+        name="owner_manage_booking",
+        description="Duyệt, hủy hoặc hoàn thành đơn hàng (booking) cho chi nhánh.",
+        roles=["owner"],
+        requires_confirmation=True,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "booking_id": {"type": "integer", "description": "ID đơn hàng"},
+                "action": {"type": "string", "enum": ["approve", "cancel", "complete"], "description": "Hành động duyệt (approve), hủy (cancel), hoàn thành (complete)"}
+            },
+            "required": ["booking_id", "action"]
         }
     )
 ]

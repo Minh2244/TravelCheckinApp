@@ -20,6 +20,8 @@ export interface InvoiceData {
   payment_time: string;
   payment_method?: string;
   amount: number | string;
+  voucher_code?: string | null;
+  discount_amount?: number | string | null;
   check_in_date?: string;
   check_out_date?: string;
   contact_name?: string;
@@ -27,14 +29,67 @@ export interface InvoiceData {
   food_items?: Array<{ name: string; quantity: number; price: number }>;
   owner_receivable?: number | string;
   status?: string;
+  notes?: any;
+  booking_voucher_code?: string | null;
+  booking_discount_amount?: number | string | null;
 }
 
 const cellBorder: Partial<ExcelJS.Borders> = {
-  top: { style: "thin" },
-  bottom: { style: "thin" },
-  left: { style: "thin" },
-  right: { style: "thin" },
+  top: { style: "thin", color: { argb: "FFE5E7EB" } },
+  left: { style: "thin", color: { argb: "FFE5E7EB" } },
+  bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+  right: { style: "thin", color: { argb: "FFE5E7EB" } },
 };
+
+function extractVoucherAndDiscount(inv: any): { vCode: string; discount: number } {
+  if (!inv) return { vCode: "—", discount: 0 };
+
+  let notesObj: any = null;
+  if (inv.notes) {
+    if (typeof inv.notes === "object") {
+      notesObj = inv.notes;
+    } else if (typeof inv.notes === "string") {
+      const trimmed = inv.notes.trim();
+      if (trimmed.startsWith("{")) {
+        try {
+          notesObj = JSON.parse(trimmed);
+        } catch (e) {}
+      }
+    }
+  }
+
+  let rawVCode: any =
+    inv.voucher_code ||
+    inv.booking_voucher_code ||
+    inv.voucherCode ||
+    inv.voucher ||
+    notesObj?.voucher_code ||
+    notesObj?.voucherCode ||
+    notesObj?.voucher ||
+    inv.booking?.voucher_code ||
+    inv.booking?.voucherCode ||
+    null;
+
+  let rawDiscount: any =
+    inv.discount_amount ??
+    inv.booking_discount_amount ??
+    inv.discountAmount ??
+    inv.discount ??
+    notesObj?.discount_amount ??
+    notesObj?.discountAmount ??
+    notesObj?.discount ??
+    inv.booking?.discount_amount ??
+    inv.booking?.discountAmount ??
+    0;
+
+  let vCode = rawVCode && String(rawVCode).trim() ? String(rawVCode).trim() : "—";
+  let discount = Number(rawDiscount || 0);
+
+  return {
+    vCode,
+    discount: Number.isFinite(discount) && discount > 0 ? discount : 0,
+  };
+}
 
 const headerStyle = {
   font: { bold: true, size: 11 } as Partial<ExcelJS.Font>,
@@ -87,6 +142,7 @@ export const handleExportBatchExcel = async (
   if (data.length === 0) {
     throw new Error("Không có dữ liệu phù hợp với bộ lọc dịch vụ!");
   }
+  console.log("FIRST INVOICE IN EXPORT:", data[0]);
 
   if (data.length > 5000) {
     throw new Error(
@@ -123,6 +179,9 @@ export const handleExportBatchExcel = async (
     "Chi Tiết Dịch Vụ",
     "Thời Gian",
     "Phương Thức",
+    "Tiền Gốc (VND)",
+    "Mã Voucher",
+    "Khuyến Mãi (VND)",
     "Doanh Thu (VND)",
     "Hoa Hồng (VND)",
     "Thực Nhận (VND)",
@@ -247,6 +306,13 @@ export const handleExportBatchExcel = async (
         if (!details && d.booking_service_name) {
           details = `${d.booking_service_name} (x1)`;
         }
+        
+        // Add voucher info to details if it exists
+        const { vCode: extractedVCode } = extractVoucherAndDiscount(d);
+        if (extractedVCode && extractedVCode !== "—") {
+          details = details ? `${details} | Áp dụng mã: ${extractedVCode}` : `Áp dụng mã: ${extractedVCode}`;
+        }
+        
         return details || "—";
       })(),
       dayjs(inv.payment_time).tz(TZ).format("DD/MM/YYYY HH:mm"),
@@ -261,13 +327,25 @@ export const handleExportBatchExcel = async (
         if (pm === "system") return "Gán nợ (Hệ thống)";
         return pm ? (pm.charAt(0).toUpperCase() + pm.slice(1)) : "Chuyển khoản (Không xác định)";
       })(),
+      (() => {
+        const { discount } = extractVoucherAndDiscount(inv);
+        return Number(inv.amount || 0) + discount;
+      })(),
+      (() => {
+        const { vCode } = extractVoucherAndDiscount(inv);
+        return vCode;
+      })(),
+      (() => {
+        const { discount } = extractVoucherAndDiscount(inv);
+        return discount;
+      })(),
       Number(inv.amount || 0),
       Number((inv as any).commission_amount || 0),
-      Number((inv.owner_receivable ?? inv.amount) || 0),
+      Number(inv.amount || 0) - Number((inv as any).commission_amount || 0),
     ]);
     row.eachCell((cell, colNumber) => {
       cell.border = cellBorder;
-      if (colNumber === 9 || colNumber === 10 || colNumber === 11) {
+      if (colNumber === 9 || colNumber === 11 || colNumber === 12 || colNumber === 13 || colNumber === 14) {
         cell.numFmt = "#,##0";
         cell.alignment = { horizontal: "right" };
       }
@@ -279,14 +357,15 @@ export const handleExportBatchExcel = async (
     (sum, item) => sum + Number(item.amount || 0),
     0,
   );
+  const totalDiscount = data.reduce(
+    (sum, item) => sum + extractVoucherAndDiscount(item).discount,
+    0,
+  );
   const totalCommission = data.reduce(
     (sum, item) => sum + Number((item as any).commission_amount || 0),
     0,
   );
-  const totalReceivable = data.reduce(
-    (sum, item) => sum + Number((item.owner_receivable ?? item.amount) || 0),
-    0,
-  );
+  const totalReceivable = totalAmount - totalCommission;
   const totalRow = sheet.addRow([
     "",
     "",
@@ -296,6 +375,9 @@ export const handleExportBatchExcel = async (
     "",
     "",
     "TỔNG CỘNG:",
+    totalAmount + totalDiscount,
+    "",
+    totalDiscount,
     totalAmount,
     totalCommission,
     totalReceivable,
@@ -309,7 +391,7 @@ export const handleExportBatchExcel = async (
       fgColor: { argb: "FFFEF3C7" }, // amber-50
     };
     cell.border = cellBorder;
-    if (colNumber === 9 || colNumber === 10 || colNumber === 11) {
+    if (colNumber === 9 || colNumber === 11 || colNumber === 12 || colNumber === 13 || colNumber === 14) {
       cell.numFmt = "#,##0";
       cell.font = { bold: true, color: { argb: "FFFF0000" } };
       cell.alignment = { horizontal: "right" };

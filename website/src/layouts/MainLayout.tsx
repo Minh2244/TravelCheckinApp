@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Layout, Menu, Button, Avatar, Dropdown, Badge } from "antd";
+import { Layout, Menu, Button, Avatar, Badge } from "antd";
+import { resolveBackendUrl } from "../utils/resolveBackendUrl";
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -15,7 +16,6 @@ import {
   NotificationOutlined,
   BellOutlined,
   AlertOutlined,
-  BarChartOutlined,
   StarOutlined,
   FileTextOutlined,
   RightOutlined,
@@ -23,11 +23,11 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { message, notification } from "antd";
 import ownerApi from "../api/ownerApi";
-import { resolveBackendUrl } from "../utils/resolveBackendUrl";
+import { useSocket } from "../contexts/SocketContext";
 import { formatDateTimeVi } from "../utils/formatDateVi";
 import ManagerAiBubble from "../components/ManagerAiBubble";
 
-const { Header, Sider, Content } = Layout;
+const { Sider } = Layout;
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -73,6 +73,11 @@ const SSE_NOTIF_TYPE_MAP: Record<string, { type: AdminNotif["type"]; title: stri
   location_pending:  { type: "location", title: "📍 Địa điểm chờ duyệt",      link: "/admin/locations" },
   location_approved: { type: "location", title: "✅ Địa điểm được duyệt",     link: "/admin/locations" },
   location_rejected: { type: "location", title: "❌ Địa điểm bị từ chối",     link: "/admin/locations" },
+  location_approval: { type: "location", title: "📍 Địa điểm chờ duyệt",      link: "/admin/locations" },
+  location_update:   { type: "location", title: "📍 Cập nhật địa điểm",       link: "/admin/locations" },
+  service_approval:  { type: "general",  title: "📦 Dịch vụ chờ duyệt",       link: "/admin/owner-services" },
+  service_update:    { type: "general",  title: "📦 Dịch vụ cập nhật",        link: "/admin/owner-services" },
+  commission_reconciliation: { type: "general", title: "💰 Yêu cầu đối soát", link: "/admin/payments" },
   review_flagged:    { type: "review",   title: "⚠️ Đánh giá bị báo cáo",    link: "/admin/reviews" },
   new_user:          { type: "user",     title: "👤 Người dùng mới",          link: "/admin/users" },
   voucher_created:   { type: "voucher",  title: "🎁 Voucher mới",             link: "/admin/vouchers" },
@@ -90,6 +95,7 @@ const notifIconMap: Record<AdminNotif["type"], string> = {
 const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const socket = useSocket();
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<StoredUser | null>(null);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -97,6 +103,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [deletingNotifications, setDeletingNotifications] = useState(false);
   const notificationWrapRef = useRef<HTMLDivElement | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement | null>(null);
 
   // Admin notification state
   const [adminNotifOpen, setAdminNotifOpen] = useState(false);
@@ -181,75 +189,80 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     const id = window.setInterval(() => {
       void refreshOwnerNotifications();
     }, 15000);
+
+    if (socket) {
+      const handleSocketEvent = (event: Record<string, unknown>) => {
+        const type = String(event.type || "");
+        if (
+          type.startsWith("location_") ||
+          type.startsWith("service_") ||
+          type.startsWith("voucher_")
+        ) {
+          void refreshOwnerNotifications();
+        }
+      };
+      socket.on("realtime_event", handleSocketEvent);
+      return () => {
+        window.clearInterval(id);
+        socket.off("realtime_event", handleSocketEvent);
+      };
+    }
+
     return () => window.clearInterval(id);
-  }, [user?.role]);
+  }, [user?.role, socket]);
 
   const userRole = user?.role;
   const userId = user?.user_id;
 
-  // Realtime SSE listener for Admin (SOS events + other events)
+  // Realtime Socket listener for Admin (SOS events + other events)
   useEffect(() => {
-    if (userRole !== "admin") return;
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
+    if (userRole !== "admin" || !socket) return;
 
-    const backendUrl = resolveBackendUrl("/api/events?token=" + encodeURIComponent(token));
-    if (!backendUrl) return;
+    const handleEvent = (event: Record<string, unknown>) => {
+      try {
+        const evType = String(event.type || "");
+        const meta = SSE_NOTIF_TYPE_MAP[evType];
 
-    let sse: EventSource;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+        if (evType === "sos_alert") {
+          const loc = String(event.location || "Không xác định");
+          notification.error({
+            message: "SOS KHẨN CẤP",
+            description: `Có người cần cứu hộ tại: ${loc}`,
+            duration: 10,
+            onClick: () => navigate("/admin/sos"),
+            style: { backgroundColor: "#fff1f0", border: "1px solid #ffa39e", cursor: "pointer" },
+          });
+          addAdminNotif({
+            type: "sos",
+            title: "🆘 SOS khẩn cấp",
+            body: `Vị trí: ${loc}`,
+            link: "/admin/sos",
+          });
+        } else if (meta) {
+          const body = String(event.message || event.body || event.description || "");
+          addAdminNotif({ type: meta.type, title: meta.title, body, link: meta.link });
+        } else if (event.title && event.body) {
+          const typeVal = event.type as string;
+          const fallbackType: AdminNotif["type"] = (["sos", "location", "review", "user", "voucher", "general"].includes(typeVal)) 
+            ? (typeVal as AdminNotif["type"]) 
+            : "general";
 
-    const connect = () => {
-      sse = new EventSource(backendUrl);
-
-      sse.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as Record<string, unknown>;
-          const evType = String(data.type || "");
-          const meta = SSE_NOTIF_TYPE_MAP[evType];
-
-          if (evType === "sos_alert") {
-            const loc = String(data.location || "Không xác định");
-            notification.error({
-              message: "SOS KHẨN CẤP",
-              description: `Có người cần cứu hộ tại: ${loc}`,
-              duration: 0,
-              onClick: () => navigate("/admin/sos"),
-              style: { backgroundColor: "#fff1f0", border: "1px solid #ffa39e" },
-            });
-            addAdminNotif({
-              type: "sos",
-              title: "🆘 SOS khẩn cấp",
-              body: `Vị trí: ${loc}`,
-              link: "/admin/sos",
-            });
-          } else if (meta) {
-            const body = String(data.message || data.body || data.description || "");
-            addAdminNotif({ type: meta.type, title: meta.title, body, link: meta.link });
-          } else if (data.title && data.body) {
-            addAdminNotif({ 
-              type: (data.type as any) || "system", 
-              title: String(data.title), 
-              body: String(data.body), 
-              link: String(data.link || "") 
-            });
-          }
-        } catch {}
-      };
-
-      sse.onerror = () => {
-        sse.close();
-        reconnectTimer = setTimeout(connect, 5000);
-      };
+          addAdminNotif({ 
+            type: fallbackType, 
+            title: String(event.title), 
+            body: String(event.body), 
+            link: String(event.link || "") 
+          });
+        }
+      } catch {}
     };
 
-    connect();
+    socket.on("realtime_event", handleEvent);
 
     return () => {
-      sse?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      socket.off("realtime_event", handleEvent);
     };
-  }, [userRole, navigate]);
+  }, [userRole, navigate, socket]);
 
   // Heartbeat: nếu admin khóa tài khoản owner/employee thì tự bị đá về login (gần như ngay lập tức)
   useEffect(() => {
@@ -260,7 +273,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       void ownerApi.getMe().catch(() => {
         // axios interceptor sẽ handle redirect
       });
-    }, 8000);
+    }, 30000);
     return () => window.clearInterval(id);
   }, [userId, userRole]);
 
@@ -322,11 +335,6 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       key: "/admin/bank",
       icon: <DollarOutlined />,
       label: "Ngân hàng Admin",
-    },
-    {
-      key: "/admin/analytics",
-      icon: <BarChartOutlined />,
-      label: "Analytics check-in",
     },
     {
       key: "/admin/settings",
@@ -542,6 +550,22 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     };
   }, [notificationOpen]);
 
+  // Close profile dropdown on outside click
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (!profileRef.current?.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [profileOpen]);
+
   const brand = (() => {
     const role = String(user?.role || "");
     if (role === "admin") return { short: "TCA", full: "Travel Admin" };
@@ -550,31 +574,36 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     return { short: "TC", full: "Travel" };
   })();
 
+  const isAdmin = user?.role === "admin";
+  const isOwner = user?.role === "owner" || user?.role === "employee";
+  
   return (
-    <div className="h-screen overflow-hidden">
-      <Layout className="h-screen" style={{ background: "#f5f5f5" }}>
-        <Sider
-          trigger={null}
-          collapsible
-          collapsed={collapsed}
-          theme="light"
-          className="shadow-md h-full overflow-y-auto"
-          width={250}
-          style={{ backgroundColor: "#fff" }}
-        >
-          <div className="h-16 flex items-center justify-center border-b bg-gradient-to-r from-blue-500 to-blue-600">
-            <h1
-              className={`font-bold text-white transition-all ${collapsed ? "text-xs" : "text-xl"
-                }`}
-            >
-              {collapsed ? brand.short : brand.full}
-            </h1>
-          </div>
+    <div className="h-screen overflow-hidden flex bg-slate-50">
+      {/* SIDER */}
+      <Sider
+        trigger={null}
+        collapsible
+        collapsed={collapsed}
+        theme="dark"
+        width={250}
+        className={`shadow-xl z-20 h-full overflow-y-auto sleek-scrollbar ${isAdmin ? "bg-gradient-to-b from-[#1a0505] to-[#0a0000]" : "bg-[#0B1120]"}`}
+        style={{ backgroundColor: isAdmin ? "#0a0000" : "#0B1120" }}
+      >
+        <div className={`h-16 flex items-center justify-center border-b ${isAdmin ? "border-red-900/50 bg-transparent" : "border-slate-800 bg-[#0B1120]"}`}>
+          <h1
+            className={`font-black tracking-wide transition-all ${
+              collapsed ? "text-xl" : "text-2xl"
+            } ${isAdmin ? "text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-rose-400 drop-shadow-sm" : "text-white"}`}
+          >
+            {collapsed ? brand.short : brand.full}
+          </h1>
+        </div>
+        <div className="p-3">
           <Menu
-            theme="light"
+            theme="dark"
             mode="inline"
             selectedKeys={[
-              user?.role === "admin" &&
+              isAdmin &&
                 (location.pathname === "/admin/system-vouchers" ||
                   location.pathname === "/admin/owner-vouchers")
                 ? "/admin/vouchers"
@@ -582,258 +611,266 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             ]}
             items={menuItems}
             onClick={({ key }) => navigate(key)}
-            className="border-r-0"
+            className="border-r-0 bg-transparent custom-sider-menu"
+            style={{ backgroundColor: "transparent" }}
           />
-        </Sider>
+        </div>
 
-        <Layout className="h-full overflow-hidden" style={{ background: "transparent" }}>
-          <Header
-            className="p-0 shadow-sm flex justify-between items-center px-4"
-            style={{ backgroundColor: "#fff" }}
-          >
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              className="text-lg w-16 h-16"
-            />
+      </Sider>
 
-            <div className="flex items-center gap-4 pr-4">
-              {/* ADMIN: Notification Bell */}
-              {user?.role === "admin" ? (
-                <div className="relative" ref={adminNotifRef}>
-                  <button
-                    type="button"
-                    className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-red-200 bg-gradient-to-b from-white to-red-50 text-red-500 shadow-sm transition-all hover:-translate-y-[1px] hover:border-red-300 hover:shadow-md"
-                    onClick={() => {
-                      setAdminNotifOpen((o) => !o);
-                      if (!adminNotifOpen) markAllAdminRead();
-                    }}
-                    aria-label="Thông báo Admin"
+      {/* MAIN CONTENT AREA */}
+      <Layout className="h-full overflow-hidden flex-1" style={{ background: "transparent" }}>
+        {/* HEADER */}
+        <header className="h-16 bg-white border-b border-slate-200 px-4 flex items-center justify-between shrink-0 shadow-sm z-[999] relative">
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            className="text-lg w-10 h-10 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-600"
+          />
+
+          <div className="flex items-center gap-4">
+            {/* ADMIN: Notification Bell */}
+            {isAdmin && (
+              <div className="relative" ref={adminNotifRef}>
+                <button
+                  type="button"
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-all hover:bg-red-100 hover:text-red-700"
+                  onClick={() => {
+                    setAdminNotifOpen((o) => !o);
+                    if (!adminNotifOpen) markAllAdminRead();
+                  }}
+                  aria-label="Thông báo Admin"
+                >
+                  <Badge
+                    count={adminNotifs.filter((n) => !n.read).length}
+                    size="small"
+                    offset={[2, -2]}
                   >
-                    <Badge
-                      count={adminNotifs.filter((n) => !n.read).length}
-                      size="small"
-                      offset={[-2, 2]}
-                    >
-                      <BellOutlined className="text-[17px]" />
-                    </Badge>
-                  </button>
+                    <BellOutlined className="text-lg" />
+                  </Badge>
+                </button>
 
-                  {adminNotifOpen && (
-                    <div className="absolute right-0 top-12 z-50 w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                      {/* Header */}
-                      <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-red-50 to-orange-50 px-4 py-3">
-                        <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                          <BellOutlined className="text-red-500" />
-                          Thông báo Hệ thống
-                          {adminNotifs.filter((n) => !n.read).length > 0 && (
-                            <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                              {adminNotifs.filter((n) => !n.read).length} mới
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-50"
-                          onClick={clearAdminNotifs}
-                          disabled={adminNotifs.length === 0}
-                        >
-                          Xóa hết
-                        </button>
-                      </div>
-
-                      {/* List */}
-                      <div className="max-h-[460px] overflow-y-auto">
-                        {adminNotifs.length === 0 ? (
-                          <div className="px-4 py-10 text-center">
-                            <div className="text-3xl mb-2">🔔</div>
-                            <div className="text-sm text-slate-400">Chưa có thông báo nào</div>
-                          </div>
-                        ) : (
-                          adminNotifs.map((n) => (
-                            <button
-                              type="button"
-                              key={n.id}
-                              className={`w-full border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 ${
-                                !n.read ? "bg-red-50/40" : ""
-                              }`}
-                              onClick={() => {
-                                setAdminNotifOpen(false);
-                                navigate(n.link);
-                              }}
-                            >
-                              <div className="flex items-start gap-3">
-                                <span className="mt-0.5 text-xl leading-none">{notifIconMap[n.type]}</span>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-sm font-semibold text-slate-900">{n.title}</span>
-                                    {!n.read && (
-                                      <span className="shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>
-                                    )}
-                                  </div>
-                                  {n.body && (
-                                    <div className="mt-0.5 text-xs text-slate-500 line-clamp-3 whitespace-pre-line break-words">{n.body.trim()}</div>
-                                  )}
-                                  <div className="mt-1.5 text-[11px] text-slate-400">
-                                    {new Date(n.at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })}
-                                  </div>
-                                </div>
-                                <RightOutlined className="mt-1 shrink-0 text-[10px] text-slate-300" />
-                              </div>
-                            </button>
-                          ))
+                {adminNotifOpen && (
+                  <div className="absolute right-0 top-12 z-[9999] w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-fade-in origin-top-right">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-red-50 to-orange-50 px-4 py-3">
+                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                        <BellOutlined className="text-red-500" />
+                        Thông báo Hệ thống
+                        {adminNotifs.filter((n) => !n.read).length > 0 && (
+                          <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                            {adminNotifs.filter((n) => !n.read).length} mới
+                          </span>
                         )}
                       </div>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-50"
+                        onClick={clearAdminNotifs}
+                        disabled={adminNotifs.length === 0}
+                      >
+                        Xóa hết
+                      </button>
+                    </div>
 
-                      {/* Footer */}
-                      {adminNotifs.length > 0 && (
-                        <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-center">
+                    {/* List */}
+                    <div className="max-h-[460px] overflow-y-auto sleek-scrollbar">
+                      {adminNotifs.length === 0 ? (
+                        <div className="px-4 py-10 text-center">
+                          <div className="text-3xl mb-2">🔔</div>
+                          <div className="text-sm text-slate-400">Chưa có thông báo nào</div>
+                        </div>
+                      ) : (
+                        adminNotifs.map((n) => (
                           <button
                             type="button"
-                            className="text-xs text-blue-500 hover:text-blue-700 font-medium"
-                            onClick={() => { setAdminNotifOpen(false); navigate("/admin/sos"); }}
+                            key={n.id}
+                            className={`w-full border-b border-slate-50 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50 ${
+                              !n.read ? "bg-red-50/40" : ""
+                            }`}
+                            onClick={() => {
+                              setAdminNotifOpen(false);
+                              if (n.link) {
+                                navigate(n.link);
+                              }
+                            }}
                           >
-                            Xem trang theo dõi SOS →
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {/* OWNER/EMPLOYEE: Notification Bell */}
-              {user?.role !== "admin" ? (
-                <div className="relative" ref={notificationWrapRef}>
-                  <button
-                    type="button"
-                    className="group relative flex h-10 w-10 items-center justify-center rounded-full border border-blue-200 bg-gradient-to-b from-white to-blue-50 text-blue-600 shadow-sm transition-all hover:-translate-y-[1px] hover:border-blue-300 hover:shadow-md"
-                    onClick={() => {
-                      void openOwnerNotificationPanel();
-                    }}
-                    aria-label="Mở thông báo"
-                  >
-                    <Badge
-                      count={unreadOwnerNotifications}
-                      size="small"
-                      offset={[-2, 2]}
-                    >
-                      <BellOutlined className="text-[17px]" />
-                    </Badge>
-                  </button>
-
-                  {notificationOpen ? (
-                    <div className="absolute right-0 top-12 z-50 w-[390px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                          <NotificationOutlined className="text-blue-500" />
-                          Thông báo gần đây
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-60"
-                          onClick={() => {
-                            void deleteAllOwnerNotifications();
-                          }}
-                          disabled={
-                            deletingNotifications || notifications.length === 0
-                          }
-                        >
-                          {deletingNotifications ? "Đang xóa..." : "Xóa hết"}
-                        </button>
-                      </div>
-                      <div className="max-h-[420px] overflow-y-auto bg-white">
-                        {notificationsLoading ? (
-                          <div className="px-4 py-7 text-center text-sm text-slate-500">
-                            Đang tải thông báo...
-                          </div>
-                        ) : notifications.length === 0 ? (
-                          <div className="px-4 py-7 text-center text-sm text-slate-500">
-                            Chưa có thông báo.
-                          </div>
-                        ) : (
-                          notifications.map((item) => (
-                            <button
-                              type="button"
-                              key={String(item.notification_id)}
-                              className="w-full border-b border-slate-100 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-slate-50"
-                              onClick={() => handleOwnerNotificationClick(item)}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-semibold text-slate-900">
-                                    {String(item.title || "Thông báo")}
-                                  </div>
-                                  <div className="mt-1 text-xs text-slate-600 line-clamp-3 whitespace-pre-line break-words">
-                                    {String(item.body || "-").trim()}
-                                  </div>
-                                  <div className="mt-2 text-[11px] text-slate-400">
-                                    {formatDateTimeVi(item.created_at)}
-                                  </div>
+                            <div className="flex items-start gap-3">
+                              <span className="mt-0.5 text-xl leading-none">{notifIconMap[n.type]}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-semibold text-slate-900">{n.title}</span>
+                                  {!n.read && (
+                                    <span className="shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>
+                                  )}
                                 </div>
-                                <div className="flex flex-col items-end gap-2 pt-0.5">
-                                  {!(
-                                    item?.is_read === true ||
-                                    Number(item?.is_read) === 1
-                                  ) ? (
-                                    <span className="rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-semibold text-white">
-                                      Mới
-                                    </span>
-                                  ) : null}
-                                  <RightOutlined className="text-[11px] text-slate-300" />
+                                {n.body && (
+                                  <div className="mt-0.5 text-xs text-slate-500 line-clamp-3 whitespace-pre-line break-words">{n.body.trim()}</div>
+                                )}
+                                <div className="mt-1.5 text-[11px] text-slate-400 font-semibold tracking-wide">
+                                  {new Date(n.at).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" })}
                                 </div>
                               </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
+                              <RightOutlined className="mt-1 shrink-0 text-[10px] text-slate-300" />
+                            </div>
+                          </button>
+                        ))
+                      )}
                     </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <span className="font-semibold text-gray-700">
-                Hi, {user?.full_name || "User"}
-              </span>
-              <Dropdown
-                menu={{
-                  items: [
-                    {
-                      key: "profile",
-                      label: "Thông tin cá nhân",
-                      icon: <UserOutlined />,
-                      onClick: () =>
-                        navigate(
-                          user?.role === "admin"
-                            ? "/admin/profile"
-                            : "/owner/profile",
-                        ),
-                    },
-                    {
-                      key: "logout",
-                      label: "Đăng xuất",
-                      icon: <LogoutOutlined />,
-                      onClick: handleLogout,
-                      danger: true,
-                    },
-                  ],
-                }}
-                placement="bottomRight"
-              >
-                <Avatar
-                  src={resolveBackendUrl(user?.avatar_url) || undefined}
-                  style={{ backgroundColor: "#1890ff", cursor: "pointer" }}
-                  icon={!user?.avatar_url ? <UserOutlined /> : undefined}
-                />
-              </Dropdown>
-            </div>
-          </Header>
+                  </div>
+                )}
+              </div>
+            )}
 
-          <Content className="m-4 p-6 bg-white rounded-lg shadow-sm overflow-auto">
+            {/* OWNER: Notification Bell */}
+            {!isAdmin && (
+              <div className="relative" ref={notificationWrapRef}>
+                <button
+                  type="button"
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-all hover:bg-blue-100 hover:text-blue-700"
+                  onClick={() => {
+                    void openOwnerNotificationPanel();
+                  }}
+                  aria-label="Mở thông báo"
+                >
+                  <Badge
+                    count={unreadOwnerNotifications}
+                    size="small"
+                    offset={[2, -2]}
+                  >
+                    <BellOutlined className="text-lg" />
+                  </Badge>
+                </button>
+
+                {notificationOpen && (
+                  <div className="absolute right-0 top-12 z-[9999] w-[390px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-fade-in origin-top-right">
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <NotificationOutlined className="text-blue-500" />
+                        Thông báo gần đây
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-60"
+                        onClick={() => {
+                          void deleteAllOwnerNotifications();
+                        }}
+                        disabled={deletingNotifications || notifications.length === 0}
+                      >
+                        {deletingNotifications ? "Đang xóa..." : "Xóa hết"}
+                      </button>
+                    </div>
+                    
+                    <div className="max-h-[420px] overflow-y-auto bg-white sleek-scrollbar">
+                      {notificationsLoading ? (
+                        <div className="px-4 py-7 text-center text-sm text-slate-500">
+                          Đang tải thông báo...
+                        </div>
+                      ) : notifications.length === 0 ? (
+                        <div className="px-4 py-7 text-center text-sm text-slate-500">
+                          Chưa có thông báo.
+                        </div>
+                      ) : (
+                        notifications.map((item) => {
+                          const isUnread = !(item?.is_read === true || Number(item?.is_read) === 1);
+                          return (
+                            <div
+                              key={String(item.notification_id)}
+                              className={`flex items-start gap-3 border-b border-slate-50 px-4 py-3 last:border-b-0 cursor-pointer transition-all duration-200 text-left ${isUnread ? 'bg-[#f0f7ff]/60 hover:bg-[#e0efff]/80' : 'bg-white hover:bg-slate-50/80'}`}
+                              onClick={() => handleOwnerNotificationClick(item)}
+                            >
+                              <div className="h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 text-sm shadow-sm bg-blue-50 text-blue-500 border-blue-100">
+                                🔔
+                              </div>
+                              <div className="flex-1 min-w-0 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <h4 className="text-xs font-bold text-slate-800 truncate">
+                                    {String(item.title || "Thông báo")}
+                                  </h4>
+                                  {isUnread && (
+                                    <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 leading-relaxed break-words font-medium line-clamp-3">
+                                  {String(item.body || "-").trim()}
+                                </p>
+                                <div className="text-[9px] text-slate-400 font-semibold tracking-wide">
+                                  {formatDateTimeVi(item.created_at)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Profile Dropdown Component */}
+            <div className="relative" ref={profileRef}>
+              <div 
+                className="flex items-center gap-2 px-1.5 py-1.5 rounded-full border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-slate-300 transition-all cursor-pointer"
+                onClick={() => setProfileOpen(!profileOpen)}
+              >
+                <div className={`rounded-full p-[2px] bg-gradient-to-tr ${isAdmin ? "from-red-500 to-rose-400" : "from-blue-500 to-cyan-400"}`}>
+                  <Avatar
+                    src={resolveBackendUrl(user?.avatar_url) || undefined}
+                    style={{ backgroundColor: isAdmin ? "#0f172a" : "#ffffff", color: isAdmin ? "#ffffff" : "#0f172a" }}
+                    icon={!user?.avatar_url ? <UserOutlined /> : undefined}
+                    className="w-7 h-7 shrink-0 border-2 border-white"
+                  />
+                </div>
+                <span className="hidden sm:block text-sm font-bold text-slate-700 pl-1 pr-2 truncate max-w-[120px]">
+                  {user?.full_name?.split(' ').pop() || "User"}
+                </span>
+                <RightOutlined className={`text-[10px] text-slate-400 pr-2 transition-transform duration-300 ${profileOpen ? 'rotate-90' : 'rotate-0'}`} />
+              </div>
+
+              {profileOpen && (
+                <div className="absolute right-0 top-12 z-50 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl animate-fade-in origin-top-right">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                    <p className="text-sm font-bold text-slate-800 truncate">{user?.full_name}</p>
+                    <p className="text-xs font-medium text-slate-500 truncate">{user?.email}</p>
+                  </div>
+                  <div className="p-2 space-y-1">
+                    <button
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                      onClick={() => {
+                        setProfileOpen(false);
+                        navigate(isAdmin ? "/admin/profile" : "/owner/profile");
+                      }}
+                    >
+                      <UserOutlined className="text-slate-400 text-lg" /> Thông tin cá nhân
+                    </button>
+                    <button
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                      onClick={() => {
+                        setProfileOpen(false);
+                        handleLogout();
+                      }}
+                    >
+                      <LogoutOutlined className="text-red-400 text-lg" /> Đăng xuất
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* VIEWPORT CONTENT */}
+        <div className="flex-1 flex flex-col overflow-x-hidden overflow-y-auto sleek-scrollbar bg-slate-50/50">
+          <div className="p-4 sm:p-6 lg:p-8 flex-1 animate-fade-in-up">
             {children}
-          </Content>
-          {(user?.role === "owner" || user?.role === "admin") && <ManagerAiBubble />}
-        </Layout>
+          </div>
+          
+          {/* Footer Support Info (Only for Owner) */}
+        </div>
+
+        {isOwner || isAdmin ? <ManagerAiBubble /> : null}
       </Layout>
     </div>
   );

@@ -17,6 +17,17 @@ interface CreateDiaryBody {
   images?: string[] | null;
 }
 
+const normalizeDiaryImages = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item || "").trim())
+        .filter((item) => item.length > 0),
+    ),
+  ).slice(0, 6);
+};
+
 
 interface CreateCheckinBody {
   location_id?: number;
@@ -67,6 +78,11 @@ interface UpdateUserCreatedLocationBody {
   status?: "active" | "inactive";
 }
 
+type PrivateLocationRow = RowDataPacket & {
+  location_id: number;
+  user_id: number;
+};
+
 interface UpdateFavoriteBody {
   note?: string | null;
   tags?: string | null;
@@ -95,6 +111,59 @@ const getUserId = (req: AuthenticatedRequest, res: Response): number | null => {
     return null;
   }
   return userId;
+};
+
+const getOwnedPrivateLocation = async (
+  userId: number,
+  locationId: number,
+): Promise<PrivateLocationRow | null> => {
+  const [rows] = await pool.query<PrivateLocationRow[]>(
+    `SELECT location_id, user_id
+     FROM user_private_locations
+     WHERE location_id = ? AND user_id = ?
+     LIMIT 1`,
+    [locationId, userId],
+  );
+  return rows[0] ?? null;
+};
+
+const ensureOwnedPrivateLocation = async (
+  userId: number,
+  locationId: number,
+  res: Response,
+): Promise<boolean> => {
+  const row = await getOwnedPrivateLocation(userId, locationId);
+  if (!row) {
+    res.status(404).json({
+      success: false,
+      message: "Không tìm thấy vị trí tự do hoặc bạn không có quyền",
+    });
+    return false;
+  }
+  return true;
+};
+
+const ensureDiaryLocationAccessible = async (
+  userId: number,
+  locationId: number,
+  res: Response,
+): Promise<boolean> => {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT user_id
+     FROM user_private_locations
+     WHERE location_id = ?
+     LIMIT 1`,
+    [locationId],
+  );
+  const privateOwnerId = rows[0]?.user_id == null ? null : Number(rows[0].user_id);
+  if (privateOwnerId != null && privateOwnerId !== userId) {
+    res.status(404).json({
+      success: false,
+      message: "Không tìm thấy vị trí tự do hoặc bạn không có quyền",
+    });
+    return false;
+  }
+  return true;
 };
 
 const userTopic = (userId: number) => `user_${userId}`;
@@ -151,7 +220,7 @@ export const getUserCheckins = async (
       {
         sql: `SELECT c.checkin_id, c.checkin_time, c.status, c.location_id,
                     c.checkin_latitude, c.checkin_longitude,
-                    l.location_name, l.address,
+                    l.location_name, l.address, l.location_type,
                     l.first_image,
                     l.owner_id AS location_owner_id,
                     CASE WHEN l.owner_id = ? THEN 1 ELSE 0 END AS is_user_created,
@@ -160,7 +229,7 @@ export const getUserCheckins = async (
                     l.longitude AS location_longitude
              FROM checkins c
              JOIN locations l ON l.location_id = c.location_id
-             WHERE c.user_id = ?
+             WHERE c.user_id = ? AND (l.source IS NULL OR l.source <> 'user')
              ORDER BY c.checkin_time DESC`,
         params: [userId, userId],
       },
@@ -169,7 +238,7 @@ export const getUserCheckins = async (
       {
         sql: `SELECT c.checkin_id, c.checkin_time, c.status, c.location_id,
                     c.checkin_latitude, c.checkin_longitude,
-                    l.location_name, l.address,
+                    l.location_name, l.address, l.location_type,
                     l.owner_id AS location_owner_id,
                     CASE WHEN l.owner_id = ? THEN 1 ELSE 0 END AS is_user_created,
                     l.status AS location_status,
@@ -177,7 +246,7 @@ export const getUserCheckins = async (
                     l.longitude AS location_longitude
              FROM checkins c
              JOIN locations l ON l.location_id = c.location_id
-             WHERE c.user_id = ?
+             WHERE c.user_id = ? AND (l.source IS NULL OR l.source <> 'user')
              ORDER BY c.checkin_time DESC`,
         params: [userId, userId],
       },
@@ -186,12 +255,12 @@ export const getUserCheckins = async (
       {
         sql: `SELECT c.checkin_id, c.checkin_time, c.status, c.location_id,
                     c.checkin_latitude, c.checkin_longitude,
-                    l.location_name, l.address,
+                    l.location_name, l.address, l.location_type,
                     l.owner_id AS location_owner_id,
                     CASE WHEN l.owner_id = ? THEN 1 ELSE 0 END AS is_user_created
              FROM checkins c
              JOIN locations l ON l.location_id = c.location_id
-             WHERE c.user_id = ?
+             WHERE c.user_id = ? AND (l.source IS NULL OR l.source <> 'user')
              ORDER BY c.checkin_time DESC`,
         params: [userId, userId],
       },
@@ -374,11 +443,14 @@ export const createUserCheckin = async (
     }
 
     let locationId = hasLocationId ? parsedLocationId : null;
+    const shouldCreatePrivateLocation =
+      action === "save" && hasCoords && !hasLocationId;
 
     let locationCoords: {
       latitude: number | null;
       longitude: number | null;
     } | null = null;
+    let savedLocationName: string | null = null;
     if (locationId) {
       const [locationRows] = await pool.query<RowDataPacket[]>(
         "SELECT location_id, latitude, longitude FROM locations WHERE location_id = ? LIMIT 1",
@@ -421,7 +493,7 @@ export const createUserCheckin = async (
     }
 
     const NEARBY_RADIUS_METERS = 80;
-    if (!locationId && hasCoords) {
+    if (!locationId && hasCoords && !shouldCreatePrivateLocation) {
       const [nearRows] = await pool.query<RowDataPacket[]>(
         `SELECT location_id,
                 (6371000 * 2 * ASIN(SQRT(
@@ -463,28 +535,14 @@ export const createUserCheckin = async (
 
     if (!locationId && hasCoords) {
       const MAX_CREATE_LOCATIONS_PER_DAY = 20;
-      let createdTodayRows: RowDataPacket[] = [];
-      try {
-        const [rows] = await pool.query<RowDataPacket[]>(
-          `SELECT COUNT(*) AS cnt
-           FROM locations
-           WHERE owner_id = ?
-             AND source = 'owner'
-             AND (deleted_at IS NULL)
-             AND created_at >= (NOW() - INTERVAL 1 DAY)`,
-          [userId],
-        );
-        createdTodayRows = rows;
-      } catch {
-        const [rows] = await pool.query<RowDataPacket[]>(
-          `SELECT COUNT(*) AS cnt
-           FROM locations
-           WHERE owner_id = ? AND is_user_created = 1
-             AND created_at >= (NOW() - INTERVAL 1 DAY)`,
-          [userId],
-        );
-        createdTodayRows = rows;
-      }
+      const [createdTodayRows] = await pool.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS cnt
+         FROM user_private_locations upl
+         JOIN locations l ON l.location_id = upl.location_id
+         WHERE upl.user_id = ?
+           AND l.created_at >= (NOW() - INTERVAL 1 DAY)`,
+        [userId],
+      );
       const createdToday = Number(createdTodayRows?.[0]?.cnt ?? 0);
       if (
         Number.isFinite(createdToday) &&
@@ -509,6 +567,7 @@ export const createUserCheckin = async (
       const rawName = body?.location_name?.trim() ?? "";
       const rawAddress = body?.location_address?.trim() ?? "";
       const locationName = rawName.length >= 3 ? rawName : "Vị trí tự do";
+      savedLocationName = locationName;
       const locationAddress =
         rawAddress || `(${lat.toFixed(6)}, ${lng.toFixed(6)})`;
       const locationType =
@@ -516,46 +575,29 @@ export const createUserCheckin = async (
           ? body.location_type
           : "other";
 
-      let insertResult: ResultSetHeader;
-      try {
-        const [result] = await pool.query<ResultSetHeader>(
-          `INSERT INTO locations
-           (owner_id, location_name, location_type, description, address, province,
-            latitude, longitude, is_eco_friendly, status, source)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', 'owner')`,
-          [
-            userId,
-            locationName,
-            locationType,
-            "User created location",
-            locationAddress,
-            null,
-            lat,
-            lng,
-          ],
-        );
-        insertResult = result;
-      } catch {
-        const [result] = await pool.query<ResultSetHeader>(
-          `INSERT INTO locations
-           (owner_id, location_name, location_type, description, address, province,
-            latitude, longitude, is_eco_friendly, status, is_user_created)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', 1)`,
-          [
-            userId,
-            locationName,
-            locationType,
-            "User created location",
-            locationAddress,
-            null,
-            lat,
-            lng,
-          ],
-        );
-        insertResult = result;
-      }
+      const [insertResult] = await pool.query<ResultSetHeader>(
+        `INSERT INTO locations
+         (owner_id, created_by_user_id, location_name, location_type, description, address, province,
+          latitude, longitude, is_eco_friendly, status, source)
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', 'user')`,
+        [
+          userId,
+          locationName,
+          locationType,
+          "User created location",
+          locationAddress,
+          null,
+          lat,
+          lng,
+        ],
+      );
       locationId = insertResult.insertId;
       locationCoords = { latitude: lat, longitude: lng };
+      await pool.query(
+        `INSERT IGNORE INTO user_private_locations (location_id, user_id)
+         VALUES (?, ?)`,
+        [locationId, userId],
+      );
     }
 
     if (!locationId) {
@@ -574,7 +616,7 @@ export const createUserCheckin = async (
 
       res.status(201).json({
         success: true,
-        data: { action, location_id: locationId },
+        data: { action, location_id: locationId, location_name: savedLocationName },
         message: "Đã lưu địa điểm",
       });
       return;
@@ -1079,6 +1121,17 @@ export const deleteUserCreatedLocation = async (
       return;
     }
 
+    if (await getOwnedPrivateLocation(userId, locationId)) {
+      await pool.query<ResultSetHeader>(
+        `UPDATE locations
+         SET deleted_at = NOW(), status = 'inactive', updated_at = NOW()
+         WHERE location_id = ? AND deleted_at IS NULL`,
+        [locationId],
+      );
+      res.json({ success: true, data: null, message: "Đã xóa vị trí tự do" });
+      return;
+    }
+
     let rows: RowDataPacket[] = [];
     try {
       const [r] = await pool.query<RowDataPacket[]>(
@@ -1432,6 +1485,52 @@ export const userReplyToReview = async (
       );
     }
 
+    // Notify the location owner when user posts a new reply (not on update)
+    if (existing.length === 0) {
+      try {
+        // Lấy location_id và owner_id của review này
+        const [locRows] = await pool.query<RowDataPacket[]>(
+          `SELECT r.location_id, l.owner_id, l.location_name, u.full_name
+           FROM reviews r
+           JOIN locations l ON l.location_id = r.location_id
+           JOIN users u ON u.user_id = ?
+           WHERE r.review_id = ? LIMIT 1`,
+          [userId, reviewId],
+        );
+        if (locRows.length > 0) {
+          const ownerId = Number(locRows[0].owner_id);
+          const locationName: string = locRows[0].location_name ?? "địa điểm";
+          const userName: string = locRows[0].full_name ?? "Người dùng";
+
+          if (Number.isFinite(ownerId) && ownerId > 0) {
+            await pool.query(
+              `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by)
+               VALUES (?, ?, 'specific_user', ?, NULL)`,
+              [
+                "Người dùng đã phản hồi đánh giá",
+                `${userName} đã trả lời bình luận tại ${locationName}.`,
+                ownerId,
+              ],
+            );
+            try {
+              await messaging.send({
+                topic: userTopic(ownerId),
+                notification: {
+                  title: "Người dùng đã phản hồi",
+                  body: `${userName} đã trả lời bình luận tại ${locationName}.`,
+                },
+                data: {
+                  type: "review_reply_from_user",
+                  review_id: String(reviewId),
+                  location_id: String(locRows[0].location_id ?? ""),
+                },
+              });
+            } catch { /* FCM best-effort */ }
+          }
+        }
+      } catch { /* ignore notification errors */ }
+    }
+
     res.status(201).json({ success: true, message: "Đã phản hồi" });
   } catch (error) {
     console.error("Lỗi user reply:", error);
@@ -1451,9 +1550,13 @@ export const getUserFavorites = async (
     try {
       const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT f.location_id, f.added_at, f.note, f.tags,
-                l.location_name, l.address, l.location_type, l.first_image, l.status
+                l.location_name, l.address, l.location_type, l.first_image, l.status,
+                l.source, l.created_by_user_id,
+                CASE WHEN upl.location_id IS NULL THEN 0 ELSE 1 END AS is_private_location
          FROM favorite_locations f
          JOIN locations l ON l.location_id = f.location_id
+         LEFT JOIN user_private_locations upl
+           ON upl.location_id = l.location_id AND upl.user_id = f.user_id
          WHERE f.user_id = ?
          ORDER BY f.added_at DESC`,
         [userId],
@@ -1463,9 +1566,13 @@ export const getUserFavorites = async (
     } catch {
       const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT f.location_id, f.added_at,
-                l.location_name, l.address, l.location_type, l.first_image, l.status
+                l.location_name, l.address, l.location_type, l.first_image, l.status,
+                l.source, l.created_by_user_id,
+                CASE WHEN upl.location_id IS NULL THEN 0 ELSE 1 END AS is_private_location
          FROM favorite_locations f
          JOIN locations l ON l.location_id = f.location_id
+         LEFT JOIN user_private_locations upl
+           ON upl.location_id = l.location_id AND upl.user_id = f.user_id
          WHERE f.user_id = ?
          ORDER BY f.added_at DESC`,
         [userId],
@@ -1713,26 +1820,14 @@ export const getUserCreatedLocations = async (
     const userId = getUserId(req as AuthenticatedRequest, res);
     if (!userId) return;
 
-    let rows: RowDataPacket[] = [];
-    try {
-      const [r] = await pool.query<RowDataPacket[]>(
-        `SELECT *
-         FROM locations
-         WHERE owner_id = ? AND source = 'owner' AND deleted_at IS NULL
-         ORDER BY updated_at DESC, location_id DESC`,
-        [userId],
-      );
-      rows = r;
-    } catch {
-      const [r] = await pool.query<RowDataPacket[]>(
-        `SELECT *
-         FROM locations
-         WHERE owner_id = ? AND is_user_created = 1
-         ORDER BY updated_at DESC, location_id DESC`,
-        [userId],
-      );
-      rows = r;
-    }
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT l.*, 1 AS is_private_location, upl.user_id AS private_user_id
+       FROM user_private_locations upl
+       JOIN locations l ON l.location_id = upl.location_id
+       WHERE upl.user_id = ? AND l.deleted_at IS NULL
+       ORDER BY l.updated_at DESC, l.location_id DESC`,
+      [userId],
+    );
 
     res.json({ success: true, data: rows });
   } catch (error) {
@@ -1757,33 +1852,7 @@ export const updateUserCreatedLocation = async (
       return;
     }
 
-    let rows: RowDataPacket[] = [];
-    try {
-      const [r] = await pool.query<RowDataPacket[]>(
-        `SELECT location_id
-         FROM locations
-         WHERE location_id = ? AND owner_id = ? AND source = 'owner' AND deleted_at IS NULL
-         LIMIT 1`,
-        [locationId, userId],
-      );
-      rows = r;
-    } catch {
-      const [r] = await pool.query<RowDataPacket[]>(
-        `SELECT location_id
-         FROM locations
-         WHERE location_id = ? AND owner_id = ? AND is_user_created = 1
-         LIMIT 1`,
-        [locationId, userId],
-      );
-      rows = r;
-    }
-    if (rows.length === 0) {
-      res.status(404).json({
-        success: false,
-        message: "Không tìm thấy địa điểm hoặc bạn không có quyền",
-      });
-      return;
-    }
+    if (!(await ensureOwnedPrivateLocation(userId, locationId, res))) return;
 
     const body = req.body as UpdateUserCreatedLocationBody;
     const allowedTypes = new Set([
@@ -1883,21 +1952,13 @@ export const updateUserCreatedLocation = async (
       return;
     }
 
-    try {
-      await pool.query<ResultSetHeader>(
-        `UPDATE locations
-         SET ${updates.join(", ")}, updated_at = NOW()
-         WHERE location_id = ? AND owner_id = ? AND source = 'owner' AND deleted_at IS NULL`,
-        [...params, locationId, userId],
-      );
-    } catch {
-      await pool.query<ResultSetHeader>(
-        `UPDATE locations
-         SET ${updates.join(", ")}, updated_at = NOW()
-         WHERE location_id = ? AND owner_id = ? AND is_user_created = 1`,
-        [...params, locationId, userId],
-      );
-    }
+    await pool.query<ResultSetHeader>(
+      `UPDATE locations l
+       JOIN user_private_locations upl ON upl.location_id = l.location_id
+       SET ${updates.map((item) => `l.${item}`).join(", ")}, l.updated_at = NOW()
+       WHERE l.location_id = ? AND upl.user_id = ? AND l.deleted_at IS NULL`,
+      [...params, locationId, userId],
+    );
 
     const [afterRows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM locations WHERE location_id = ? LIMIT 1",
@@ -2371,6 +2432,82 @@ export const uploadUserAvatar = async (
   }
 };
 
+export const uploadUserDiaryImage = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req as AuthenticatedRequest, res);
+    if (!userId) return;
+
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ success: false, message: "Vui lòng chọn ảnh" });
+      return;
+    }
+
+    const result = await saveImageToDB(file, "diary_image", userId, "user");
+    res.json({
+      success: true,
+      message: "Đã upload ảnh nhật ký",
+      data: { image_url: result.url },
+    });
+  } catch (error: unknown) {
+    console.error("Lỗi upload ảnh nhật ký:", error);
+    const err = error as { message?: string };
+    res.status(500).json({
+      success: false,
+      message: err?.message || "Không thể upload ảnh nhật ký",
+    });
+  }
+};
+
+export const uploadUserCreatedLocationCover = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req as AuthenticatedRequest, res);
+    if (!userId) return;
+
+    const locationId = Number(req.params.id);
+    if (!Number.isFinite(locationId) || locationId <= 0) {
+      res.status(400).json({ success: false, message: "locationId không hợp lệ" });
+      return;
+    }
+    if (!(await ensureOwnedPrivateLocation(userId, locationId, res))) return;
+
+    const file = (req as unknown as { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ success: false, message: "Vui lòng chọn ảnh" });
+      return;
+    }
+
+    const result = await saveImageToDB(file, "custom_location_image", userId, "user");
+    await removeEntityImages("location", locationId, "cover");
+    await linkImageToEntity(result.imageId, "location", locationId, "cover", 0, true);
+    await pool.query(
+      `UPDATE locations
+       SET images = JSON_ARRAY(?), updated_at = NOW()
+       WHERE location_id = ?`,
+      [result.url, locationId],
+    );
+
+    res.json({
+      success: true,
+      message: "Đã cập nhật ảnh bìa vị trí tự do",
+      data: { image_url: result.url },
+    });
+  } catch (error: unknown) {
+    console.error("Lỗi upload ảnh bìa vị trí tự do:", error);
+    const err = error as { message?: string };
+    res.status(500).json({
+      success: false,
+      message: err?.message || "Không thể cập nhật ảnh bìa",
+    });
+  }
+};
+
 export const getUserTouristTickets = async (
   req: Request,
   res: Response,
@@ -2436,12 +2573,61 @@ export const getUserTouristTickets = async (
                AND p.status = 'completed'
            )
            OR b.status IN ('confirmed','completed')
+           OR (
+             b.final_amount <= 0
+             AND b.status IN ('pending','confirmed','completed')
+           )
          )
        ORDER BY bt.issued_at DESC, bt.ticket_id DESC`,
       params,
     );
 
-    res.json({ success: true, data: rows || [] });
+    const [pendingRows] = await pool.query<RowDataPacket[]>(
+      `SELECT
+         -((b.booking_id * 100000) + COALESCE(bpi.service_id, b.service_id)) AS ticket_id,
+         CONCAT('PENDING-', b.booking_id) AS ticket_code,
+         'pending' AS status,
+         NULL AS issued_at,
+         NULL AS used_at,
+         COALESCE(bpi.service_id, b.service_id) AS service_id,
+         COALESCE(bpi.service_name_snapshot, s.service_name) AS service_name,
+         COALESCE(bpi.unit_price, s.price) AS service_price,
+         s.images AS service_images,
+         b.booking_id,
+         b.check_in_date AS use_date,
+         b.location_id,
+         l.location_name,
+         (
+           SELECT p.status
+           FROM payments p
+           WHERE p.booking_id = b.booking_id
+             AND p.transaction_source = 'online_booking'
+           ORDER BY p.payment_id DESC
+           LIMIT 1
+         ) AS payment_status,
+         (
+           SELECT p.invoice_code
+           FROM payments p
+           WHERE p.booking_id = b.booking_id
+           ORDER BY p.payment_id DESC
+           LIMIT 1
+         ) AS invoice_code
+       FROM bookings b
+       JOIN services s ON s.service_id = b.service_id
+       JOIN locations l ON l.location_id = b.location_id
+       LEFT JOIN booking_preorder_items bpi
+         ON bpi.booking_id = b.booking_id
+        AND bpi.source = 'ticket'
+       ${whereSql}
+         AND b.status = 'pending'
+         AND NOT EXISTS (
+           SELECT 1 FROM booking_tickets bt WHERE bt.booking_id = b.booking_id
+         )
+       ORDER BY b.created_at DESC, b.booking_id DESC`,
+      params,
+    );
+
+    res.json({ success: true, data: [...(pendingRows || []), ...(rows || [])] });
   } catch (error) {
     console.error("Lỗi lấy vé du lịch user:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
@@ -2546,7 +2732,7 @@ export const claimVoucher = async (req: Request, res: Response): Promise<void> =
       return;
     }
     const [vRows] = await pool.query<RowDataPacket[]>(
-      `SELECT voucher_id, code, status, end_date, usage_limit, used_count, max_uses_per_user
+      `SELECT voucher_id, code, status, end_date, usage_limit, used_count, max_uses_per_user, target_group, loyalty_min_spend
        FROM vouchers WHERE voucher_id = ? AND owner_deleted_at IS NULL`,
       [voucherId],
     );
@@ -2568,13 +2754,29 @@ export const claimVoucher = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Check if already claimed in wallet
+    if (v.target_group === "loyal") {
+      const [spendRows] = await pool.query<RowDataPacket[]>(
+        `SELECT COALESCE(SUM(total_amount), 0) AS total_spending
+         FROM bookings
+         WHERE user_id = ? AND status = 'completed'`,
+        [userId]
+      );
+      const totalSpending = Number(spendRows[0]?.total_spending || 0);
+      if (totalSpending < Number(v.loyalty_min_spend || 0)) {
+        res.status(403).json({ success: false, message: "Bạn chưa đủ điều kiện chi tiêu để nhận voucher này" });
+        return;
+      }
+    }
+
+    const maxUsesPerUser = Number(v.max_uses_per_user || 1);
+
+    // Check if already claimed in wallet (only allow 1 entry per user)
     const [walletRows] = await pool.query<RowDataPacket[]>(
       `SELECT wallet_id FROM user_voucher_wallet WHERE user_id = ? AND voucher_id = ?`,
       [userId, voucherId],
     );
-    if (walletRows.length > 0) {
-      res.status(400).json({ success: false, message: "Voucher này đã có trong kho của bạn" });
+    if (walletRows.length >= 1) {
+      res.status(400).json({ success: false, message: "Bạn đã lưu voucher này vào ví rồi" });
       return;
     }
 
@@ -2588,14 +2790,13 @@ export const claimVoucher = async (req: Request, res: Response): Promise<void> =
       [userId, v.code],
     );
     const userUsedCount = Number(usedCountRows[0]?.cnt || 0);
-    const maxUsesPerUser = Number(v.max_uses_per_user || 1);
     if (maxUsesPerUser > 0 && userUsedCount >= maxUsesPerUser) {
       res.status(400).json({ success: false, message: "Bạn đã dùng hết số lượt của voucher này" });
       return;
     }
 
     await pool.query(
-      `INSERT IGNORE INTO user_voucher_wallet (user_id, voucher_id) VALUES (?, ?)`,
+      `INSERT INTO user_voucher_wallet (user_id, voucher_id) VALUES (?, ?)`,
       [userId, voucherId],
     );
     res.json({ success: true, message: "Đã lưu voucher" });
@@ -2613,10 +2814,11 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
     let rows: RowDataPacket[];
     try {
       [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT v.voucher_id, v.code, v.campaign_name, v.campaign_description,
+        `SELECT w.wallet_id, v.voucher_id, v.code, v.campaign_name, v.campaign_description,
                 v.discount_type, v.discount_value, v.min_order_value,
                 v.max_discount_amount, v.start_date, v.end_date,
                 v.apply_to_service_type, v.location_id, v.max_uses_per_user,
+                v.owner_id, u.role as owner_role,
                 l.location_name,
                 w.claimed_at,
                 (SELECT COUNT(*) FROM bookings b
@@ -2628,6 +2830,7 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
                 (SELECT JSON_ARRAYAGG(l2.location_name) FROM voucher_locations vl2 JOIN locations l2 ON l2.location_id = vl2.location_id WHERE vl2.voucher_id = v.voucher_id) as location_names
          FROM user_voucher_wallet w
          JOIN vouchers v ON v.voucher_id = w.voucher_id
+         JOIN users u ON u.user_id = v.owner_id
          LEFT JOIN locations l ON l.location_id = v.location_id
          WHERE w.user_id = ?
            AND v.owner_deleted_at IS NULL
@@ -2642,6 +2845,18 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
                    AND b2.status IN ('pending','confirmed','completed')
                 ) < v.max_uses_per_user
            )
+           AND (
+             v.target_group = 'all'
+             OR (
+               v.target_group = 'loyal'
+               AND (
+                 SELECT COALESCE(SUM(b3.final_amount), 0)
+                 FROM bookings b3
+                 WHERE b3.user_id = w.user_id
+                   AND b3.status = 'completed'
+               ) >= COALESCE(v.loyalty_min_spend, 0)
+             )
+           )
          ORDER BY w.claimed_at DESC`,
         [userId],
       );
@@ -2652,10 +2867,11 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
       if (!isMissing) throw e;
 
       [rows] = await pool.query<RowDataPacket[]>(
-        `SELECT v.voucher_id, v.code, v.campaign_name, v.campaign_description,
+        `SELECT w.wallet_id, v.voucher_id, v.code, v.campaign_name, v.campaign_description,
                 v.discount_type, v.discount_value, v.min_order_value,
                 v.max_discount_amount, v.start_date, v.end_date,
                 v.apply_to_service_type, v.location_id, v.max_uses_per_user,
+                v.owner_id, (SELECT role FROM users WHERE user_id = v.owner_id) as owner_role,
                 l.location_name,
                 w.claimed_at,
                 (SELECT COUNT(*) FROM bookings b
@@ -2686,9 +2902,193 @@ export const getMySavedVouchers = async (req: Request, res: Response): Promise<v
       );
     }
 
-    res.json({ success: true, data: rows });
+    const uniqueMap = new Map<number, any>();
+    for (const r of rows as any[]) {
+      const vid = Number(r.voucher_id);
+      if (Number.isFinite(vid) && !uniqueMap.has(vid)) {
+        uniqueMap.set(vid, r);
+      }
+    }
+    const uniqueRows = Array.from(uniqueMap.values()).map((row: any) => {
+      const maxUses = Number(row.max_uses_per_user || 0);
+      const usedCount = Number(row.user_used_count || 0);
+      return {
+        ...row,
+        user_remaining_uses:
+          maxUses > 0 ? Math.max(0, maxUses - usedCount) : null,
+      };
+    });
+    res.json({ success: true, data: uniqueRows });
   } catch (error) {
     console.error("Lỗi lấy saved vouchers:", error);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+export const getUsableVouchersByLocation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = getUserId(req as AuthenticatedRequest, res);
+    if (!userId) return;
+
+    const locationId = Number(req.params.locationId);
+    if (!Number.isFinite(locationId)) {
+      res.status(400).json({ success: false, message: "Invalid location ID" });
+      return;
+    }
+
+    let rows: RowDataPacket[];
+    try {
+      [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT w.wallet_id, v.voucher_id, v.code, v.campaign_name, v.campaign_description,
+                v.discount_type, v.discount_value, v.min_order_value,
+                v.max_discount_amount, v.start_date, v.end_date,
+                v.apply_to_service_type, v.location_id, v.max_uses_per_user,
+                v.owner_id, (SELECT role FROM users WHERE user_id = v.owner_id) as owner_role,
+                l.location_name,
+                w.claimed_at,
+                (SELECT COUNT(*) FROM bookings b
+                 WHERE b.user_id = w.user_id
+                   AND b.voucher_code = v.code
+                   AND b.status IN ('pending','confirmed','completed')
+                ) as user_used_count,
+                (SELECT JSON_ARRAYAGG(vl.location_id) FROM voucher_locations vl WHERE vl.voucher_id = v.voucher_id) as location_ids,
+                (SELECT JSON_ARRAYAGG(l2.location_name) FROM voucher_locations vl2 JOIN locations l2 ON l2.location_id = vl2.location_id WHERE vl2.voucher_id = v.voucher_id) as location_names
+         FROM user_voucher_wallet w
+         JOIN vouchers v ON v.voucher_id = w.voucher_id
+         JOIN users u ON u.user_id = v.owner_id
+         LEFT JOIN locations l ON l.location_id = v.location_id
+         CROSS JOIN (SELECT location_type, owner_id FROM locations WHERE location_id = ? LIMIT 1) loc
+         WHERE w.user_id = ?
+           AND v.owner_deleted_at IS NULL
+           AND v.status = 'active'
+           AND v.end_date >= NOW()
+           AND (v.apply_to_location_type = 'all' OR v.apply_to_location_type = loc.location_type)
+           AND (
+             v.max_uses_per_user IS NULL
+             OR v.max_uses_per_user <= 0
+             OR (SELECT COUNT(*) FROM bookings b2
+                 WHERE b2.user_id = w.user_id
+                   AND b2.voucher_code = v.code
+                   AND b2.status IN ('pending','confirmed','completed')
+                ) < v.max_uses_per_user
+           )
+           AND (
+             u.role = 'admin'
+             OR (u.role = 'owner' AND loc.owner_id = v.owner_id)
+           )
+           AND (
+             v.location_id = ?
+             OR (
+               v.location_id IS NULL
+               AND (
+                 NOT EXISTS (
+                   SELECT 1 FROM voucher_locations vl_scope
+                   WHERE vl_scope.voucher_id = v.voucher_id
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM voucher_locations vl3
+                   WHERE vl3.voucher_id = v.voucher_id AND vl3.location_id = ?
+                 )
+               )
+             )
+           )
+           AND (
+             v.target_group = 'all'
+             OR (
+               v.target_group = 'loyal'
+               AND (
+                 SELECT COALESCE(SUM(b3.final_amount), 0)
+                 FROM bookings b3
+                 WHERE b3.user_id = w.user_id
+                   AND b3.status = 'completed'
+               ) >= COALESCE(v.loyalty_min_spend, 0)
+             )
+           )
+         ORDER BY w.claimed_at DESC`,
+        [locationId, userId, locationId, locationId],
+      );
+    } catch (e: any) {
+      const isMissing = e?.code === "ER_NO_SUCH_TABLE" && String(e?.message || "").includes("voucher_locations");
+      if (!isMissing) throw e;
+
+      [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT w.wallet_id, v.voucher_id, v.code, v.campaign_name, v.campaign_description,
+                v.discount_type, v.discount_value, v.min_order_value,
+                v.max_discount_amount, v.start_date, v.end_date,
+                v.apply_to_service_type, v.location_id, v.max_uses_per_user,
+                v.owner_id, u.role as owner_role,
+                l.location_name,
+                w.claimed_at,
+                (SELECT COUNT(*) FROM bookings b
+                 WHERE b.user_id = w.user_id
+                   AND b.voucher_code = v.code
+                   AND b.status IN ('pending','confirmed','completed')
+                ) as user_used_count,
+                NULL as location_ids,
+                NULL as location_names
+         FROM user_voucher_wallet w
+         JOIN vouchers v ON v.voucher_id = w.voucher_id
+         JOIN users u ON u.user_id = v.owner_id
+         LEFT JOIN locations l ON l.location_id = v.location_id
+         CROSS JOIN (SELECT location_type, owner_id FROM locations WHERE location_id = ? LIMIT 1) loc
+         WHERE w.user_id = ?
+           AND v.owner_deleted_at IS NULL
+           AND v.status = 'active'
+           AND v.end_date >= NOW()
+           AND (v.apply_to_location_type = 'all' OR v.apply_to_location_type = loc.location_type)
+           AND (
+             v.max_uses_per_user IS NULL
+             OR v.max_uses_per_user <= 0
+             OR (SELECT COUNT(*) FROM bookings b2
+                 WHERE b2.user_id = w.user_id
+                   AND b2.voucher_code = v.code
+                   AND b2.status IN ('pending','confirmed','completed')
+                ) < v.max_uses_per_user
+           )
+           AND (
+             u.role = 'admin'
+             OR (u.role = 'owner' AND loc.owner_id = v.owner_id)
+           )
+           AND (
+             v.location_id = ? 
+             OR v.location_id IS NULL
+           )
+           AND (
+             v.target_group = 'all'
+             OR (
+               v.target_group = 'loyal'
+               AND (
+                 SELECT COALESCE(SUM(b3.final_amount), 0)
+                 FROM bookings b3
+                 WHERE b3.user_id = w.user_id
+                   AND b3.status = 'completed'
+               ) >= COALESCE(v.loyalty_min_spend, 0)
+             )
+           )
+         ORDER BY w.claimed_at DESC`,
+        [locationId, userId, locationId],
+      );
+    }
+
+    const uniqueMap = new Map<number, any>();
+    for (const r of rows as any[]) {
+      const vid = Number(r.voucher_id);
+      if (Number.isFinite(vid) && !uniqueMap.has(vid)) {
+        uniqueMap.set(vid, r);
+      }
+    }
+    const uniqueRows = Array.from(uniqueMap.values()).map((row: any) => {
+      const maxUses = Number(row.max_uses_per_user || 0);
+      const usedCount = Number(row.user_used_count || 0);
+      return {
+        ...row,
+        user_remaining_uses:
+          maxUses > 0 ? Math.max(0, maxUses - usedCount) : null,
+      };
+    });
+    res.json({ success: true, data: uniqueRows });
+  } catch (error) {
+    console.error("Lỗi lấy usable vouchers by location:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
   }
 };
@@ -2710,10 +3110,17 @@ export const getVouchersByLocation = async (req: Request, res: Response): Promis
               v.usage_limit, v.used_count, v.max_uses_per_user,
               (v.usage_limit - v.used_count) as remaining,
               v.apply_to_location_type,
-              EXISTS(
-                SELECT 1 FROM user_voucher_wallet w
+              -- Tổng số user đã lưu voucher này (pool claim tracking)
+              (
+                SELECT COUNT(*) FROM user_voucher_wallet wt
+                WHERE wt.voucher_id = v.voucher_id
+              ) as total_claimed_count,
+              -- User hiện tại đã lưu chưa
+              (
+                SELECT COUNT(*) FROM user_voucher_wallet w
                 WHERE w.user_id = ? AND w.voucher_id = v.voucher_id
-              ) as is_claimed,
+              ) as claimed_count,
+              -- Số lần user đã dùng voucher trong booking
               (
                 SELECT COUNT(*) FROM bookings b
                 WHERE b.user_id = ?
@@ -2737,7 +3144,6 @@ export const getVouchersByLocation = async (req: Request, res: Response): Promis
                  SELECT COALESCE(SUM(b2.final_amount), 0)
                  FROM bookings b2
                  WHERE b2.user_id = ?
-                   AND b2.location_id = ?
                    AND b2.status = 'completed'
                ) >= COALESCE(v.loyalty_min_spend, 0)
              )
@@ -2753,9 +3159,49 @@ export const getVouchersByLocation = async (req: Request, res: Response): Promis
            )
          )
        ORDER BY v.end_date ASC`,
-        [userId, userId, locationId, userId, locationId, locationId, locationId],
+        [userId, userId, locationId, userId, locationId, locationId],
     );
-    res.json({ success: true, data: rows });
+    const mapped = (rows as any[])
+      .map((row: any) => {
+        const usageLimit = Number(row.usage_limit || 0);
+        const usedCount = Number(row.used_count || 0);
+        const maxUses = Number(row.max_uses_per_user || 1);
+        // Số lượt voucher còn lại phải dựa trên lượt đã giữ/dùng, không phải số user đã lưu.
+        const poolRemaining =
+          usageLimit > 0 ? Math.max(0, usageLimit - usedCount) : Number.MAX_SAFE_INTEGER;
+
+        // Số lượng user đã lưu
+        const userClaimedCount = Number(row.claimed_count || 0);
+        // Đã lưu tối đa chưa (bây giờ mỗi voucher chỉ cần lưu 1 lần)
+        const userClaimed = userClaimedCount >= 1;
+
+        // User đã dùng hết lượt booking của mình chưa
+        const userBookingExhausted = Number(row.user_used_count) >= maxUses;
+
+        return {
+          ...row,
+          pool_remaining: poolRemaining,
+          user_claimed_count: userClaimedCount,
+          user_remaining_uses:
+            maxUses > 0
+              ? Math.max(0, maxUses - Number(row.user_used_count || 0))
+              : null,
+          is_claimed: userClaimed,
+          is_exhausted: userBookingExhausted,
+        };
+      })
+      // Chỉ ẩn khi pool hết, user đã dùng hết lượt booking, hoặc đã lưu đủ giới hạn
+      .filter((row: any) => row.pool_remaining > 0 && !row.is_exhausted && !row.is_claimed);
+
+    const uniqueMap = new Map<string, any>();
+    for (const r of mapped) {
+      const key = r.code || String(r.voucher_id);
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, r);
+      }
+    }
+    const uniqueRows = Array.from(uniqueMap.values());
+    res.json({ success: true, data: uniqueRows });
   } catch (error) {
     console.error("Lỗi lấy voucher theo location:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
@@ -2770,13 +3216,20 @@ export const getUserDiaries = async (
     const userId = getUserId(req as AuthenticatedRequest, res);
     if (!userId) return;
 
+    const locationId = Number(req.query.locationId);
+    const hasLocationFilter = Number.isFinite(locationId) && locationId > 0;
+    if (hasLocationFilter && !(await ensureDiaryLocationAccessible(userId, locationId, res))) {
+      return;
+    }
+
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT d.*, l.location_name
        FROM user_diary d
        LEFT JOIN locations l ON l.location_id = d.location_id
        WHERE d.user_id = ?
+         ${hasLocationFilter ? "AND d.location_id = ?" : ""}
        ORDER BY d.created_at DESC`,
-      [userId],
+      hasLocationFilter ? [userId, locationId] : [userId],
     );
 
     res.json({ success: true, data: rows });
@@ -2796,16 +3249,21 @@ export const createUserDiary = async (
 
     const body = req.body as CreateDiaryBody;
     const mood = body.mood ?? "happy";
-    const images = body.images ? JSON.stringify(body.images) : null;
+    const diaryImages = normalizeDiaryImages(body.images);
+    const images = diaryImages.length > 0 ? JSON.stringify(diaryImages) : null;
 
     if (body.location_id) {
+      const diaryLocationId = Number(body.location_id);
+      if (!(await ensureDiaryLocationAccessible(userId, diaryLocationId, res))) {
+        return;
+      }
       // Nếu có location_name truyền lên, kiểm tra xem địa điểm này có phải tự check-in (is_user_created = 1) để cho phép đổi tên
       if (body.location_name && body.location_name.trim().length > 0) {
         const [loc] = await pool.query<RowDataPacket[]>(
-          `SELECT owner_id FROM locations WHERE location_id = ?`,
+          `SELECT user_id FROM user_private_locations WHERE location_id = ?`,
           [body.location_id]
         );
-        if (loc.length > 0 && Number(loc[0].owner_id) === userId) {
+        if (loc.length > 0 && Number(loc[0].user_id) === userId) {
           await pool.query(
             `UPDATE locations SET location_name = ? WHERE location_id = ?`,
             [body.location_name.trim(), body.location_id]
@@ -3066,13 +3524,13 @@ export const getUserNotifications = async (
          ON nd.notification_id = pn.notification_id
         AND nd.user_id = ?
        WHERE (
-         pn.target_audience = 'all_users'
+         (pn.target_audience = 'all_users' AND pn.created_at >= (SELECT created_at FROM users WHERE user_id = ?))
          OR (pn.target_audience = 'specific_user' AND pn.target_user_id = ?)
        )
          AND nd.notification_id IS NULL
        ORDER BY created_at DESC
        LIMIT 20`,
-      [userId, userId, userId],
+      [userId, userId, userId, userId],
     );
 
     res.json({ success: true, data: rows });
@@ -3104,12 +3562,12 @@ export const markUserNotificationsReadAll = async (
          ON nd.notification_id = pn.notification_id
         AND nd.user_id = ?
        WHERE (
-         pn.target_audience = 'all_users'
+         (pn.target_audience = 'all_users' AND pn.created_at >= (SELECT created_at FROM users WHERE user_id = ?))
          OR (pn.target_audience = 'specific_user' AND pn.target_user_id = ?)
        )
          AND nr.notification_id IS NULL
          AND nd.notification_id IS NULL`,
-      [userId, userId, userId, userId],
+      [userId, userId, userId, userId, userId],
     );
 
     res.json({ success: true, message: "Đã đánh dấu đã đọc" });
@@ -3138,11 +3596,11 @@ export const deleteUserNotificationsAll = async (
          ON nd.notification_id = pn.notification_id
         AND nd.user_id = ?
        WHERE (
-         pn.target_audience = 'all_users'
+         (pn.target_audience = 'all_users' AND pn.created_at >= (SELECT created_at FROM users WHERE user_id = ?))
          OR (pn.target_audience = 'specific_user' AND pn.target_user_id = ?)
        )
          AND nd.notification_id IS NULL`,
-      [userId, userId, userId],
+      [userId, userId, userId, userId],
     );
 
     await pool.query(

@@ -249,7 +249,7 @@ const OwnerServices = () => {
               order_id: r.order_id == null ? null : Number(r.order_id),
             } satisfies ServiceRow;
           })
-          .filter((s) => Number.isFinite(s.service_id)),
+          .filter((s) => Number.isFinite(s.service_id) && s.service_type !== "table"),
       );
     } catch (err: unknown) {
       message.error(getErrorMessage(err, "Lỗi tải dịch vụ"));

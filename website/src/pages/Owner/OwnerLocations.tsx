@@ -21,6 +21,7 @@ import {
 import { InboxOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { UploadFile } from "antd/es/upload/interface";
+import { useSocket } from "../../contexts/SocketContext";
 import dayjs, { Dayjs } from "dayjs";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../../layouts/MainLayout";
@@ -66,14 +67,15 @@ type LocationRow = {
 
 const DEFAULT_CENTER: LatLng = { lat: 10.776889, lng: 106.700806 };
 
-const MapResizeFix = ({ trigger }: { trigger: unknown }) => {
+const MapResizeFix = () => {
   const map = useMap();
   useEffect(() => {
-    const t = window.setTimeout(() => {
+    const resizeObserver = new ResizeObserver(() => {
       map.invalidateSize();
-    }, 200);
-    return () => window.clearTimeout(t);
-  }, [map, trigger]);
+    });
+    resizeObserver.observe(map.getContainer());
+    return () => resizeObserver.disconnect();
+  }, [map]);
   return null;
 };
 
@@ -232,6 +234,21 @@ const OwnerLocations = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const socket = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+    const handleEvent = (event: any) => {
+      const type = String(event.type || "");
+      if (type.startsWith("location_")) {
+        void load();
+      }
+    };
+    socket.on("realtime_event", handleEvent);
+    return () => {
+      socket.off("realtime_event", handleEvent);
+    };
+  }, [socket, load]);
 
   useEffect(() => {
     const nextUrls: string[] = [];
@@ -635,7 +652,12 @@ const OwnerLocations = () => {
 
   const columns: ColumnsType<LocationRow> = useMemo(
     () => [
-      { title: "#", dataIndex: "location_id", width: 80 },
+      { 
+        title: "#", 
+        key: "index", 
+        width: 80,
+        render: (_: any, __: any, index: number) => items.length - index
+      },
       {
         title: "Ảnh",
         key: "image",
@@ -750,6 +772,8 @@ const OwnerLocations = () => {
           loading={loading}
           dataSource={items}
           columns={columns}
+          pagination={false}
+          scroll={{ y: "calc(100vh - 250px)" }}
         />
       </Card>
 
@@ -829,7 +853,7 @@ const OwnerLocations = () => {
                   doubleClickZoom={false}
                   style={{ height: 360, width: "100%" }}
                 >
-                  <MapResizeFix trigger={`${open}-pick`} />
+                  <MapResizeFix />
                   <MapFlyTo
                     center={pickedDraft ?? null}
                     zoom={pickedDraft ? 16 : undefined}
@@ -920,9 +944,7 @@ const OwnerLocations = () => {
                   doubleClickZoom={false}
                   style={{ height: 260, width: "100%" }}
                 >
-                  <MapResizeFix
-                    trigger={`${open}-${createStep}-${editing?.location_id ?? "new"}`}
-                  />
+                  <MapResizeFix />
                   <MapFlyTo center={picked} zoom={picked ? 16 : undefined} />
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -981,7 +1003,6 @@ const OwnerLocations = () => {
                     { value: "hotel", label: "Khách sạn" },
                     { value: "restaurant", label: "Ăn uống" },
                     { value: "tourist", label: "Du lịch" },
-                    { value: "other", label: "Khác" },
                   ]}
                 />
               </Form.Item>
@@ -1090,7 +1111,7 @@ const OwnerLocations = () => {
                     <Upload.Dragger
                       accept="image/*"
                       multiple
-                      maxCount={12}
+                      maxCount={10}
                       beforeUpload={() => false}
                       showUploadList={false}
                       fileList={createImageFileList}
@@ -1303,7 +1324,7 @@ const OwnerLocations = () => {
             doubleClickZoom={false}
             style={{ height: "70vh", width: "100%" }}
           >
-            <MapResizeFix trigger={`zoom-${mapModalOpen}`} />
+            <MapResizeFix />
             {!editing && createStep === "pick" ? (
               <MapFlyTo
                 center={pickedDraft ?? null}
@@ -1404,7 +1425,7 @@ const OwnerLocations = () => {
                     attribution="&copy; OpenStreetMap contributors"
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
-                  <MapResizeFix trigger={`${viewMapOpen}-view`} />
+                  <MapResizeFix />
                   <MapFlyTo center={viewPos} zoom={16} />
                   <Marker
                     position={[viewPos.lat, viewPos.lng]}

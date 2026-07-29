@@ -155,7 +155,7 @@ const AdminVouchers = () => {
   const [sysData, setSysData] = useState<SystemVoucher[]>([]);
   const [sysPagination, setSysPagination] = useState({
     current: 1,
-    pageSize: 1000,
+    pageSize: 50,
     total: 0,
   });
   const [sysStatusFilter, setSysStatusFilter] = useState<
@@ -168,7 +168,7 @@ const AdminVouchers = () => {
   const [ownData, setOwnData] = useState<OwnerVoucherRow[]>([]);
   const [ownPagination, setOwnPagination] = useState({
     current: 1,
-    pageSize: 1000,
+    pageSize: 50,
     total: 0,
   });
   const [ownStatusFilter, setOwnStatusFilter] = useState<
@@ -375,23 +375,25 @@ const AdminVouchers = () => {
   };
 
   useEffect(() => {
-    void fetchSystemVouchers();
+    if (tab === "system") void fetchSystemVouchers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sysPagination.current,
     sysPagination.pageSize,
     sysStatusFilter,
     sysSearch,
+    tab,
   ]);
 
   useEffect(() => {
-    void fetchOwnerVouchers();
+    if (tab === "owner") void fetchOwnerVouchers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     ownPagination.current,
     ownPagination.pageSize,
     ownStatusFilter,
     ownSearch,
+    tab,
   ]);
 
   useEffect(() => {
@@ -585,12 +587,24 @@ const AdminVouchers = () => {
             ? values.owner_ids
             : [],
         start_date: values.start_date
-          ? dayjs(values.start_date).format("YYYY-MM-DD HH:mm:ss")
+          ? dayjs(values.start_date).startOf('day').format("YYYY-MM-DD HH:mm:ss")
           : null,
         end_date: values.end_date
-          ? dayjs(values.end_date).format("YYYY-MM-DD HH:mm:ss")
+          ? dayjs(values.end_date).endOf('day').format("YYYY-MM-DD HH:mm:ss")
           : null,
       };
+
+      // Auto-map apply_to_location_type from apply_to_service_type since they are 1-to-1 conceptually
+      const serviceToLocationMap: Record<string, string> = {
+        all: "all",
+        room: "hotel",
+        food: "restaurant",
+        ticket: "tourist",
+        other: "other",
+      };
+      if (!payload.apply_to_location_type) {
+        payload.apply_to_location_type = serviceToLocationMap[values.apply_to_service_type] || "all";
+      }
 
       if (editingOwner) {
         // Owner voucher: don't allow changing status directly via form
@@ -1227,9 +1241,12 @@ const AdminVouchers = () => {
                   <Form.Item
                     name="min_order_value"
                     label="Đơn hàng tối thiểu để áp dụng"
-                    rules={[{ required: true }]}
+                    rules={[
+                      { required: true, message: "Vui lòng nhập giá trị" },
+                      { transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }
+                    ]}
                   >
-                    <InputNumber style={{ width: "100%" }} min={0} />
+                    <InputNumber style={{ width: "100%" }} />
                   </Form.Item>
                 </div>
 
@@ -1243,7 +1260,7 @@ const AdminVouchers = () => {
 
                   <Form.Item
                     name="apply_to_service_type"
-                    label="Phạm vi áp dụng"
+                    label="Phạm vi áp dụng (Dịch vụ)"
                     rules={[{ required: true }]}
                   >
                     <Select
@@ -1252,12 +1269,15 @@ const AdminVouchers = () => {
                           "all",
                           "room",
                           "food",
-                          "ticket",
-                          "other",
+                          "ticket"
                         ] as ServiceScope[]
                       ).map((v) => ({ value: v, label: scopeLabel[v] }))}
                     />
                   </Form.Item>
+
+
+
+
 
                   <Form.Item
                     name="location_scope"
@@ -1370,18 +1390,24 @@ const AdminVouchers = () => {
                       <Form.Item
                         name="usage_limit"
                         label="Số voucher"
-                        rules={[{ required: true }]}
+                        rules={[
+                          { required: true, message: "Vui lòng nhập giới hạn" },
+                          { type: 'number', min: 1, message: 'Phải >= 1' }
+                        ]}
                       >
-                        <InputNumber style={{ width: "100%" }} min={1} />
+                        <InputNumber style={{ width: "100%" }} />
                       </Form.Item>
                     </Col>
                     <Col span={12}>
                       <Form.Item
                         name="max_uses_per_user"
                         label="Lần dùng tối đa mỗi user"
-                        rules={[{ required: true }]}
+                        rules={[
+                          { required: true, message: "Vui lòng nhập tối đa" },
+                          { type: 'number', min: 1, message: 'Phải >= 1' }
+                        ]}
                       >
-                        <InputNumber style={{ width: "100%" }} min={1} />
+                        <InputNumber style={{ width: "100%" }} />
                       </Form.Item>
                     </Col>
                   </Row>
@@ -1401,9 +1427,12 @@ const AdminVouchers = () => {
                   >
                     {({ getFieldValue }) =>
                       getFieldValue("target_group") === "loyal" ? (
-                        <Form.Item name="loyalty_min_spend" label="Chi tiêu tối thiểu (VNĐ)">
+                        <Form.Item 
+                          name="loyalty_min_spend" 
+                          label="Chi tiêu tối thiểu (VNĐ)"
+                          rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }]}
+                        >
                           <InputNumber
-                            min={0}
                             step={100000}
                             style={{ width: "100%" }}
                             formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}

@@ -72,6 +72,7 @@ export default function DiaryScreen() {
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<string[]>([]);
   const [savingDiary, setSavingDiary] = useState(false);
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   const fetchProfileStats = async () => {
     try {
@@ -186,7 +187,7 @@ export default function DiaryScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       quality: 0.8,
     });
@@ -283,25 +284,33 @@ export default function DiaryScreen() {
     if (total >= 1 && total <= 3) {
       return {
         title: "Thám Hiểm Tập Sự",
-        color: "text-teal-700 bg-teal-50 border-teal-200/50",
+        color: "text-blue-700",
+        bg: "bg-blue-500",
+        icon: "compass",
         description: "Bạn đang bắt đầu tích lũy những dấu chân đầu tiên. Những chân trời mới đang mở ra chào đón bạn.",
       };
     } else if (total >= 4 && total <= 10) {
       return {
         title: "Lãng Khách Muôn Phương",
-        color: "text-amber-700 bg-amber-50 border-amber-200/50",
+        color: "text-emerald-700",
+        bg: "bg-emerald-500",
+        icon: "map",
         description: "Những bước đi vững chãi và trải nghiệm phong phú. Bạn đã là một tay du hành cừ khôi trên mọi nẻo đường.",
       };
     } else if (total > 10) {
       return {
         title: "Bậc Thầy Dịch Chuyển",
-        color: "text-purple-700 bg-purple-50 border-purple-200/50",
+        color: "text-fuchsia-700",
+        bg: "bg-fuchsia-600",
+        icon: "planet",
         description: "Không có giới hạn nào có thể ngăn cản bước chân bạn. Bản đồ thế giới chính là sân chơi của bạn.",
       };
     }
     return {
       title: "Tân Thủ Khởi Hành",
-      color: "text-sky-700 bg-sky-50 border-indigo-200/50",
+      color: "text-violet-700",
+      bg: "bg-violet-500",
+      icon: "walk",
       description: "Chuyến đi đầu tiên luôn là trải nghiệm khó quên nhất. Hãy tiếp tục hành trình khám phá thế giới xung quanh.",
     };
   };
@@ -339,26 +348,31 @@ export default function DiaryScreen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}
       >
         {/* Milestone Card */}
-        <View className="m-4 bg-white rounded-2xl border border-line p-4 shadow-sm">
-          <View className={`self-start px-3 py-1 rounded-full border ${milestone.color} mb-2.5`}>
-            <Text className="text-xs font-bold">{milestone.title}</Text>
+        <View className={`mx-4 my-3 rounded-2xl ${milestone.bg} p-3.5 shadow-sm`}>
+          <View className="flex-row items-center mb-2">
+            <View className="w-9 h-9 rounded-full bg-white/20 items-center justify-center mr-2.5">
+              <Ionicons name={milestone.icon as any} size={18} color="white" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-white/80 text-[9px] font-bold uppercase tracking-wider mb-0.5">Danh hiệu hiện tại</Text>
+              <Text className="text-white text-[15px] font-black">{milestone.title}</Text>
+            </View>
           </View>
-          <Text className="text-[13px] text-slate-500 leading-[20px]">
+          
+          <Text className="text-white/90 text-[11px] leading-[16px] mb-3">
             {milestone.description}
           </Text>
 
-          <View className="h-[1px] bg-line w-full my-3.5" />
-
           {/* Travel statistics */}
-          <View className="flex-row justify-between">
+          <View className="flex-row bg-black/10 rounded-xl p-2.5">
             <View className="items-center flex-1">
-              <Text className="text-[10px] text-slate-400 font-bold uppercase">Lượt đi</Text>
-              <Text className="text-xl font-extrabold text-slate-800 mt-1">{checkins.length}</Text>
+              <Text className="text-white/70 text-[9px] font-bold uppercase tracking-wider mb-0.5">Tổng lượt đi</Text>
+              <Text className="text-white text-lg font-black">{checkins.length}</Text>
             </View>
-            <View className="w-[1px] bg-line" />
+            <View className="w-[1px] bg-white/20" />
             <View className="items-center flex-1">
-              <Text className="text-[10px] text-slate-400 font-bold uppercase">Địa điểm</Text>
-              <Text className="text-xl font-extrabold text-slate-800 mt-1">{groupedCheckins.length}</Text>
+              <Text className="text-white/70 text-[9px] font-bold uppercase tracking-wider mb-0.5">Số địa điểm</Text>
+              <Text className="text-white text-lg font-black">{groupedCheckins.length}</Text>
             </View>
           </View>
         </View>
@@ -399,8 +413,22 @@ export default function DiaryScreen() {
                   {/* Card Content */}
                   <View className="flex-1 bg-white rounded-2xl border border-line p-4 shadow-sm mb-4 overflow-hidden">
                     {/* Location Name & Details */}
-                    <View className="flex-row justify-between items-start mb-2">
-                      <View className="flex-1 mr-2">
+                    <Pressable
+                      className="flex-row items-start mb-2"
+                      onPress={() => router.push(`/(app)/location/${group.location_id}` as never)}
+                    >
+                      {group.first_image ? (
+                        <Image
+                          source={{ uri: resolveBackendUrl(group.first_image) || "" }}
+                          className="w-14 h-14 rounded-xl mr-3 bg-slate-100"
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View className="w-14 h-14 rounded-xl mr-3 bg-slate-100 items-center justify-center">
+                          <Ionicons name="image-outline" size={22} color="#94a3b8" />
+                        </View>
+                      )}
+                      <View className="flex-1">
                         <View className="flex-row items-center gap-1.5 flex-wrap">
                           <Text className="text-[15px] font-extrabold text-slate-800" numberOfLines={1}>
                             {group.location_name}
@@ -412,10 +440,10 @@ export default function DiaryScreen() {
                           </View>
                         </View>
                         <Text className="text-[11px] text-slate-400 mt-0.5" numberOfLines={1}>
-                          📍 {group.address}
+                          Địa chỉ: {group.address}
                         </Text>
                       </View>
-                    </View>
+                    </Pressable>
 
                     {/* Timeline Date & Count */}
                     <Text className="text-[10px] text-slate-400 font-medium mb-3">
@@ -454,12 +482,13 @@ export default function DiaryScreen() {
                             className="mt-3 gap-2 flex-row"
                           >
                             {diaryPhotosParsed.map((img, imgIdx) => (
-                              <Image
-                                key={imgIdx}
-                                source={{ uri: resolveBackendUrl(img) || "" }}
-                                className="w-16 h-16 rounded-lg mr-2"
-                                resizeMode="cover"
-                              />
+                              <Pressable key={imgIdx} onPress={() => setZoomImage(resolveBackendUrl(img) || "")}>
+                                <Image
+                                  source={{ uri: resolveBackendUrl(img) || "" }}
+                                  className="w-16 h-16 rounded-lg mr-2 bg-slate-100 border border-slate-200/50"
+                                  resizeMode="cover"
+                                />
+                              </Pressable>
                             ))}
                           </ScrollView>
                         )}
@@ -595,6 +624,27 @@ export default function DiaryScreen() {
               </Pressable>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(zoomImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoomImage(null)}
+      >
+        <View className="flex-1 bg-black/90 items-center justify-center px-3">
+          <Pressable className="absolute inset-0" onPress={() => setZoomImage(null)} />
+          <Pressable
+            onPress={() => setZoomImage(null)}
+            className="absolute right-5 z-10 h-11 w-11 rounded-full bg-slate-900/70 items-center justify-center"
+            style={{ top: Math.max(insets.top, 18) }}
+          >
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </Pressable>
+          {zoomImage ? (
+            <Image source={{ uri: zoomImage }} className="w-full h-[82%]" resizeMode="contain" />
+          ) : null}
         </View>
       </Modal>
     </SafeAreaView>

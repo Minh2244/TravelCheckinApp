@@ -27,6 +27,8 @@ interface AvatarCropperProps {
   onCancel: () => void;
   accentColor?: string;
   title?: string;
+  variant?: "avatar" | "cover";
+  aspectRatio?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -34,6 +36,7 @@ const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 6.0;
 const CIRCLE_FRAC = 0.80;   // circle diameter / frame size
 const OUTPUT_PX = 500;
+const COVER_OUTPUT_WIDTH = 1280;
 
 const clamp = (v: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, v));
@@ -45,6 +48,8 @@ export default function AvatarCropper({
   onCancel,
   accentColor = "#0d9488",
   title = "Cắt ảnh đại diện",
+  variant = "avatar",
+  aspectRatio = 16 / 9,
 }: AvatarCropperProps) {
   // ── frame ref (the square viewing window) ──────────────────────
   const frameRef = useRef<HTMLDivElement>(null);
@@ -61,6 +66,33 @@ export default function AvatarCropper({
 
   // frame size (square) – resolved after first layout
   const frameSize = useRef(0);
+  const isCover = variant === "cover";
+  const getCropRect = useCallback((fs: number) => {
+    if (!isCover) {
+      const size = fs * CIRCLE_FRAC;
+      return {
+        x: (fs - size) / 2,
+        y: (fs - size) / 2,
+        width: size,
+        height: size,
+      };
+    }
+    const safeRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;
+    const maxW = fs * 0.9;
+    const maxH = fs * 0.72;
+    let width = maxW;
+    let height = width / safeRatio;
+    if (height > maxH) {
+      height = maxH;
+      width = height * safeRatio;
+    }
+    return {
+      x: (fs - width) / 2,
+      y: (fs - height) / 2,
+      width,
+      height,
+    };
+  }, [aspectRatio, isCover]);
 
   // ── drag tracking ───────────────────────────────────────────────
   const dragging   = useRef(false);
@@ -79,27 +111,25 @@ export default function AvatarCropper({
   const constrainPan = useCallback(
     (px: number, py: number, z: number, natW: number, natH: number) => {
       const fs = frameSize.current;
-      const cr = (fs * CIRCLE_FRAC) / 2;   // circle radius in px
-      const cx = fs / 2;
-      const cy = fs / 2;
+      const crop = getCropRect(fs);
 
       const iw = natW * z;
       const ih = natH * z;
 
-      // Image must cover at least the circle boundaries (1 px of slack)
+      // Image must cover at least the crop boundaries (1 px of slack)
       const slack = 1;
-      const minX = cx + cr - iw + slack;    // right edge of image >= circle right
-      const maxX = cx - cr - slack;          // left edge of image <= circle left
-      const minY = cy + cr - ih + slack;
-      const maxY = cy - cr - slack;
+      const minX = crop.x + crop.width - iw + slack;
+      const maxX = crop.x - slack;
+      const minY = crop.y + crop.height - ih + slack;
+      const maxY = crop.y - slack;
 
-      // If image is smaller than circle in one axis, centre it on that axis
-      const rx = iw >= cr * 2 ? clamp(px, minX, maxX) : cx - iw / 2;
-      const ry = ih >= cr * 2 ? clamp(py, minY, maxY) : cy - ih / 2;
+      // If image is smaller than crop in one axis, centre it on that axis
+      const rx = iw >= crop.width ? clamp(px, minX, maxX) : crop.x + crop.width / 2 - iw / 2;
+      const ry = ih >= crop.height ? clamp(py, minY, maxY) : crop.y + crop.height / 2 - ih / 2;
 
       return { x: rx, y: ry };
     },
-    [],
+    [getCropRect],
   );
 
   // ── initialise when the image loads ─────────────────────────────
@@ -110,24 +140,27 @@ export default function AvatarCropper({
 
     frameSize.current = frame.getBoundingClientRect().width;
     const fs = frameSize.current;
-    const cr = (fs * CIRCLE_FRAC) / 2;
+    const crop = getCropRect(fs);
     const natW = img.naturalWidth;
     const natH = img.naturalHeight;
 
-    // Fit zoom: image fills the circle exactly
-    const fitZoom = Math.max((cr * 2) / natW, (cr * 2) / natH);
+    // Fit zoom: image fills the crop area exactly
+    const fitZoom = Math.max(crop.width / natW, crop.height / natH);
     const initZoom = clamp(fitZoom * 1.05, MIN_ZOOM, MAX_ZOOM); // tiny extra so user can pan
 
     const iw = natW * initZoom;
     const ih = natH * initZoom;
-    const initPan = { x: fs / 2 - iw / 2, y: fs / 2 - ih / 2 };
+    const initPan = {
+      x: crop.x + crop.width / 2 - iw / 2,
+      y: crop.y + crop.height / 2 - ih / 2,
+    };
 
     panRef.current  = initPan;
     zoomRef.current = initZoom;
     applyTransform();
     setZoomState(initZoom);
     setReady(true);
-  }, [applyTransform]);
+  }, [applyTransform, getCropRect]);
 
   // Re-initialise if src changes
   useEffect(() => {
@@ -233,30 +266,31 @@ export default function AvatarCropper({
     setSaving(true);
 
     const fs   = frameSize.current || frame.getBoundingClientRect().width;
-    const cr   = (fs * CIRCLE_FRAC) / 2;
-    const cx   = fs / 2;
-    const cy   = fs / 2;
+    const crop = getCropRect(fs);
+    const safeRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 16 / 9;
+    const outputWidth = isCover ? COVER_OUTPUT_WIDTH : OUTPUT_PX;
+    const outputHeight = isCover ? Math.round(COVER_OUTPUT_WIDTH / safeRatio) : OUTPUT_PX;
 
     const canvas = document.createElement("canvas");
-    canvas.width  = OUTPUT_PX;
-    canvas.height = OUTPUT_PX;
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
     const ctx = canvas.getContext("2d")!;
 
-    // Circular clip
-    ctx.beginPath();
-    ctx.arc(OUTPUT_PX / 2, OUTPUT_PX / 2, OUTPUT_PX / 2, 0, Math.PI * 2);
-    ctx.clip();
+    if (!isCover) {
+      ctx.beginPath();
+      ctx.arc(outputWidth / 2, outputHeight / 2, outputWidth / 2, 0, Math.PI * 2);
+      ctx.clip();
+    }
 
-    // Scale: output is OUTPUT_PX wide, circle is cr*2 wide in frame
-    const scale  = OUTPUT_PX / (cr * 2);
-    const offX   = (panRef.current.x - (cx - cr)) * scale;
-    const offY   = (panRef.current.y - (cy - cr)) * scale;
+    const scale = outputWidth / crop.width;
+    const offX = (panRef.current.x - crop.x) * scale;
+    const offY = (panRef.current.y - crop.y) * scale;
     const drawW  = img.naturalWidth  * zoomRef.current * scale;
     const drawH  = img.naturalHeight * zoomRef.current * scale;
 
     // Fill background white (for transparent PNGs)
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, OUTPUT_PX, OUTPUT_PX);
+    ctx.fillRect(0, 0, outputWidth, outputHeight);
     ctx.drawImage(img, offX, offY, drawW, drawH);
 
     canvas.toBlob(
@@ -270,17 +304,19 @@ export default function AvatarCropper({
   };
 
   // ── circle size for the SVG overlay (responsive) ─────────────────
-  const [circlePx, setCirclePx] = useState(0);
+  const [cropBox, setCropBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
   useLayoutEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
-    const update = () =>
-      setCirclePx(frame.getBoundingClientRect().width * CIRCLE_FRAC);
+    const update = () => {
+      const fs = frame.getBoundingClientRect().width;
+      setCropBox(getCropRect(fs));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(frame);
     return () => ro.disconnect();
-  }, []);
+  }, [getCropRect]);
 
   const zoomPct = Math.round(zoom * 100);
 
@@ -335,7 +371,7 @@ export default function AvatarCropper({
           />
 
           {/* Dark overlay with circle cut-out — SVG */}
-          {circlePx > 0 && (
+          {cropBox.width > 0 && (
             <svg
               className="absolute inset-0 pointer-events-none"
               width="100%"
@@ -345,7 +381,18 @@ export default function AvatarCropper({
               <defs>
                 <mask id="cropHole">
                   <rect width="100%" height="100%" fill="white" />
-                  <circle cx="50%" cy="50%" r={circlePx / 2} fill="black" />
+                  {isCover ? (
+                    <rect
+                      x={cropBox.x}
+                      y={cropBox.y}
+                      width={cropBox.width}
+                      height={cropBox.height}
+                      rx="12"
+                      fill="black"
+                    />
+                  ) : (
+                    <circle cx="50%" cy="50%" r={cropBox.width / 2} fill="black" />
+                  )}
                 </mask>
               </defs>
               {/* Dark overlay */}
@@ -356,23 +403,46 @@ export default function AvatarCropper({
                 mask="url(#cropHole)"
               />
               {/* Circle border */}
-              <circle
-                cx="50%"
-                cy="50%"
-                r={circlePx / 2}
-                fill="none"
-                stroke="rgba(255,255,255,0.88)"
-                strokeWidth="2"
-              />
+              {isCover ? (
+                <rect
+                  x={cropBox.x}
+                  y={cropBox.y}
+                  width={cropBox.width}
+                  height={cropBox.height}
+                  rx="12"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.88)"
+                  strokeWidth="2"
+                />
+              ) : (
+                <circle
+                  cx="50%"
+                  cy="50%"
+                  r={cropBox.width / 2}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.88)"
+                  strokeWidth="2"
+                />
+              )}
               {/* Rule-of-thirds lines inside circle */}
               <clipPath id="circleClip">
-                <circle cx="50%" cy="50%" r={circlePx / 2} />
+                {isCover ? (
+                  <rect
+                    x={cropBox.x}
+                    y={cropBox.y}
+                    width={cropBox.width}
+                    height={cropBox.height}
+                    rx="12"
+                  />
+                ) : (
+                  <circle cx="50%" cy="50%" r={cropBox.width / 2} />
+                )}
               </clipPath>
               <g clipPath="url(#circleClip)" stroke="rgba(255,255,255,0.14)" strokeWidth="1">
-                <line x1={`calc(50% - ${circlePx / 6}px)`} y1="0" x2={`calc(50% - ${circlePx / 6}px)`} y2="100%" />
-                <line x1={`calc(50% + ${circlePx / 6}px)`} y1="0" x2={`calc(50% + ${circlePx / 6}px)`} y2="100%" />
-                <line x1="0" y1={`calc(50% - ${circlePx / 6}px)`} x2="100%" y2={`calc(50% - ${circlePx / 6}px)`} />
-                <line x1="0" y1={`calc(50% + ${circlePx / 6}px)`} x2="100%" y2={`calc(50% + ${circlePx / 6}px)`} />
+                <line x1={cropBox.x + cropBox.width / 3} y1={cropBox.y} x2={cropBox.x + cropBox.width / 3} y2={cropBox.y + cropBox.height} />
+                <line x1={cropBox.x + (cropBox.width * 2) / 3} y1={cropBox.y} x2={cropBox.x + (cropBox.width * 2) / 3} y2={cropBox.y + cropBox.height} />
+                <line x1={cropBox.x} y1={cropBox.y + cropBox.height / 3} x2={cropBox.x + cropBox.width} y2={cropBox.y + cropBox.height / 3} />
+                <line x1={cropBox.x} y1={cropBox.y + (cropBox.height * 2) / 3} x2={cropBox.x + cropBox.width} y2={cropBox.y + (cropBox.height * 2) / 3} />
               </g>
             </svg>
           )}

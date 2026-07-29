@@ -56,7 +56,7 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
   // -- Batch report state --
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>([
     dayjs().tz(TZ).startOf("month"),
-    dayjs().tz(TZ).endOf("month"),
+    dayjs().tz(TZ).endOf("day"),
   ]);
   const [isAllTime, setIsAllTime] = useState(false);
   const [selectedLocationId, setSelectedLocationId] = useState<number | "all">("all");
@@ -121,7 +121,7 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
   const batchStats = useMemo(() => {
     const grossTotal = filteredInvoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
     const commissionTotal = filteredInvoices.reduce((sum, inv) => sum + Number((inv as any).commission_amount || 0), 0);
-    const netTotal = filteredInvoices.reduce((sum, inv) => sum + Number((inv.owner_receivable ?? inv.amount) || 0), 0);
+    const netTotal = grossTotal - commissionTotal;
     return { count: filteredInvoices.length, grossTotal, commissionTotal, netTotal };
   }, [filteredInvoices]);
 
@@ -205,7 +205,7 @@ const InvoiceExportModal: React.FC<InvoiceExportModalProps> = ({
               onClick={() => {
                 setIsAllTime(!isAllTime);
                 if (!isAllTime) setDateRange(null);
-                else setDateRange([dayjs().tz(TZ).startOf("month"), dayjs().tz(TZ).endOf("month")]);
+                else setDateRange([dayjs().tz(TZ).startOf("month"), dayjs().tz(TZ).endOf("day")]);
               }}
             >
               Tất cả

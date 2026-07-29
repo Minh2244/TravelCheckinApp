@@ -1,0 +1,20 @@
+export type VoucherItem = {
+  voucher_id: number;
+  code: string | null;
+  campaign_name: string | null;
+  campaign_description: string | null;
+  discount_type: "percent" | "percentage" | "amount" | string | null;
+  discount_value: number | string | null;
+  min_order_value: number | string | null;
+  max_discount_amount: number | string | null;
+  max_discount?: number | string | null;
+  start_date: string;
+  end_date: string;
+  apply_to_service_type: string | null;
+  apply_to_location_type: string | null;
+  location_id?: string | number | null;
+  location_name: string | null;
+  location_names: string[] | string | null;
+  max_uses_per_user: number;
+  user_used_count: number;
+};

@@ -37,6 +37,18 @@ const sosApi = {
     );
     return response.data;
   },
+  getActiveSos: async () => {
+    const response = await axiosClient.get<ApiResponse<{
+      alert_id: number;
+      status: string;
+      created_at: string;
+      location_text: string | null;
+      message: string | null;
+    } | null>>(
+      "/sos/active"
+    );
+    return response.data;
+  },
 };
 
 export default sosApi;

@@ -178,34 +178,6 @@ const OwnerReviews = () => {
     return items.filter((row) => Number(row.rating) === ratingFilter);
   }, [items, ratingFilter]);
 
-  const managerAiContext = useMemo(() => {
-    const negativeReviews = filteredItems.filter((row) => Number(row.rating || 0) <= 2);
-    const topIssues = [
-      filteredItems.some((row) => String(row.comment || "").toLowerCase().includes("lau")) ? "phuc vu lau" : null,
-      filteredItems.some((row) => String(row.comment || "").toLowerCase().includes("cham")) ? "phuc vu cham" : null,
-      filteredItems.some((row) => String(row.comment || "").toLowerCase().includes("thai do")) ? "thai do phuc vu" : null,
-      filteredItems.some((row) => String(row.comment || "").toLowerCase().includes("gia")) ? "gia ca" : null,
-    ].filter(Boolean);
-
-    return {
-      selected_location_id: selectedLocationId,
-      selected_location_name:
-        locations.find((item) => item.location_id === selectedLocationId)?.location_name || null,
-      totalReviews: filteredItems.length,
-      badReviewCount: negativeReviews.length,
-      repliedCount: filteredItems.filter((row) => Boolean(String(row.reply_content || "").trim())).length,
-      hiddenCount: filteredItems.filter((row) => String(row.status || "").toLowerCase() === "hidden").length,
-      topIssues: topIssues.length ? topIssues : ["thai do phuc vu", "thoi gian cho"],
-      recentNegativeReviews: negativeReviews.slice(0, 5).map((row) => ({
-        review_id: row.review_id,
-        rating: row.rating,
-        user_name: row.user_name,
-        comment: row.comment,
-        created_at: row.created_at,
-      })),
-    };
-  }, [filteredItems, locations, selectedLocationId]);
-
   const columns: ColumnsType<ReviewRow> = useMemo(
     () => [
       { title: "#", dataIndex: "review_id", width: 80 },

@@ -1,10 +1,11 @@
-import { Pressable, Text, View } from "react-native";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useToastStore } from "./toast-store";
 
 export function ToastHost() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const visible = useToastStore((state) => state.visible);
   const message = useToastStore((state) => state.message);
   const hide = useToastStore((state) => state.hide);
@@ -16,13 +17,22 @@ export function ToastHost() {
   return (
     <View
       pointerEvents="box-none"
-      className="absolute left-0 right-0 top-0 bottom-0 z-50 items-center justify-center px-6"
+      className="absolute left-0 right-0 top-0 z-50 items-end px-3"
+      style={{ paddingTop: Math.max(insets.top + 10, 16) }}
     >
       <Pressable
         onPress={hide}
-        className="w-full max-w-[340px] rounded-2xl bg-teal-800 px-6 py-5 shadow-2xl border border-teal-600"
+        className="rounded-2xl border border-teal-100 bg-white px-4 py-3 shadow-2xl"
+        style={{
+          width: Math.min(340, width - 24),
+          elevation: 12,
+          shadowColor: "#0f766e",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+        }}
       >
-        <Text className="text-center text-[16px] font-bold leading-6 text-white">{message}</Text>
+        <Text className="text-left text-[14px] font-bold leading-5 text-slate-900">{message}</Text>
       </Pressable>
     </View>
   );

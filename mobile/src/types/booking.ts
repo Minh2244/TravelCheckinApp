@@ -5,7 +5,7 @@ export type TouristTicket = {
   ticket_code: string;
   service_name: string | null;
   location_name: string | null;
-  status: "unused" | "used" | "expired";
+  status: "pending" | "unused" | "used" | "expired" | "void" | "cancelled";
   use_date: string | null;
   issued_at: string | null;
   booking_id: number | null;

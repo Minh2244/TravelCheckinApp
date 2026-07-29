@@ -35,6 +35,21 @@ def build_action_plan(request: BotRequest, classification: ClassificationResult)
             warnings=[],
         )
 
+    entities = getattr(classification, "entities", None) or {}
+    required_params = (action_def.parameters_schema or {}).get("required") or []
+    missing_params = [
+        key for key in required_params
+        if entities.get(key) in (None, "", [], {})
+    ]
+    if missing_params:
+        return ActionPlan(
+            action_key="ask_clarification",
+            requires_confirmation=False,
+            risk_level="read",
+            summary="Thiếu thông tin bắt buộc: " + ", ".join(missing_params),
+            warnings=["Cần hỏi lại người dùng trước khi thực hiện."],
+        )
+
     warnings: list[str] = []
     if action_def.requires_confirmation:
         warnings.append("Cần xác nhận trước khi thực hiện.")

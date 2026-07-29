@@ -1,182 +1,52 @@
-import { AxiosError } from "axios";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Image,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AxiosError } from "axios";
+import { io } from "socket.io-client";
 
+import { getErrorMessage } from "../../../../src/lib/error";
 import { resolveBackendUrl } from "../../../../src/lib/url";
 import { isLocationOpen } from "../../../../src/lib/time";
-import { getErrorMessage } from "../../../../src/lib/error";
-import { normalizeImages, pad, toInputDateTime, toLocalISOString } from "../../../../src/lib/booking-utils";
-import { useBookingRealtime } from "../../../../src/hooks/useBookingRealtime";
+import { formatCurrency, parseInputDate, toInputDateTime, toLocalISOString } from "../../../../src/lib/booking-utils";
+import { VoucherStubCard } from "../../../../src/components/booking/VoucherStubCard";
 import { useAuthStore } from "../../../../src/modules/auth/store";
+import { AppAlert as Alert } from "../../../../src/modules/ui/app-alert";
 import { showToast } from "../../../../src/modules/ui/toast-store";
 import { bookingApi } from "../../../../src/services/booking.api";
 import { locationApi } from "../../../../src/services/location.api";
-import { userApi, type LocationVoucher } from "../../../../src/services/user.api";
 import type {
   LocationItem,
   LocationPosArea,
   LocationPosTable,
   LocationServiceItem,
 } from "../../../../src/types/location";
+import { userApi, type LocationVoucher } from "../../../../src/services/user.api";
 
 type SearchParams = {
   locationId?: string;
 };
 
-type MenuCategory = {
-  value: string;
-  label: string;
-  sortOrder: number;
-};
-
-function parseInputDate(value: string) {
-  const parts = value.trim().split(/[\s/\-:]+/);
-  if (parts.length >= 5) {
-    const d = parseInt(parts[0], 10);
-    const m = parseInt(parts[1], 10) - 1;
-    const y = parseInt(parts[2], 10);
-    const h = parseInt(parts[3], 10);
-    const min = parseInt(parts[4], 10);
-    const date = new Date(y, m, d, h, min);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-  return null;
-}
-
-function addMinutes(date: Date, minutes: number) {
-  const next = new Date(date);
-  next.setMinutes(next.getMinutes() + minutes);
-  return next;
-}
-
-function naturalCompare(a: string, b: string) {
-  return String(a || "").localeCompare(String(b || ""), "vi", {
-    numeric: true,
-    sensitivity: "base",
-  });
-}
-
-function asNumber(value: unknown, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function formatCurrency(value?: number | string | null) {
-  const amount = asNumber(value, 0);
-  return `${Math.max(0, Math.round(amount)).toLocaleString("vi-VN")} đ`;
-}
-
-function tableStatusLabel(status?: string) {
-  if (status === "occupied") return "Có khách";
-  if (status === "reserved") return "Đã giữ";
-  return "Trống";
-}
-
-function getServicePrice(service: LocationServiceItem) {
-  return asNumber(service.price, 0);
-}
-
-function getMenuCategory(service: LocationServiceItem) {
-  return String(
-    service.category_name ||
-      (service.service_type === "combo" ? "Combo" : "Món ăn"),
-  );
-}
-
-function isPreorderService(service: LocationServiceItem) {
-  const type = String(service.service_type || "").toLowerCase();
-  return ["food", "combo", "other"].includes(type) && service.status !== "inactive";
-}
-
-function getVoucherId(voucher: LocationVoucher) {
-  return Number(voucher.voucher_id);
-}
-
-function normalizeLocationIds(value: LocationVoucher["location_ids"]) {
-  if (Array.isArray(value)) return value.map(Number).filter(Number.isFinite);
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
-    } catch {
-      return value
-        .split(",")
-        .map((item) => Number(item.trim()))
-        .filter(Number.isFinite);
-    }
-  }
-  return [];
-}
-
-function voucherAppliesToLocation(voucher: LocationVoucher, locationId: number) {
-  const directLocationId = Number(voucher.location_id);
-  if (Number.isFinite(directLocationId) && directLocationId > 0) {
-    return directLocationId === locationId;
-  }
-
-  const locationIds = normalizeLocationIds(voucher.location_ids);
-  if (locationIds.length > 0) {
-    return locationIds.includes(locationId);
-  }
-
-  return true;
-}
-
-function voucherAppliesToFood(voucher: LocationVoucher) {
-  const serviceType = String(voucher.apply_to_service_type || "all").toLowerCase();
-  const locationType = String(voucher.apply_to_location_type || "all").toLowerCase();
-  return (
-    ["all", "food", "restaurant", "cafe", "table"].includes(serviceType) &&
-    ["all", "restaurant", "cafe", "food"].includes(locationType)
-  );
-}
-
-function voucherStillUsable(voucher: LocationVoucher) {
-  const remaining = Number(voucher.remaining);
-  if (Number.isFinite(remaining) && remaining <= 0) return false;
-
-  const maxUses = Number(voucher.max_uses_per_user);
-  const used = Number(voucher.user_used_count);
-  if (Number.isFinite(maxUses) && maxUses > 0 && Number.isFinite(used)) {
-    return used < maxUses;
-  }
-
-  return true;
-}
-
-function calculateVoucherDiscount(voucher: LocationVoucher | null, total: number) {
-  if (!voucher || total <= 0) return 0;
-
-  const minOrder = asNumber(voucher.min_order_value, 0);
-  if (total < minOrder) return 0;
-
-  const discountValue = asNumber(voucher.discount_value, 0);
-  const type = String(voucher.discount_type || "").toLowerCase();
-  let discount =
-    type === "percent" || type === "percentage"
-      ? (total * discountValue) / 100
-      : discountValue;
-
-  const maxDiscount = asNumber(voucher.max_discount_amount, 0);
-  if (maxDiscount > 0) discount = Math.min(discount, maxDiscount);
-
-  return Math.max(0, Math.min(total, Math.round(discount)));
-}
+import {
+  asNumber,
+  getVoucherId,
+  voucherStillUsable,
+  calculateVoucherDiscount,
+} from "../../../../src/lib/voucher-utils";
 
 export default function TableBookingScreen() {
   const router = useRouter();
@@ -197,8 +67,10 @@ export default function TableBookingScreen() {
   const [selectedArea, setSelectedArea] = useState("all");
   const [selectedTableIds, setSelectedTableIds] = useState<number[]>([]);
   const [checkInDate, setCheckInDate] = useState(() =>
-    toInputDateTime(new Date()),
+    toInputDateTime(new Date(Date.now() + 3600000)),
   );
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [contactName, setContactName] = useState(user?.full_name ?? "");
   const [contactPhone, setContactPhone] = useState(user?.phone ?? "");
   const [notes, setNotes] = useState("");
@@ -208,49 +80,32 @@ export default function TableBookingScreen() {
     Record<number, number>
   >({});
   const [selectedVoucherId, setSelectedVoucherId] = useState<number | null>(null);
-
-  // Socket.IO real-time table conflict detection
-  useBookingRealtime(locationId, {
-    onTableConflict: (tableId) => {
-      setSelectedTableIds((prev) => {
-        if (prev.includes(tableId)) {
-          showToast("Bàn bạn đang chọn vừa có người đặt trước. Vui lòng chọn bàn khác.");
-          return prev.filter((id) => id !== tableId);
-        }
-        return prev;
-      });
-    },
-    onStatusChanged: (data) => {
-      if (data?.type === "table" || data?.type === "pos_updated") {
-        // Reload tables silently when status changes
-        loadTables().catch(() => {});
-      }
-    },
-  });
+  const [showNoticeAccordion, setShowNoticeAccordion] = useState(true);
+  const [showAreaDropdown, setShowAreaDropdown] = useState(false);
 
   const loadTables = useCallback(async () => {
-    if (!Number.isFinite(locationId) || locationId <= 0) return null;
+    if (!Number.isFinite(locationId)) return null;
+    const checkIn = parseInputDate(checkInDate);
+    if (!checkIn) return null;
+
     setTablesLoading(true);
     try {
-      const dateToLoad = lastLoadedCheckInRef.current ?? checkInDate;
-      const response = await locationApi.getPosTables(locationId, {
-        check_in_date: parseInputDate(dateToLoad)?.toISOString(),
-      });
-      const nextTables = Array.isArray(response.data) ? response.data : [];
-      setTables(nextTables);
-      return nextTables;
-    } catch (error) {
-      showToast(getErrorMessage(error));
+      const iso = toLocalISOString(checkIn);
+      const res = await locationApi.getPosTables(locationId, { check_in_date: iso });
+      setTables(res.data || []);
+      return res.data || [];
+    } catch (err) {
+      showToast(getErrorMessage(err));
       return null;
     } finally {
       setTablesLoading(false);
     }
-  }, [locationId]);
+  }, [locationId, checkInDate]);
 
   useEffect(() => {
-    if (!Number.isFinite(locationId) || locationId <= 0) {
+    if (!Number.isFinite(locationId)) {
       setLoading(false);
-      showToast("Thiếu địa điểm để đặt bàn.");
+      showToast("Thiếu dữ liệu địa điểm.");
       return;
     }
 
@@ -260,36 +115,22 @@ export default function TableBookingScreen() {
     Promise.all([
       locationApi.getLocationById(locationId),
       locationApi.getPosAreas(locationId),
-      locationApi.getPosTables(locationId, {
-        check_in_date: parseInputDate(lastLoadedCheckInRef.current ?? checkInDate)?.toISOString(),
-      }),
       locationApi.getServices(locationId),
-      userApi.getMySavedVouchers().catch(() => ({ data: [] })),
+      userApi.getUsableVouchersByLocation(locationId),
     ])
-      .then(
-        ([
-          locationResponse,
-          areaResponse,
-          tableResponse,
-          servicesResponse,
-          voucherResponse,
-        ]) => {
-          if (!active) return;
-          setLocation(locationResponse.data);
-          setAreas(Array.isArray(areaResponse.data) ? areaResponse.data : []);
-          setTables(Array.isArray(tableResponse.data) ? tableResponse.data : []);
-          setServices(
-            Array.isArray(servicesResponse.data) ? servicesResponse.data : [],
-          );
-          setSavedVouchers(
-            Array.isArray(voucherResponse.data)
-              ? (voucherResponse.data as LocationVoucher[])
-              : [],
-          );
-        },
-      )
-      .catch((error) => {
-        if (active) showToast(getErrorMessage(error));
+      .then(([locRes, areasRes, srvRes, vouchersRes]) => {
+        if (!active) return;
+        setLocation(locRes.data);
+        setAreas(areasRes.data || []);
+        const foodOrDrink = (srvRes.data || []).filter((item: LocationServiceItem) => {
+          const t = String(item.service_type || "").toLowerCase();
+          return t === "food" || t === "drink";
+        });
+        setServices(foodOrDrink);
+        setSavedVouchers(vouchersRes.data || []);
+      })
+      .catch((err) => {
+        if (active) showToast(getErrorMessage(err));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -298,13 +139,24 @@ export default function TableBookingScreen() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId]);
+
+  useEffect(() => {
+    if (checkInDate && lastLoadedCheckInRef.current !== checkInDate) {
+      lastLoadedCheckInRef.current = checkInDate;
+      void loadTables();
+    }
+  }, [checkInDate, loadTables]);
 
   useEffect(() => {
     if (!location) return;
 
     const checkOpen = () => {
+      if (location.temp_close_type) {
+        showToast("Địa điểm đang tạm thời đóng cửa!");
+        router.replace("/(app)/(tabs)/home");
+        return false;
+      }
       if (!isLocationOpen(location.opening_hours)) {
         showToast("Địa điểm đã đóng cửa, không thể đặt dịch vụ lúc này.");
         router.replace("/(app)/(tabs)/home");
@@ -319,115 +171,127 @@ export default function TableBookingScreen() {
     return () => clearInterval(interval);
   }, [location, router]);
 
-  const areaOptions = useMemo(
-    () => [
-      { value: "all", label: "Tất cả" },
-      ...areas.map((area) => ({
-        value: String(area.area_id),
-        label: area.area_name,
-      })),
-    ],
-    [areas],
-  );
+  // Real-time (Socket.IO) for table state changes
+  useEffect(() => {
+    if (!Number.isFinite(locationId)) return;
+    const backendUrl = resolveBackendUrl("/");
+    if (!backendUrl) return;
 
-  const filteredTables = useMemo(() => {
-    const sorted = [...tables].sort((a, b) =>
-      naturalCompare(a.table_name, b.table_name),
-    );
+    const socket = io(backendUrl, { transports: ["websocket"] });
 
-    if (selectedArea === "all") return sorted;
-    const areaId = Number(selectedArea);
-    if (!Number.isFinite(areaId)) return sorted;
-    return sorted.filter((table) => Number(table.area_id) === areaId);
-  }, [selectedArea, tables]);
+    socket.on("connect", () => {
+      socket.emit("join_location_public", { locationId });
+    });
 
-  const selectedTables = useMemo(() => {
-    const selected = new Set(selectedTableIds);
-    return tables.filter((table) => selected.has(Number(table.table_id)));
-  }, [selectedTableIds, tables]);
-
-  const menuServices = useMemo(
-    () =>
-      services
-        .filter(isPreorderService)
-        .sort((a, b) => {
-          const sortA = asNumber(a.category_sort_order, 9999);
-          const sortB = asNumber(b.category_sort_order, 9999);
-          if (sortA !== sortB) return sortA - sortB;
-          const category = naturalCompare(getMenuCategory(a), getMenuCategory(b));
-          if (category !== 0) return category;
-          return naturalCompare(a.service_name, b.service_name);
-        }),
-    [services],
-  );
-
-  const menuCategories = useMemo<MenuCategory[]>(() => {
-    const map = new Map<string, MenuCategory>();
-    menuServices.forEach((service) => {
-      const label = getMenuCategory(service);
-      if (!map.has(label)) {
-        map.set(label, {
-          value: label,
-          label,
-          sortOrder: asNumber(service.category_sort_order, 9999),
-        });
+    socket.on("public_status_changed", (data: any) => {
+      if (
+        data?.type === "table_updated" ||
+        data?.type === "booking_updated" ||
+        data?.type === "table" ||
+        data?.type === "pos_updated"
+      ) {
+        void loadTables();
       }
     });
 
+    return () => {
+      socket.disconnect();
+    };
+  }, [locationId, loadTables]);
+
+  const areaOptions = useMemo(() => {
     return [
-      { value: "all", label: "Tất cả", sortOrder: -1 },
-      ...Array.from(map.values()).sort((a, b) => {
-        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-        return naturalCompare(a.label, b.label);
-      }),
+      { label: "Tất cả", value: "all" },
+      ...areas.map((a) => ({ label: a.area_name, value: String(a.area_id) })),
     ];
-  }, [menuServices]);
+  }, [areas]);
 
-  const filteredMenuServices = useMemo(() => {
-    if (selectedMenuCategory === "all") return menuServices;
-    return menuServices.filter(
-      (service) => getMenuCategory(service) === selectedMenuCategory,
-    );
-  }, [menuServices, selectedMenuCategory]);
+  const filteredTables = useMemo(() => {
+    let result = selectedArea === "all" ? [...tables] : tables.filter((t) => String(t.area_id) === selectedArea);
+    return result.sort((a, b) => a.table_name.localeCompare(b.table_name, undefined, { numeric: true }));
+  }, [tables, selectedArea]);
 
-  const preorderItems = useMemo(
-    () =>
-      Object.entries(preorderQtyByServiceId)
-        .map(([serviceId, quantity]) => ({
-          service_id: Number(serviceId),
-          quantity: Number(quantity),
-        }))
-        .filter((item) => Number.isFinite(item.service_id) && item.quantity > 0),
-    [preorderQtyByServiceId],
-  );
+  const menuCategories = useMemo(() => {
+    const map = new Map<string, number>();
+    map.set("Tất cả món", services.length);
+    services.forEach((s) => {
+      const cat = String(s.category_name || "Món khác").trim() || "Món khác";
+      map.set(cat, (map.get(cat) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
+  }, [services]);
+
+  const filteredServices = useMemo(() => {
+    if (selectedMenuCategory === "Tất cả món" || selectedMenuCategory === "all") return services;
+    return services.filter((s) => {
+      const cat = String(s.category_name || "Món khác").trim() || "Món khác";
+      return cat === selectedMenuCategory;
+    });
+  }, [services, selectedMenuCategory]);
+
+  const preorderItemsArray = useMemo(() => {
+    return Object.entries(preorderQtyByServiceId)
+      .filter(([_, qty]) => qty > 0)
+      .map(([idStr, quantity]) => ({
+        service_id: Number(idStr),
+        quantity,
+      }));
+  }, [preorderQtyByServiceId]);
 
   const preorderTotal = useMemo(() => {
-    const serviceById = new Map(
-      menuServices.map((service) => [Number(service.service_id), service] as const),
+    let sum = 0;
+    for (const item of preorderItemsArray) {
+      const found = services.find((s) => Number(s.service_id) === item.service_id);
+      if (found) {
+        sum += asNumber(found.price, 0) * item.quantity;
+      }
+    }
+    return sum;
+  }, [preorderItemsArray, services]);
+
+  const usableVouchers = useMemo(() => {
+    return savedVouchers.filter((v) => {
+      if (!voucherStillUsable(v)) return false;
+      
+      // Filter by location type
+      if (v.apply_to_location_type && v.apply_to_location_type !== "all" && location?.location_type) {
+        if (v.apply_to_location_type !== location.location_type) return false;
+      }
+      
+      // Filter by service type (table maps to food)
+      if (v.apply_to_service_type && v.apply_to_service_type !== "all") {
+        if (v.apply_to_service_type !== "food") return false;
+      }
+      
+      return true;
+    });
+  }, [savedVouchers, location]);
+
+  const groupedVouchers = useMemo(() => {
+    const map = new Map<string, { voucher: LocationVoucher; actualQuantity: number }>();
+    usableVouchers.forEach((v) => {
+      const discountVal = asNumber(v.discount_value, 0);
+      const discountType = String(v.discount_type || "").toLowerCase();
+      const minOrder = asNumber(v.min_order_value, 0);
+      const campaignName = v.campaign_name || "Voucher Giảm Giá";
+      const locName = v.location_name || (v.location_id ? location?.location_name : "Toàn hệ thống");
+
+      const key = `${discountVal}_${discountType}_${minOrder}_${campaignName}_${locName}`;
+      if (map.has(key)) {
+        map.get(key)!.actualQuantity += 1;
+      } else {
+        map.set(key, { voucher: v, actualQuantity: 1 });
+      }
+    });
+    return Array.from(map.values());
+  }, [usableVouchers, location]);
+
+  const selectedVoucher = useMemo(() => {
+    if (selectedVoucherId == null) return null;
+    return (
+      usableVouchers.find((v) => getVoucherId(v) === selectedVoucherId) ?? null
     );
-    return preorderItems.reduce((sum, item) => {
-      const service = serviceById.get(item.service_id);
-      return sum + (service ? getServicePrice(service) * item.quantity : 0);
-    }, 0);
-  }, [menuServices, preorderItems]);
-
-  const usableVouchers = useMemo(
-    () =>
-      savedVouchers
-        .filter((voucher) => Boolean(voucher.code))
-        .filter((voucher) => voucherAppliesToLocation(voucher, locationId))
-        .filter(voucherAppliesToFood)
-        .filter(voucherStillUsable)
-        .filter((voucher) => preorderTotal >= asNumber(voucher.min_order_value, 0)),
-    [locationId, preorderTotal, savedVouchers],
-  );
-
-  const selectedVoucher = useMemo(
-    () =>
-      usableVouchers.find((voucher) => getVoucherId(voucher) === selectedVoucherId) ??
-      null,
-    [selectedVoucherId, usableVouchers],
-  );
+  }, [selectedVoucherId, usableVouchers]);
 
   const voucherDiscount = useMemo(
     () => calculateVoucherDiscount(selectedVoucher, preorderTotal),
@@ -436,22 +300,13 @@ export default function TableBookingScreen() {
 
   const payableTotal = Math.max(0, preorderTotal - voucherDiscount);
 
-  useEffect(() => {
-    if (
-      selectedVoucherId != null &&
-      !usableVouchers.some((voucher) => getVoucherId(voucher) === selectedVoucherId)
-    ) {
-      setSelectedVoucherId(null);
-    }
-  }, [selectedVoucherId, usableVouchers]);
-
   const canSubmit =
     selectedTableIds.length > 0 &&
     Boolean(parseInputDate(checkInDate)) &&
     Boolean(contactName.trim()) &&
     Boolean(contactPhone.trim()) &&
     (!preorderEnabled ||
-      (selectedTableIds.length === 1 && preorderItems.length > 0)) &&
+      (selectedTableIds.length === 1 && preorderItemsArray.length > 0)) &&
     !submitting;
 
   function toggleTable(table: LocationPosTable) {
@@ -489,30 +344,36 @@ export default function TableBookingScreen() {
         setSelectedTableIds((ids) => ids.slice(0, 1));
         showToast("Đặt món trước chỉ giữ lại 1 bàn để đúng quy định thanh toán.");
       }
-      if (!next) {
-        setPreorderQtyByServiceId({});
-        setSelectedVoucherId(null);
-      }
       return next;
     });
   }
 
   async function handleSubmit() {
+    if (!location) return;
+
+    if (selectedTableIds.length === 0) {
+      showToast("Vui lòng chọn ít nhất 1 bàn.");
+      return;
+    }
     const checkIn = parseInputDate(checkInDate);
-
-    if (!location || !checkIn) {
-      showToast("Bạn kiểm tra lại thông tin đặt bàn nha.");
+    if (!checkIn) {
+      showToast("Thời gian tới không hợp lệ.");
+      return;
+    }
+    if (!contactName.trim() || !contactPhone.trim()) {
+      showToast("Vui lòng điền đủ họ tên và số điện thoại.");
       return;
     }
 
-    if (preorderEnabled && selectedTableIds.length !== 1) {
-      showToast("Đặt món trước chỉ chọn đúng 1 bàn.");
-      return;
-    }
-
-    if (preorderEnabled && preorderItems.length === 0) {
-      showToast("Bạn chọn món trước rồi mới tiếp tục thanh toán nha.");
-      return;
+    if (preorderEnabled) {
+      if (selectedTableIds.length > 1) {
+        showToast("Khi đặt món trước, chỉ được chọn 1 bàn.");
+        return;
+      }
+      if (preorderItemsArray.length === 0) {
+        showToast("Vui lòng chọn ít nhất 1 món khi bật đặt món trước.");
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -548,56 +409,67 @@ export default function TableBookingScreen() {
         contact_phone: contactPhone.trim(),
         notes: notes.trim() || null,
         table_ids: selectedTableIds,
-        preorder_items: preorderEnabled ? preorderItems : undefined,
+        preorder_items: preorderEnabled ? preorderItemsArray : undefined,
         reserve_on_confirm: preorderEnabled ? true : undefined,
         voucher_code:
           preorderEnabled && selectedVoucher?.code ? selectedVoucher.code : null,
       });
 
-      // Reset state for both cases so the form is cleared
       setSelectedTableIds([]);
       setPreorderEnabled(false);
       setPreorderQtyByServiceId({});
       setSelectedVoucherId(null);
       setNotes("");
-      
+
       if (preorderEnabled) {
-        void loadTables(); // Reload tables in background
+        void loadTables();
+        const createdFinalAmount = Math.max(0, Number(response.data.finalAmount ?? payableTotal));
+        if (createdFinalAmount <= 0) {
+          showToast("Đặt bàn thành công. Đơn 0đ không cần chuyển khoản.");
+          return;
+        }
         router.push(
-          `/booking/payment/${response.data.bookingId}?mode=table&returnTo=back` as never,
+          `/booking/payment/${response.data.bookingId}?mode=table&returnTo=${encodeURIComponent(`/booking/table/0?locationId=${locationId}`)}` as never,
         );
         return;
       }
 
       await loadTables();
 
-      // Show prominent success feedback
       Alert.alert(
         "Đặt bàn thành công! 🎉",
-        `Booking #${response.data.bookingId} đã được gửi.\n\nOwner sẽ duyệt yêu cầu đặt bàn của bạn. Bạn sẽ nhận thông báo khi được xác nhận.`,
-        [{ text: "OK", onPress: () => {} }],
+        `Booking #${response.data.bookingId} đã được gửi.\n\nChủ địa điểm (Owner) sẽ duyệt yêu cầu đặt bàn của bạn. Bạn sẽ nhận thông báo khi được xác nhận.`,
+        [
+          {
+            text: "Đóng",
+            style: "cancel",
+          },
+        ],
       );
     } catch (error) {
-      // Reload tables and clear conflicted selections
-      try {
-        const latestTables = await loadTables();
-        if (latestTables) {
-          setSelectedTableIds((prev) =>
-            prev.filter((id) => {
-              const t = latestTables.find((tbl) => Number(tbl.table_id) === id);
-              return t?.status === "free";
-            })
-          );
-        }
-      } catch {}
+      if (preorderEnabled) {
+        try {
+          const latest = await loadTables();
+          if (latest) {
+            const byId = new Map(
+              latest.map((t) => [Number(t.table_id), t] as const),
+            );
+            setSelectedTableIds((current) =>
+              current.filter((id) => {
+                const t = byId.get(id);
+                return t?.status === "free";
+              })
+            );
+          }
+        } catch { }
+      }
 
-      // Show user-friendly error
       let msg = getErrorMessage(error);
       if (error instanceof AxiosError && error.response?.status === 409) {
         msg = msg || "Bàn đã có người đặt trước. Vui lòng chọn bàn khác.";
         Alert.alert("Không thể đặt bàn", msg, [{ text: "OK" }]);
       } else {
-        showToast(msg || "Có lỗi xảy ra khi đặt bàn.", 5000);
+        showToast(msg || "Có lỗi xảy ra khi đặt bàn.");
       }
     } finally {
       setSubmitting(false);
@@ -607,150 +479,255 @@ export default function TableBookingScreen() {
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color="#1b4332" />
         <Text style={styles.loadingText}>Đang tải sơ đồ bàn...</Text>
       </View>
     );
   }
 
+  const coverUrl = resolveBackendUrl((location as any)?.first_image || (location as any)?.images?.[0] || (location as any)?.avatar_url);
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color="#0f172a" />
+    <View style={styles.container}>
+      {/* Top Header Navigation Bar */}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: Math.max(insets.top, 12), paddingBottom: 12, backgroundColor: "#fbf6ee", borderBottomWidth: 1, borderBottomColor: "#f1e5d3" }}>
+        <Pressable style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#f1e5d3" }} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={24} color="#382119" />
         </Pressable>
-        <View style={styles.headerText}>
-          <Text style={styles.eyebrow}>Đặt bàn</Text>
-          <Text style={styles.title} numberOfLines={1}>
-            {location?.location_name || "Địa điểm ăn uống"}
+        <View style={{ alignItems: "center", flex: 1, marginHorizontal: 8 }}>
+          <Text style={{ fontSize: 18, fontWeight: "800", color: "#382119" }} numberOfLines={1}>
+            Xác nhận đặt bàn
           </Text>
         </View>
-        <Pressable style={styles.cartButton} onPress={() => router.push("/wallet/table-pass")}>
-          <Ionicons name="cart-outline" size={24} color="#0f172a" />
+        <Pressable
+          style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#f8ebd7", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#eed8b8" }}
+          onPress={() => router.push(`/wallet/table-pass?locationId=${locationId}` as any)}
+        >
+          <Ionicons name="cart-outline" size={22} color="#c07d33" />
         </Pressable>
       </View>
 
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: Math.max(insets.bottom, 18) + 126 },
-        ]}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.noticeCard}>
-          <Text style={styles.noticeTitle}>Lưu ý</Text>
-          <Text style={styles.noticeText}>1. Bạn có thể chọn một hoặc nhiều bàn còn trống.</Text>
-          <Text style={styles.noticeText}>2. Bàn đã có khách hoặc đã được giữ sẽ không chọn được.</Text>
-          <Text style={styles.noticeText}>3. Nếu đến trễ hơn 1 tiếng, hệ thống có thể tự hủy giữ chỗ.</Text>
-          <Text style={styles.noticeText}>4. Nếu đặt món trước, bạn cần chuyển khoản trước khi gửi owner duyệt.</Text>
-        </View>
-
-        <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Thông tin đặt chỗ</Text>
-          <View style={styles.field}>
-            <Text style={styles.label}>Thời gian tới <Text style={styles.labelHint}>(DD/MM/YYYY HH:mm)</Text></Text>
-            <TextInput
-              value={checkInDate}
-              onChangeText={setCheckInDate}
-              onBlur={() => {
-                const parsed = parseInputDate(checkInDate);
-                if (!parsed) return;
-                const nowFloorMinute = new Date();
-                nowFloorMinute.setSeconds(0, 0);
-                if (parsed < nowFloorMinute) {
-                  Alert.alert(
-                    "Thời gian không hợp lệ",
-                    "Thời gian tới phải là tương lai, vui lòng chọn lại.",
-                    [{ text: "OK" }]
-                  );
-                  return;
-                }
-                // Chỉ reload nếu ngày giờ thực sự thay đổi
-                if (lastLoadedCheckInRef.current !== checkInDate) {
-                  lastLoadedCheckInRef.current = checkInDate;
-                  setSelectedTableIds([]);
-                  void loadTables();
-                }
-              }}
-              placeholder="VD: 27/06/2026 20:00"
-              style={styles.input}
-              autoCapitalize="none"
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.twoColumns}>
-            <View style={[styles.field, styles.flexField]}>
-              <Text style={styles.label}>Họ tên</Text>
-              <TextInput
-                value={contactName}
-                onChangeText={setContactName}
-                placeholder="Tên người đặt"
-                style={styles.input}
-              />
-            </View>
-            <View style={[styles.field, styles.flexField]}>
-              <Text style={styles.label}>Số điện thoại</Text>
-              <TextInput
-                value={contactPhone}
-                onChangeText={setContactPhone}
-                placeholder="Số điện thoại"
-                keyboardType="phone-pad"
-                style={styles.input}
-              />
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.tableCard}>
-          <View style={styles.tableHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Chọn bàn</Text>
-              <Text style={styles.helperText}>
-                Đã chọn {selectedTableIds.length} bàn
-              </Text>
-            </View>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.areaList}
-          >
-            {areaOptions.map((area) => {
-              const active = selectedArea === area.value;
-              return (
-                <Pressable
-                  key={area.value}
-                  style={[styles.areaChip, active && styles.areaChipActive]}
-                  onPress={() => setSelectedArea(area.value)}
-                >
-                  <Text style={[styles.areaText, active && styles.areaTextActive]}>
-                    {area.label}
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Location Banner Card with Right Cover Image (Matching dulich.png) */}
+          <View style={{ flexDirection: "row", backgroundColor: "#ffffff", borderRadius: 16, overflow: "hidden", marginHorizontal: 16, marginTop: 12, marginBottom: 14, borderWidth: 1, borderColor: "#f1e5d3", minHeight: 110, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05 }}>
+            <View style={{ flex: 1, padding: 14, justifyContent: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#e8f5ed", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="location" size={20} color="#1b4332" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: "#382119", marginBottom: 4 }} numberOfLines={1}>
+                    {(location as any)?.location_name || "Cafe Trung Nguyên"}
                   </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                  <Text style={{ fontSize: 12, color: "#8c6b53", lineHeight: 16 }} numberOfLines={3}>
+                    {(location as any)?.address || "Trung Nguyên E-Coffee, Trần Chiên, Phường Cái Răng, Thành phố Cần Thơ"}
+                  </Text>
+                </View>
+              </View>
+            </View>
 
-          {tablesLoading ? (
-            <View style={styles.inlineLoading}>
-              <ActivityIndicator color="#0f766e" />
-              <Text style={styles.loadingText}>Đang kiểm tra bàn...</Text>
+            {coverUrl ? (
+              <Image source={{ uri: coverUrl }} style={{ width: 140, height: "100%" }} resizeMode="cover" />
+            ) : null}
+          </View>
+
+          {/* Section: Lưu ý khi đặt bàn (Accordion Matching Image 3) */}
+          <View style={styles.noticeCard}>
+            <Pressable
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: showNoticeAccordion ? 10 : 0 }}
+              onPress={() => setShowNoticeAccordion(!showNoticeAccordion)}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: "#f8ebd7", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="cafe-outline" size={16} color="#c07d33" />
+                </View>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: "#382119" }}>Lưu ý khi đặt bàn</Text>
+              </View>
+              <Ionicons name={showNoticeAccordion ? "chevron-up" : "chevron-down"} size={18} color="#8c6b53" />
+            </Pressable>
+
+            {showNoticeAccordion && (
+              <View style={{ gap: 8 }}>
+                {[
+                  "Bạn có thể chọn một hoặc nhiều bàn còn trống.",
+                  "Bàn đã có khách hoặc đã được giữ sẽ không chọn được.",
+                  "Nếu đến trễ hơn 1 tiếng, hệ thống có thể tự hủy giữ chỗ.",
+                  "Nếu đặt món trước, bạn cần chuyển khoản trước khi gửi owner duyệt.",
+                ].map((rule, idx) => (
+                  <View key={idx} style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: "#f8ebd7", alignItems: "center", justifyContent: "center", marginTop: 1 }}>
+                      <Ionicons name="checkmark" size={12} color="#c07d33" />
+                    </View>
+                    <Text style={{ fontSize: 12, color: "#6b5344", flex: 1, lineHeight: 17 }}>{rule}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Section: Thông tin đặt chỗ */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeader}>
+              <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: "#f8ebd7", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="person-outline" size={16} color="#c07d33" />
+              </View>
+              <Text style={styles.sectionTitle}>Thông tin đặt chỗ</Text>
             </View>
-          ) : filteredTables.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>Chưa có bàn</Text>
-              <Text style={styles.emptyText}>
-                Owner chưa cấu hình bàn cho khu này.
-              </Text>
+
+            <View style={{ gap: 12 }}>
+              {/* Row 1: Name and Phone */}
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Họ tên</Text>
+                  <View style={styles.inputFieldContainer}>
+                    <Ionicons name="person-outline" size={18} color="#8c6b53" />
+                    <TextInput
+                      value={contactName}
+                      onChangeText={setContactName}
+                      placeholder="Nhựt Minh"
+                      placeholderTextColor="#a8907e"
+                      style={styles.inputFieldWithIcon}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Số điện thoại</Text>
+                  <View style={styles.inputFieldContainer}>
+                    <Ionicons name="call-outline" size={18} color="#8c6b53" />
+                    <TextInput
+                      value={contactPhone}
+                      onChangeText={setContactPhone}
+                      placeholder="0869318428"
+                      placeholderTextColor="#a8907e"
+                      keyboardType="phone-pad"
+                      style={styles.inputFieldWithIcon}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* Row 2: Date and Time */}
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Ngày đến</Text>
+                  <Pressable onPress={() => setShowDatePicker(true)} style={styles.inputPicker}>
+                    <Ionicons name="calendar-outline" size={18} color="#c07d33" />
+                    <Text style={{ color: "#382119", fontWeight: "600", fontSize: 14, flex: 1 }} numberOfLines={1}>
+                      {checkInDate.split(' ')[0] ?? ''}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#8c6b53" />
+                  </Pressable>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inputLabel}>Giờ đến</Text>
+                  <Pressable onPress={() => setShowTimePicker(true)} style={styles.inputPicker}>
+                    <Ionicons name="time-outline" size={18} color="#c07d33" />
+                    <Text style={{ color: "#382119", fontWeight: "600", fontSize: 14, flex: 1 }} numberOfLines={1}>
+                      {checkInDate.split(' ')[1] ?? '00:00'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#8c6b53" />
+                  </Pressable>
+                </View>
+              </View>
             </View>
-          ) : (
-            <View style={styles.tableListContainer}>
-              <ScrollView nestedScrollEnabled contentContainerStyle={styles.tableGrid}>
+          </View>
+
+          {/* Section: Chọn bàn */}
+          <View style={styles.sectionCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: "#f8ebd7", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="restaurant-outline" size={16} color="#c07d33" />
+                </View>
+                <Text style={styles.sectionTitle}>Chọn bàn</Text>
+              </View>
+
+              {/* Area Filter Dropdown */}
+              <View style={{ position: "relative", zIndex: 10 }}>
+                <Pressable
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    backgroundColor: "#f8ebd7",
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 20,
+                  }}
+                  onPress={() => setShowAreaDropdown(!showAreaDropdown)}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#1b4332" }}>
+                    Khu vực: {areaOptions.find(a => a.value === selectedArea)?.label || "Tất cả"}
+                  </Text>
+                  <Ionicons name={showAreaDropdown ? "chevron-up" : "chevron-down"} size={14} color="#1b4332" />
+                </Pressable>
+
+                {showAreaDropdown && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 36,
+                      right: 0,
+                      backgroundColor: "#ffffff",
+                      borderRadius: 12,
+                      padding: 8,
+                      width: 140,
+                      borderWidth: 1,
+                      borderColor: "#f1e5d3",
+                      elevation: 5,
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 8,
+                      zIndex: 20,
+                    }}
+                  >
+                    {areaOptions.map((area) => {
+                      const active = selectedArea === area.value;
+                      return (
+                        <Pressable
+                          key={area.value}
+                          style={{
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 8,
+                            backgroundColor: active ? "#f4fbf7" : "transparent",
+                          }}
+                          onPress={() => {
+                            setSelectedArea(area.value);
+                            setShowAreaDropdown(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: active ? "700" : "500", color: active ? "#1b4332" : "#382119" }}>
+                            {area.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {tablesLoading ? (
+              <View style={{ padding: 20, alignItems: "center" }}>
+                <ActivityIndicator color="#1b4332" />
+                <Text style={{ marginTop: 8, fontSize: 13, color: "#8c6b53" }}>Đang kiểm tra bàn...</Text>
+              </View>
+            ) : filteredTables.length === 0 ? (
+              <Text style={{ fontSize: 13, color: "#8c6b53", padding: 16 }}>Chưa có bàn nào được cấu hình cho khu vực này.</Text>
+            ) : (
+              <ScrollView nestedScrollEnabled style={{ maxHeight: 240 }} contentContainerStyle={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingVertical: 4 }}>
                 {filteredTables.map((table) => {
                   const tableId = Number(table.table_id);
                   const selected = selectedTableIds.includes(tableId);
@@ -760,783 +737,522 @@ export default function TableBookingScreen() {
                     <Pressable
                       key={table.table_id}
                       style={[
-                        styles.tableItem,
-                        selected && styles.tableItemSelected,
-                        disabled && styles.tableItemDisabled,
+                        styles.tableCardItem,
+                        selected && styles.tableCardSelected,
+                        disabled && styles.tableCardDisabled,
                       ]}
                       onPress={() => toggleTable(table)}
+                      disabled={disabled}
                     >
-                      <Text
-                        style={[
-                          styles.tableName,
-                          disabled && styles.tableNameDisabled,
-                        ]}
-                        numberOfLines={1}
-                      >
+                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                        <Ionicons name="restaurant" size={20} color={selected ? "#1b4332" : disabled ? "#94a3b8" : "#c07d33"} />
+                        {selected ? (
+                          <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: "#1b4332", alignItems: "center", justifyContent: "center" }}>
+                            <Ionicons name="checkmark" size={12} color="#ffffff" />
+                          </View>
+                        ) : disabled && table.status === "occupied" ? (
+                          <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: "#64748b", alignItems: "center", justifyContent: "center" }}>
+                            <Ionicons name="close" size={12} color="#ffffff" />
+                          </View>
+                        ) : disabled && table.status === "reserved" ? (
+                          <Ionicons name="time" size={16} color="#d97706" />
+                        ) : null}
+                      </View>
+
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: disabled ? "#94a3b8" : "#382119" }}>
                         {table.table_name}
                       </Text>
-                      <Text
-                        style={[
-                          styles.statusBadge,
-                          table.status === "free" && styles.statusFree,
-                          table.status === "reserved" && styles.statusReserved,
-                          table.status === "occupied" && styles.statusOccupied,
-                        ]}
-                      >
-                        {selected ? "Đã chọn" : tableStatusLabel(table.status)}
-                      </Text>
+                      <View style={[
+                        styles.tableStatusBadge,
+                        table.status === "free" ? styles.badgeFree : table.status === "reserved" ? styles.badgeReserved : styles.badgeOccupied
+                      ]}>
+                        <Text style={styles.badgeText}>
+                          {table.status === "free" ? "Trống" : table.status === "reserved" ? "Đang giữ" : "Đã có khách"}
+                        </Text>
+                      </View>
                     </Pressable>
                   );
                 })}
               </ScrollView>
-            </View>
-          )}
-
-          <Pressable style={styles.preorderToggle} onPress={togglePreorder}>
-            <View style={[styles.checkbox, preorderEnabled && styles.checkboxActive]}>
-              {preorderEnabled ? (
-                <Ionicons name="checkmark" size={16} color="#ffffff" />
-              ) : null}
-            </View>
-            <View style={styles.preorderToggleText}>
-              <Text style={styles.preorderTitle}>
-                Đặt món trước (bắt buộc chuyển khoản)
-              </Text>
-              <Text style={styles.helperText}>
-                Chọn món và voucher trước khi sang mã QR thanh toán.
-              </Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {preorderEnabled ? (
-          <View style={styles.formCard}>
-            <View style={styles.tableHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Món đặt trước</Text>
-                <Text style={styles.helperText}>
-                  Chỉ áp dụng khi chọn đúng 1 bàn
-                </Text>
-              </View>
-              <Text style={styles.countPill}>{preorderItems.length}</Text>
-            </View>
-
-            {menuCategories.length > 1 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.areaList}
-              >
-                {menuCategories.map((category) => {
-                  const active = selectedMenuCategory === category.value;
-                  return (
-                    <Pressable
-                      key={category.value}
-                      style={[styles.areaChip, active && styles.areaChipActive]}
-                      onPress={() => setSelectedMenuCategory(category.value)}
-                    >
-                      <Text
-                        style={[styles.areaText, active && styles.areaTextActive]}
-                      >
-                        {category.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            ) : null}
-
-            {filteredMenuServices.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>Chưa có món</Text>
-                <Text style={styles.emptyText}>
-                  Owner chưa cấu hình menu cho đặt trước.
-                </Text>
-              </View>
-            ) : (
-            <View style={styles.menuListContainer}>
-              <ScrollView nestedScrollEnabled contentContainerStyle={styles.menuList}>
-                {filteredMenuServices.map((service) => {
-                  const serviceId = Number(service.service_id);
-                  const quantity = preorderQtyByServiceId[serviceId] || 0;
-                  const images = normalizeImages(service.images);
-                  const coverUrl = images.length > 0 ? resolveBackendUrl(images[0]) : null;
-                  return (
-                    <View key={service.service_id} style={styles.menuItem}>
-                      <View style={styles.menuItemImageContainer}>
-                        {coverUrl ? (
-                          <Image source={{ uri: coverUrl }} style={styles.menuItemImage} />
-                        ) : (
-                          <Ionicons name="fast-food-outline" size={24} color="#94a3b8" />
-                        )}
-                      </View>
-                      <View style={styles.menuInfo}>
-                        <Text style={styles.menuName} numberOfLines={2}>
-                          {service.service_name}
-                        </Text>
-                        <Text style={styles.menuMeta}>
-                          {getMenuCategory(service)} • {formatCurrency(service.price)}
-                        </Text>
-                      </View>
-                      <View style={styles.qtyControl}>
-                        <Pressable
-                          style={styles.qtyButton}
-                          onPress={() => updatePreorderQuantity(serviceId, -1)}
-                        >
-                          <Ionicons name="remove" size={17} color="#0f766e" />
-                        </Pressable>
-                        <Text style={styles.qtyText}>{quantity}</Text>
-                        <Pressable
-                          style={styles.qtyButton}
-                          onPress={() => updatePreorderQuantity(serviceId, 1)}
-                        >
-                          <Ionicons name="add" size={17} color="#0f766e" />
-                        </Pressable>
-                      </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </View>
             )}
+          </View>
 
-            <View style={styles.divider} />
-            <Text style={styles.label}>Voucher</Text>
-            <View style={styles.voucherList}>
-              <Pressable
-                style={[
-                  styles.voucherItem,
-                  selectedVoucherId == null && styles.voucherItemActive,
-                ]}
-                onPress={() => setSelectedVoucherId(null)}
-              >
-                <Text style={styles.voucherTitle}>Không dùng voucher</Text>
-              </Pressable>
-              {usableVouchers.map((voucher) => {
-                const active = selectedVoucherId === getVoucherId(voucher);
-                return (
-                  <Pressable
-                    key={voucher.voucher_id}
-                    style={[styles.voucherItem, active && styles.voucherItemActive]}
-                    onPress={() => setSelectedVoucherId(getVoucherId(voucher))}
-                  >
-                    <Text style={styles.voucherTitle}>
-                      {voucher.campaign_name || voucher.code || "Voucher"}
-                    </Text>
-                    <Text style={styles.voucherMeta}>
-                      Giảm {String(voucher.discount_type).includes("percent")
-                        ? `${voucher.discount_value}%`
-                        : formatCurrency(voucher.discount_value)}
-                      {voucher.code ? ` • ${voucher.code}` : ""}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          {/* Section: Đặt món trước (Toggle Matching Image 3) */}
+          <View style={styles.sectionCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#e8f5ed", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="restaurant-outline" size={20} color="#1b4332" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: "#382119" }}>
+                    Đặt món trước (bắt buộc chuyển khoản)
+                  </Text>
+                  <Text style={{ fontSize: 11, color: "#8c6b53", marginTop: 2 }}>
+                    Chọn món và voucher trước khi sang mã QR thanh toán.
+                  </Text>
+                </View>
+              </View>
 
-            <View style={styles.summaryBox}>
-              <SummaryRow label="Tạm tính" value={formatCurrency(preorderTotal)} />
-              <SummaryRow label="Voucher" value={`-${formatCurrency(voucherDiscount)}`} />
-              <SummaryRow
-                label="Cần chuyển khoản"
-                value={formatCurrency(payableTotal)}
-                strong
+              <Switch
+                value={preorderEnabled}
+                onValueChange={togglePreorder}
+                trackColor={{ false: "#cbd5e1", true: "#1b4332" }}
+                thumbColor="#ffffff"
               />
             </View>
-          </View>
-        ) : null}
 
-        <View style={styles.formCard}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Ghi chú</Text>
+            {/* Menu List when Pre-order is ON */}
+            {preorderEnabled && (
+              <View style={{ marginTop: 14, borderTopWidth: 1, borderTopColor: "#f1e5d3", paddingTop: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+                  {menuCategories.map((c) => {
+                    const active = selectedMenuCategory === c.name;
+                    return (
+                      <Pressable
+                        key={c.name}
+                        onPress={() => setSelectedMenuCategory(c.name)}
+                        style={[styles.categoryPill, active && styles.categoryPillActive]}
+                      >
+                        <Text style={[styles.categoryPillText, active && styles.categoryPillTextActive]}>
+                          {c.name} ({c.count})
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                <ScrollView nestedScrollEnabled style={{ maxHeight: 320 }} contentContainerStyle={{ gap: 10 }}>
+                  {filteredServices.map((service) => {
+                    const qty = preorderQtyByServiceId[service.service_id] || 0;
+                    const imgUrl = service.images ? (Array.isArray(service.images) ? service.images[0] : (typeof service.images === "string" ? (() => { try { const parsed = JSON.parse(service.images); return Array.isArray(parsed) ? parsed[0] : null; } catch { return null; } })() : null)) : null;
+                    const fullImgUrl = imgUrl ? resolveBackendUrl(imgUrl) : null;
+
+                    return (
+                      <View key={service.service_id} style={styles.menuCardRow}>
+                        <View style={styles.menuImageContainer}>
+                          {fullImgUrl ? (
+                            <Image source={{ uri: fullImgUrl }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                          ) : (
+                            <Ionicons name="fast-food-outline" size={24} color="#8c6b53" />
+                          )}
+                        </View>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={{ fontSize: 14, fontWeight: "700", color: "#382119" }}>{service.service_name}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: "700", color: "#1b4332", marginTop: 2 }}>
+                            {formatCurrency(service.price)}
+                          </Text>
+                        </View>
+                        <View style={styles.stepperContainer}>
+                          <Pressable
+                            style={styles.stepBtn}
+                            onPress={() => updatePreorderQuantity(service.service_id, -1)}
+                          >
+                            <Ionicons name="remove" size={16} color="#382119" />
+                          </Pressable>
+                          <Text style={styles.stepperValue}>{qty}</Text>
+                          <Pressable
+                            style={styles.stepBtn}
+                            onPress={() => updatePreorderQuantity(service.service_id, 1)}
+                          >
+                            <Ionicons name="add" size={16} color="#382119" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Vouchers Grouped List */}
+                {groupedVouchers.length > 0 && (
+                  <View style={{ marginTop: 14 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "800", color: "#382119", marginBottom: 8 }}>Ưu đãi & Voucher địa điểm</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
+                      {groupedVouchers.map(({ voucher, actualQuantity }) => {
+                        const vId = getVoucherId(voucher);
+                        const isSelected = selectedVoucherId === vId;
+                        const minOrder = asNumber(voucher.min_order_value, 0);
+                        const maxDiscount = asNumber(voucher.max_discount_amount, 0);
+                        const isEligible = preorderTotal >= minOrder;
+
+                        return (
+                          <VoucherStubCard
+                            key={vId}
+                            voucher={voucher}
+                            actualQuantity={actualQuantity}
+                            minOrder={minOrder}
+                            maxDiscount={maxDiscount}
+                            isSelected={isSelected}
+                            isEligible={isEligible}
+                            width={320}
+                            onSelect={() => {
+                              if (!isEligible) {
+                                showToast(`Đơn tối thiểu để dùng voucher này là ${formatCurrency(minOrder)}`);
+                                return;
+                              }
+                              setSelectedVoucherId(isSelected ? null : vId);
+                            }}
+                          />
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* Section: Ghi chú */}
+          <View style={styles.sectionCard}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="create-outline" size={16} color="#c07d33" />
+                <Text style={styles.sectionTitle}>Ghi chú</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: "#8c6b53" }}>{notes.length}/200</Text>
+            </View>
+
             <TextInput
               value={notes}
-              onChangeText={setNotes}
-              placeholder="Yêu cầu thêm nếu có"
-              style={[styles.input, styles.noteInput]}
+              onChangeText={(txt) => setNotes(txt.slice(0, 200))}
+              placeholder="Yêu cầu thêm nếu có..."
+              placeholderTextColor="#a8907e"
               multiline
+              style={styles.textArea}
               textAlignVertical="top"
             />
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
+      {/* Floating Bottom Footer Bar (Matching Image 3) */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <View style={styles.footerInfo}>
-          <Text style={styles.totalLabel}>
-            {preorderEnabled ? "Thanh toán trước" : "Bàn đã chọn"}
+        <View style={styles.footerLeftBox}>
+          <Text style={{ fontSize: 11, color: "#a8907e" }} numberOfLines={1}>
+            {selectedTableIds.length > 0
+              ? tables.filter((t) => selectedTableIds.includes(Number(t.table_id))).map((t) => t.table_name).join(", ")
+              : "Chưa chọn bàn"}
           </Text>
-          <Text style={styles.totalValue} numberOfLines={2}>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: "#ffffff", marginTop: 2 }}>
             {preorderEnabled
               ? formatCurrency(payableTotal)
-              : selectedTables.length > 0
-                ? selectedTables.map((table) => table.table_name).join(", ")
-                : "Chưa chọn"}
+              : "---"}
           </Text>
         </View>
+
         <Pressable
           style={[
-            styles.primaryButton,
-            submitting && styles.disabledButton,
+            styles.submitButton,
+            (!canSubmit || submitting) && styles.submitButtonDisabled,
           ]}
-          onPress={() => {
-            if (submitting) return;
-            if (selectedTableIds.length === 0) {
-              showToast("Bạn chọn ít nhất 1 bàn trước nha.");
-              return;
-            }
-            if (!parseInputDate(checkInDate)) {
-              showToast("Thời gian chưa đúng định dạng DD/MM/YYYY HH:mm.");
-              return;
-            }
-            const parsedCheckIn = parseInputDate(checkInDate);
-            const nowFloorMinute = new Date();
-            nowFloorMinute.setSeconds(0, 0);
-            if (parsedCheckIn && parsedCheckIn < nowFloorMinute) {
-              Alert.alert(
-                "Thời gian không hợp lệ",
-                "Thời gian tới phải là tương lai, vui lòng chọn lại!",
-                [{ text: "OK" }]
-              );
-              return;
-            }
-            if (!contactName.trim()) {
-              showToast("Bạn điền tên liên hệ trước nha.");
-              return;
-            }
-            if (!contactPhone.trim()) {
-              showToast("Bạn điền số điện thoại liên hệ trước nha.");
-              return;
-            }
-            if (preorderEnabled && selectedTableIds.length !== 1) {
-              showToast("Đặt món trước chỉ áp dụng cho đúng 1 bàn.");
-              return;
-            }
-            if (preorderEnabled && preorderItems.length === 0) {
-              showToast("Bạn chọn ít nhất 1 món trước khi tiếp tục thanh toán nha.");
-              return;
-            }
-            handleSubmit();
-          }}
-          disabled={submitting}
+          onPress={handleSubmit}
+          disabled={!canSubmit || submitting}
         >
-          <Text style={styles.primaryButtonText}>
-            {submitting
-              ? "Đang gửi..."
-              : preorderEnabled
-                ? "Tiếp tục thanh toán"
-                : "Xác nhận đặt chỗ"}
-          </Text>
+          {submitting ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={styles.submitButtonText}>Xác nhận đặt chỗ</Text>
+              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="chevron-forward" size={14} color="#1b4332" />
+              </View>
+            </View>
+          )}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
-  );
-}
 
-function SummaryRow({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text style={[styles.summaryLabel, strong && styles.summaryStrong]}>
-        {label}
-      </Text>
-      <Text style={[styles.summaryValue, strong && styles.summaryStrong]}>
-        {value}
-      </Text>
+      {showDatePicker && (
+        <DateTimePicker
+          value={parseInputDate(checkInDate) ?? new Date()}
+          mode="date"
+          minimumDate={new Date()}
+          display={Platform.OS === "ios" ? "spinner" : "calendar"}
+          onChange={(_, selectedDate) => {
+            setShowDatePicker(false);
+            if (!selectedDate) return;
+            const d = String(selectedDate.getDate()).padStart(2, "0");
+            const mo = String(selectedDate.getMonth() + 1).padStart(2, "0");
+            const y = selectedDate.getFullYear();
+            const timePart = checkInDate.split(" ")[1] ?? "00:00";
+            setCheckInDate(`${d}/${mo}/${y} ${timePart}`);
+          }}
+        />
+      )}
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={parseInputDate(checkInDate) ?? new Date()}
+          mode="time"
+          is24Hour
+          display={Platform.OS === "ios" ? "spinner" : "clock"}
+          onChange={(_, selectedDate) => {
+            setShowTimePicker(false);
+            if (!selectedDate) return;
+            const h = String(selectedDate.getHours()).padStart(2, "0");
+            const m = String(selectedDate.getMinutes()).padStart(2, "0");
+            const datePart = checkInDate.split(" ")[0] ?? toInputDateTime(new Date()).split(" ")[0];
+            setCheckInDate(`${datePart} ${h}:${m}`);
+          }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#eef2f3",
-  },
-  loadingScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: "#eef2f3",
-  },
-  loadingText: {
-    color: "#64748b",
-    fontSize: 14,
-  },
-  header: {
-    minHeight: 82,
-    paddingHorizontal: 14,
-    paddingBottom: 12,
+  container: { flex: 1, backgroundColor: "#fbf6ee" },
+  loadingScreen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fbf6ee" },
+  loadingText: { marginTop: 12, fontSize: 14, color: "#382119" },
+  scrollContent: { paddingBottom: 120 },
+  sectionCard: {
     backgroundColor: "#ffffff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f8fafc",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  cartButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f8fafc",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: "auto",
-  },
-  headerText: {
-    flex: 1,
-  },
-  eyebrow: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  title: {
-    marginTop: 2,
-    color: "#0f172a",
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  content: {
-    padding: 14,
-    gap: 14,
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#f1e5d3",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
   },
   noticeCard: {
-    backgroundColor: "#fff7ed",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#fed7aa",
-    padding: 14,
-    gap: 6,
-  },
-  noticeTitle: {
-    color: "#0f172a",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  noticeText: {
-    color: "#475569",
-    fontSize: 13,
-    lineHeight: 19,
-  },
-  formCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
+    backgroundColor: "#fffdfa",
+    borderRadius: 16,
     padding: 16,
-    gap: 13,
+    marginHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#eed8b8",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
   },
   sectionTitle: {
-    color: "#0f172a",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  field: {
-    gap: 7,
-  },
-  flexField: {
-    flex: 1,
-  },
-  twoColumns: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  label: {
-    color: "#334155",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  labelHint: {
-    color: "#94a3b8",
-    fontSize: 12,
-    fontWeight: "400",
-  },
-  input: {
-    minHeight: 50,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 13,
-    color: "#0f172a",
     fontSize: 16,
-  },
-  noteInput: {
-    minHeight: 92,
-    paddingTop: 12,
-  },
-  tableCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    padding: 16,
-    gap: 12,
-  },
-  tableHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  helperText: {
-    marginTop: 3,
-    color: "#64748b",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  reloadButton: {
-    height: 36,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: "#ecfdf5",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  reloadText: {
-    color: "#0f766e",
-    fontSize: 13,
     fontWeight: "800",
+    color: "#382119",
   },
-  areaList: {
-    gap: 8,
-    paddingRight: 6,
-  },
-  areaChip: {
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  areaChipActive: {
-    borderColor: "#0f766e",
-    backgroundColor: "#0f766e",
-  },
-  areaText: {
-    color: "#334155",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  areaTextActive: {
-    color: "#ffffff",
-  },
-  inlineLoading: {
-    minHeight: 80,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  tableListContainer: {
-    height: 330,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 8,
-    backgroundColor: "#f8fafc",
-    marginBottom: 16,
-  },
-  tableGrid: {
-    padding: 8,
+  formGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
-  },
-  tableItem: {
-    width: "47.8%",
-    minHeight: 74,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#dbe4ea",
-    backgroundColor: "#ffffff",
-    padding: 12,
-    justifyContent: "space-between",
-  },
-  tableItemSelected: {
-    borderColor: "#0f766e",
-    backgroundColor: "#ecfdf5",
-  },
-  tableItemDisabled: {
-    backgroundColor: "#f8fafc",
-  },
-  tableName: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  tableNameDisabled: {
-    color: "#94a3b8",
-  },
-  statusBadge: {
-    alignSelf: "flex-start",
-    overflow: "hidden",
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  statusFree: {
-    color: "#047857",
-    backgroundColor: "#d1fae5",
-  },
-  statusReserved: {
-    color: "#b45309",
-    backgroundColor: "#fef3c7",
-  },
-  statusOccupied: {
-    color: "#be123c",
-    backgroundColor: "#ffe4e6",
-  },
-  emptyState: {
-    minHeight: 96,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  emptyTitle: {
-    color: "#0f172a",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  emptyText: {
-    marginTop: 4,
-    color: "#64748b",
-    fontSize: 13,
-    textAlign: "center",
-  },
-  preorderToggle: {
-    marginTop: 2,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#99f6e4",
-    backgroundColor: "#f0fdfa",
-    padding: 13,
-    flexDirection: "row",
-    alignItems: "center",
     gap: 12,
   },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: "#0f766e",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#ffffff",
+  formCol: {
+    width: "47%",
   },
-  checkboxActive: {
-    backgroundColor: "#0f766e",
-  },
-  preorderToggleText: {
-    flex: 1,
-  },
-  preorderTitle: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  countPill: {
-    minWidth: 34,
-    overflow: "hidden",
-    borderRadius: 17,
-    backgroundColor: "#ccfbf1",
-    color: "#0f766e",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    textAlign: "center",
-    fontWeight: "900",
-  },
-  menuListContainer: {
-    height: 350,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 8,
-    backgroundColor: "#f8fafc",
-    marginBottom: 16,
-  },
-  menuList: {
-    padding: 8,
-    gap: 10,
-  },
-  menuItem: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#ffffff",
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  menuItemImageContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 6,
-    backgroundColor: "#e2e8f0",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  menuItemImage: {
-    width: "100%",
-    height: "100%",
-  },
-  menuInfo: {
-    flex: 1,
-  },
-  menuName: {
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  menuMeta: {
-    marginTop: 4,
-    color: "#64748b",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  qtyControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  qtyButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#ecfdf5",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyText: {
-    minWidth: 20,
-    textAlign: "center",
-    color: "#0f172a",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#e2e8f0",
-  },
-  voucherList: {
-    gap: 8,
-  },
-  voucherItem: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#ffffff",
-    padding: 12,
-  },
-  voucherItemActive: {
-    borderColor: "#0f766e",
-    backgroundColor: "#ecfdf5",
-  },
-  voucherTitle: {
-    color: "#0f172a",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  voucherMeta: {
-    marginTop: 4,
-    color: "#64748b",
+  inputLabel: {
     fontSize: 12,
     fontWeight: "700",
+    color: "#382119",
+    marginBottom: 6,
   },
-  summaryBox: {
-    borderRadius: 8,
-    backgroundColor: "#f8fafc",
-    padding: 12,
-    gap: 8,
-  },
-  summaryRow: {
+  inputPicker: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fbf6ee",
+    borderWidth: 1,
+    borderColor: "#eed8b8",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
   },
-  summaryLabel: {
-    color: "#64748b",
+  inputFieldContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fbf6ee",
+    borderWidth: 1,
+    borderColor: "#eed8b8",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  inputFieldWithIcon: {
+    flex: 1,
+    fontSize: 14,
+    color: "#382119",
+  },
+  textArea: {
+    backgroundColor: "#fbf6ee",
+    borderWidth: 1,
+    borderColor: "#eed8b8",
+    borderRadius: 10,
+    padding: 12,
+    height: 70,
+    fontSize: 14,
+    color: "#382119",
+    marginTop: 4,
+  },
+  categoryPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#f8ebd7",
+  },
+  categoryPillActive: {
+    backgroundColor: "#1b4332",
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#8c6b53",
+  },
+  categoryPillTextActive: {
+    color: "#ffffff",
+  },
+  tableCardItem: {
+    width: "48%",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#f1e5d3",
+  },
+  tableCardSelected: {
+    borderColor: "#1b4332",
+    backgroundColor: "#f4fbf7",
+    borderWidth: 2,
+  },
+  tableCardDisabled: {
+    opacity: 0.6,
+    backgroundColor: "#fbf6ee",
+  },
+  tableStatusBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  badgeFree: {
+    backgroundColor: "#d1fae5",
+  },
+  badgeReserved: {
+    backgroundColor: "#fef3c7",
+  },
+  badgeOccupied: {
+    backgroundColor: "#ffe4e6",
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#1b4332",
+  },
+  menuCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#f1e5d3",
+  },
+  menuImageContainer: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    backgroundColor: "#f8ebd7",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  stepperContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8ebd7",
+    borderRadius: 18,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "#eed8b8",
+  },
+  stepBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperValue: {
+    minWidth: 24,
+    textAlign: "center",
     fontSize: 13,
     fontWeight: "700",
+    color: "#382119",
   },
-  summaryValue: {
-    color: "#0f172a",
-    fontSize: 13,
-    fontWeight: "900",
+  voucherCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#f1e5d3",
+    marginBottom: 8,
   },
-  summaryStrong: {
-    color: "#0f766e",
-    fontSize: 15,
+  voucherCardSelected: {
+    borderColor: "#ef4444",
+    backgroundColor: "#fff5f5",
+    borderWidth: 2,
+  },
+  quantityBadge: {
+    backgroundColor: "#ef4444",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  quantityBadgeText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "800",
   },
   footer: {
     position: "absolute",
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    backgroundColor: "#ffffff",
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    backgroundColor: "#2c1c14",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#382119",
+    elevation: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
   },
-  footerInfo: {
+  footerLeftBox: {
     flex: 1,
+    paddingRight: 12,
   },
-  totalLabel: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  totalValue: {
-    marginTop: 2,
-    color: "#0f172a",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  primaryButton: {
-    minWidth: 158,
-    height: 52,
-    borderRadius: 8,
-    backgroundColor: "#0f766e",
+  submitButton: {
+    backgroundColor: "#1b4332",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
   },
-  disabledButton: {
-    opacity: 0.55,
+  submitButtonDisabled: {
+    backgroundColor: "rgba(27, 67, 50, 0.45)",
+    elevation: 0,
   },
-  primaryButtonText: {
+  submitButtonText: {
     color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "900",
+    fontWeight: "800",
+    fontSize: 14,
   },
 });
- 

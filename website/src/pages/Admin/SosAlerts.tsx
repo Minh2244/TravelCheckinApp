@@ -23,8 +23,9 @@ import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { statusToVi } from "../../utils/statusText";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
+import { useSocket } from "../../contexts/SocketContext";
 
-type SosStatus = "pending" | "processing" | "resolved";
+type SosStatus = "pending" | "processing" | "resolved" | "cancelled";
 
 interface SosAlertRow {
   alert_id: number;
@@ -43,15 +44,12 @@ interface SosAlertRow {
 type LatLng = { lat: number; lng: number };
 
 const VIETNAM_CENTER: LatLng = { lat: 16.047079, lng: 108.20623 };
-const VIETNAM_BOUNDS: L.LatLngBoundsExpression = [
-  [7.0, 101.0],
-  [23.5, 110.8],
-];
 
 const statusColor: Record<SosStatus, string> = {
   pending: "orange",
   processing: "blue",
   resolved: "green",
+  cancelled: "red",
 };
 
 const getApiErrorMessage = (error: unknown, fallback: string): string => {
@@ -102,6 +100,7 @@ const MapAttach = ({ mapRef }: { mapRef: MutableRefObject<L.Map | null> }) => {
 };
 
 const SosAlerts = () => {
+  const socket = useSocket();
   // Fix icon marker của Leaflet (Vite không tự resolve được asset)
   useEffect(() => {
     const proto = L.Icon.Default.prototype as unknown as Record<
@@ -342,53 +341,37 @@ const SosAlerts = () => {
     fetchAlertsRef.current = fetchAlerts;
   });
 
-  // Realtime: SSE + 30s polling
+  // Realtime: Socket.IO + 30s polling
   useEffect(() => {
     // 30-second polling fallback
     const pollId = window.setInterval(() => {
       void fetchAlertsRef.current?.();
     }, 30000);
 
-    // SSE realtime refresh
-    const token = sessionStorage.getItem("accessToken");
-    let sse: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    if (token) {
-      const { resolveBackendUrl } = {
-        resolveBackendUrl: (path: string) => {
-          const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
-          return `${base}${path}`;
-        },
+    // Socket realtime refresh
+    if (socket) {
+      const handleEvent = (data: any) => {
+        try {
+          if (data?.type === "sos_alert" || data?.type === "sos_status_update") {
+            void fetchAlertsRef.current?.();
+          }
+        } catch {}
       };
-      const sseUrl = resolveBackendUrl("/api/events?token=" + encodeURIComponent(token));
+      
+      socket.on("realtime_event", handleEvent);
+      setSseConnected(true);
 
-      const connectSse = () => {
-        sse = new EventSource(sseUrl);
-        sse.onopen = () => setSseConnected(true);
-        sse.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data) as Record<string, unknown>;
-            if (data.type === "sos_alert") {
-              void fetchAlertsRef.current?.();
-            }
-          } catch {}
-        };
-        sse.onerror = () => {
-          setSseConnected(false);
-          sse?.close();
-          reconnectTimer = setTimeout(connectSse, 5000);
-        };
+      return () => {
+        window.clearInterval(pollId);
+        socket.off("realtime_event", handleEvent);
+        setSseConnected(false);
       };
-      connectSse();
     }
 
     return () => {
       window.clearInterval(pollId);
-      sse?.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, []);
+  }, [socket]);
 
   useEffect(() => {
     fetchAlerts();
@@ -409,7 +392,7 @@ const SosAlerts = () => {
     try {
       const response = await adminApi.updateSosAlertStatus(
         row.alert_id,
-        status,
+        status as any,
       );
       if (response?.success) {
         message.success("Đã cập nhật trạng thái SOS");
@@ -452,6 +435,9 @@ const SosAlerts = () => {
               <Select.Option value="processing">
                 {statusToVi("processing")}
               </Select.Option>
+              <Select.Option value="cancelled">
+                {statusToVi("cancelled")}
+              </Select.Option>
               <Select.Option value="resolved">
                 {statusToVi("resolved")}
               </Select.Option>
@@ -470,9 +456,9 @@ const SosAlerts = () => {
             {rows.map((row, index) => (
               <div
                 key={row.alert_id}
-                className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
+                className="grid grid-cols-12 gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow items-center"
               >
-                <div className="flex-1 mr-4">
+                <div className="col-span-12 md:col-span-6">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded text-xs border border-red-200">
                       #{rows.length - index}
@@ -495,22 +481,23 @@ const SosAlerts = () => {
                   </div>
                 </div>
 
-                <div className="mt-4 sm:mt-0 flex flex-col sm:items-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0 border-gray-100">
-                  <div className="flex justify-between sm:justify-end items-center w-full">
-                    <span className="sm:hidden text-sm text-gray-500">Trạng thái:</span>
-                    <Tag color={statusColor[row.status] || "default"} className="m-0 text-[13px] px-3 py-0.5">
-                      {statusToVi(row.status)}
-                    </Tag>
-                  </div>
-                  
-                  <Space size={8} className="w-full justify-end">
+                <div className="col-span-12 md:col-span-2 flex justify-between md:justify-center items-center border-t md:border-t-0 pt-3 md:pt-0 border-gray-100">
+                  <span className="md:hidden text-sm text-gray-500 font-medium">Trạng thái:</span>
+                  <Tag color={statusColor[row.status] || "default"} className="m-0 text-[13px] px-3 py-0.5">
+                    {statusToVi(row.status)}
+                  </Tag>
+                </div>
+                
+                <div className="col-span-12 md:col-span-4 flex justify-between md:justify-end items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0 border-gray-100 flex-wrap">
+                  <span className="md:hidden text-sm text-gray-500 font-medium">Thao tác:</span>
+                  <div className="flex flex-wrap gap-1.5 justify-end w-full sm:w-auto">
                     <Button size="middle" onClick={() => openDetails(row)}>
                       Xem vị trí
                     </Button>
                     <Button
                       size="middle"
                       onClick={() => updateStatus(row, "processing")}
-                      disabled={row.status === "resolved" || row.status === "processing"}
+                      disabled={row.status === "resolved" || row.status === "cancelled" || row.status === "processing"}
                     >
                       Đang xử lý
                     </Button>
@@ -518,11 +505,19 @@ const SosAlerts = () => {
                       size="middle"
                       type="primary"
                       onClick={() => updateStatus(row, "resolved")}
-                      disabled={row.status === "resolved"}
+                      disabled={row.status === "resolved" || row.status === "cancelled"}
                     >
                       Đã xử lý
                     </Button>
-                  </Space>
+                    <Button
+                      size="middle"
+                      danger
+                      onClick={() => updateStatus(row, "cancelled")}
+                      disabled={row.status === "cancelled" || row.status === "resolved"}
+                    >
+                      Hủy
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -559,8 +554,6 @@ const SosAlerts = () => {
                   zoom={selectedPos ? 16 : 6}
                   minZoom={6}
                   maxZoom={19}
-                  maxBounds={VIETNAM_BOUNDS}
-                  maxBoundsViscosity={1.0}
                   worldCopyJump={false}
                   scrollWheelZoom
                   style={{ height: "100%", width: "100%" }}

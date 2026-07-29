@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { io } from "socket.io-client";
-import { ConfigProvider, DatePicker, Modal } from "antd";
+import { useSocket } from "../../contexts/SocketContext";
+import { ConfigProvider, DatePicker, Modal, TimePicker, message } from "antd";
+import { ClockCircleOutlined, CalendarOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import viVN from "antd/locale/vi_VN";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
@@ -11,6 +12,7 @@ import { useBookings } from "../../hooks/useBookings";
 import bookingApi from "../../api/bookingApi";
 import locationApi from "../../api/locationApi";
 import userApi from "../../api/userApi";
+import { useDraggableScroll } from "../../hooks/useDraggableScroll";
 import useTouristTicketSync from "../../modules/frontOffice/hooks/useTouristTicketSync";
 import type {
   CreateBookingBatchPayload,
@@ -414,12 +416,14 @@ const writeLastTableBookingSuccess = (v: LastTableBookingSuccess | null) => {
 
 
 const getCurrentMinuteValue = () =>
-  dayjs().second(0).millisecond(0).format("YYYY-MM-DDTHH:mm:ss");
+  dayjs().add(1, "hour").second(0).millisecond(0).format("YYYY-MM-DDTHH:mm:ss");
 
 const BookingPage = () => {
+  const socket = useSocket();
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams] = useSearchParams();
+  const voucherScrollProps = useDraggableScroll<HTMLDivElement>();
   const locationIdNum = useMemo(
     () => toNumberOrNull(searchParams.get("locationId")),
     [searchParams],
@@ -511,60 +515,6 @@ const BookingPage = () => {
     useState(false);
   const [autoSyncCheckIn, setAutoSyncCheckIn] = useState(true);
 
-  const fetchPosTables = async (): Promise<PosTableRow[] | null> => {
-    if (!locationIdNum || !isFoodLocation) return null;
-    try {
-      const res = await locationApi.getLocationPosTables(locationIdNum, {
-        check_in_date: form.checkInDate || undefined,
-      });
-      const raw = Array.isArray(res.data) ? res.data : [];
-      const mapped: PosTableRow[] = raw
-        .map((r) => r as any)
-        .filter((r) => r && typeof r === "object")
-        .map((r) => ({
-          table_id: Number(r.table_id),
-          area_id: r.area_id == null ? null : Number(r.area_id),
-          table_name: String(r.table_name || ""),
-          shape: r.shape == null ? null : String(r.shape),
-          status: String(r.status || "free") as any,
-        }))
-        .filter((t) => Number.isFinite(t.table_id) && t.table_name);
-      return mapped;
-    } catch {
-      return null;
-    }
-  };
-
-  const fetchMyTableReservations = async (): Promise<
-    TableReservationItem[]
-  > => {
-    if (!locationIdNum || !isFoodLocation) return [];
-    try {
-      const res = await bookingApi.getMyTableReservations(locationIdNum);
-      return Array.isArray(res.data) ? res.data : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const fetchPosAreas = async (): Promise<PosAreaRow[] | null> => {
-    if (!locationIdNum || !isFoodLocation) return null;
-    try {
-      const res = await locationApi.getLocationPosAreas(locationIdNum);
-      const raw = Array.isArray(res.data) ? res.data : [];
-      return raw
-        .map((r) => r as any)
-        .filter((r) => r && typeof r === "object")
-        .map((r) => ({
-          area_id: Number(r.area_id),
-          area_name: String(r.area_name || "").trim(),
-        }))
-        .filter((a) => Number.isFinite(a.area_id) && a.area_name);
-    } catch {
-      return null;
-    }
-  };
-
   const [preorderEnabled, setPreorderEnabled] = useState(false);
   const [preorderQtyByServiceId, setPreorderQtyByServiceId] = useState<
     Record<number, number>
@@ -576,7 +526,24 @@ const BookingPage = () => {
 
   const [savedVouchers, setSavedVouchers] = useState<any[]>([]);
   const [selectedVoucherId, setSelectedVoucherId] = useState<number | null>(null);
-  const [voucherDiscount, setVoucherDiscount] = useState<number>(0);
+
+  const refreshSavedVouchers = useCallback(async () => {
+    if (!locationIdNum) {
+      setSavedVouchers([]);
+      return;
+    }
+    try {
+      const res = await userApi.getMySavedVouchers({ locationId: locationIdNum });
+      if (res.success) setSavedVouchers(res.data || []);
+    } catch {
+      // Keep the last known vouchers; booking submit must not fail because refresh failed.
+    }
+  }, [locationIdNum]);
+
+  const refreshVoucherHoldState = useCallback(async () => {
+    setSelectedVoucherId(null);
+    await refreshSavedVouchers();
+  }, [refreshSavedVouchers]);
 
   const isFoodLocation =
     location?.location_type === "restaurant" ||
@@ -683,11 +650,86 @@ const BookingPage = () => {
       contactName: u?.full_name ? String(u.full_name) : "",
       contactPhone: u?.phone ? String(u.phone) : "",
       notes: "",
-      voucherCode: "",
+      voucherCode: sessionStorage.getItem("booking_voucher") || "",
     };
   }, [params.serviceId, searchParams]);
 
   const [form, setForm] = useState<BookingFormState>(initialForm);
+
+  useEffect(() => {
+    sessionStorage.setItem("booking_voucher", form.voucherCode);
+  }, [form.voucherCode]);
+
+  useEffect(() => {
+    if (location && form.checkInDate === "") {
+      if (isTouristLocation) {
+        setForm((prev) => ({ ...prev, checkInDate: dayjs().format("YYYY-MM-DD") }));
+      } else {
+        setForm((prev) => ({ ...prev, checkInDate: dayjs().add(1, "hour").format("YYYY-MM-DDTHH:mm") }));
+      }
+    }
+  }, [location, isTouristLocation, form.checkInDate]);
+
+  // Dùng ref để fetchPosTables truy cập checkInDate mới nhất mà không tạo lại callback mỗi phút
+  const checkInDateRef = useRef(form.checkInDate);
+  useEffect(() => {
+    checkInDateRef.current = form.checkInDate;
+  }, [form.checkInDate]);
+
+  const fetchPosTables = useCallback(async (): Promise<PosTableRow[] | null> => {
+    if (!locationIdNum || !isFoodLocation) return null;
+    try {
+      const res = await locationApi.getLocationPosTables(locationIdNum, {
+        check_in_date: checkInDateRef.current || undefined,
+      });
+      const raw = Array.isArray(res.data) ? res.data : [];
+      const mapped: PosTableRow[] = raw
+        .map((r) => r as any)
+        .filter((r) => r && typeof r === "object")
+        .map((r) => ({
+          table_id: Number(r.table_id),
+          area_id: r.area_id == null ? null : Number(r.area_id),
+          table_name: String(r.table_name || ""),
+          shape: r.shape == null ? null : String(r.shape),
+          status: String(r.status || "free") as any,
+        }))
+        .filter((t) => Number.isFinite(t.table_id) && t.table_name);
+      return mapped;
+    } catch {
+      return null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationIdNum, isFoodLocation]); // checkInDate được đọc qua ref, không cần trong deps
+
+  const fetchMyTableReservations = useCallback(async (): Promise<
+    TableReservationItem[]
+  > => {
+    if (!locationIdNum || !isFoodLocation) return [];
+    try {
+      const res = await bookingApi.getMyTableReservations(locationIdNum);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch {
+      return [];
+    }
+  }, [locationIdNum, isFoodLocation]);
+
+  const fetchPosAreas = useCallback(async (): Promise<PosAreaRow[] | null> => {
+    if (!locationIdNum || !isFoodLocation) return null;
+    try {
+      const res = await locationApi.getLocationPosAreas(locationIdNum);
+      const raw = Array.isArray(res.data) ? res.data : [];
+      return raw
+        .map((r) => r as any)
+        .filter((r) => r && typeof r === "object")
+        .map((r) => ({
+          area_id: Number(r.area_id),
+          area_name: String(r.area_name || "").trim(),
+        }))
+        .filter((a) => Number.isFinite(a.area_id) && a.area_name);
+    } catch {
+      return null;
+    }
+  }, [locationIdNum, isFoodLocation]);
 
 
   const serviceIdNum = useMemo(
@@ -768,9 +810,13 @@ const BookingPage = () => {
 
       setServicesLoading(true);
       try {
-        const locRes = await locationApi.getLocationById(locationIdNum, "web");
-        setLocation(locRes.data);
-        await loadServices();
+        const [locRes] = await Promise.all([
+          locationApi.getLocationById(locationIdNum, "web").catch(() => null),
+          loadServices(),
+        ]);
+        if (locRes?.data) {
+          setLocation(locRes.data);
+        }
       } catch {
         setServicesError("Không thể tải dịch vụ của địa điểm");
       } finally {
@@ -802,22 +848,18 @@ const BookingPage = () => {
 
   useEffect(() => {
     if (!locationIdNum) return;
-    userApi.getMySavedVouchers().then((res) => {
-      if (res.success) setSavedVouchers(res.data || []);
-    }).catch(() => {});
-  }, [locationIdNum]);
+    void refreshSavedVouchers();
+  }, [locationIdNum, refreshSavedVouchers]);
 
   useEffect(() => {
     if (isFoodLocation && !preorderEnabled) {
       setSelectedVoucherId(null);
-      setVoucherDiscount(0);
     }
   }, [preorderEnabled, isFoodLocation]);
 
   useEffect(() => {
     if (isHotelBooking && prepayChoice !== "transfer") {
       setSelectedVoucherId(null);
-      setVoucherDiscount(0);
     }
   }, [prepayChoice, isHotelBooking]);
 
@@ -1059,6 +1101,21 @@ const BookingPage = () => {
     }
   }, [locationIdNum]);
 
+  const isFoodLocationRef = useRef(isFoodLocation);
+  useEffect(() => { isFoodLocationRef.current = isFoodLocation; }, [isFoodLocation]);
+
+  const fetchPosTablesRef = useRef(fetchPosTables);
+  useEffect(() => { fetchPosTablesRef.current = fetchPosTables; }, [fetchPosTables]);
+
+  const fetchMyTableReservationsRef = useRef(fetchMyTableReservations);
+  useEffect(() => { fetchMyTableReservationsRef.current = fetchMyTableReservations; }, [fetchMyTableReservations]);
+
+  const loadServicesRef = useRef(loadServices);
+  useEffect(() => { loadServicesRef.current = loadServices; }, [loadServices]);
+
+  const hotelSuccessEditingNoticeIdRef = useRef(hotelSuccessEditingNoticeId);
+  useEffect(() => { hotelSuccessEditingNoticeIdRef.current = hotelSuccessEditingNoticeId; }, [hotelSuccessEditingNoticeId]);
+
   // Realtime: sync booking state and POS/menu changes with owner operations
   useEffect(() => {
     const token = sessionStorage.getItem("accessToken");
@@ -1077,9 +1134,9 @@ const BookingPage = () => {
         );
         if (next.length !== prev.length) {
           if (
-            hotelSuccessEditingNoticeId != null &&
+            hotelSuccessEditingNoticeIdRef.current != null &&
             prev
-              .find((n) => n.id === hotelSuccessEditingNoticeId)
+              .find((n) => n.id === hotelSuccessEditingNoticeIdRef.current)
               ?.bookingIds?.includes?.(bookingId)
           ) {
             setHotelSuccessEditingNoticeId(null);
@@ -1131,14 +1188,9 @@ const BookingPage = () => {
       }
     };
 
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
+    if (!socket) return;
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          booking_id?: number;
-          location_id?: number;
-        };
         if (data?.type === "booking_checked_in") {
           const bookingId = Number(data.booking_id);
           if (!Number.isFinite(bookingId) || bookingId <= 0) return;
@@ -1168,11 +1220,11 @@ const BookingPage = () => {
 
         if (data?.type === "pos_updated") {
           if (Number(data.location_id) !== Number(locationIdNum)) return;
-          if (isFoodLocation) {
-            void fetchPosTables().then((latest) => {
+          if (isFoodLocationRef.current) {
+            void fetchPosTablesRef.current().then((latest) => {
               if (latest) setPosTables(latest);
             });
-            void fetchMyTableReservations().then((latest) => {
+            void fetchMyTableReservationsRef.current().then((latest) => {
               setTableReservations(latest);
             });
           }
@@ -1217,7 +1269,7 @@ const BookingPage = () => {
 
         if (data?.type === "tourist_updated") {
           if (Number(data.location_id) !== Number(locationIdNum)) return;
-          void loadServices();
+          void loadServicesRef.current();
           return;
         }
 
@@ -1284,35 +1336,23 @@ const BookingPage = () => {
         // ignore
       }
     };
+    socket.on("realtime_event", handleEvent);
 
     return () => {
-      es.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, [
-    fetchPosTables,
-    isFoodLocation,
-    locationIdNum,
-    updateHotelNotices,
-    hotelSuccessEditingNoticeId,
-    loadServices,
-  ]);
+  }, [locationIdNum]);
 
   // Public Real-time (Socket.IO) for table/room state changes
   useEffect(() => {
-    if (!locationIdNum) return;
-    const backendUrl = resolveBackendUrl("");
-    if (!backendUrl) return;
+    if (!locationIdNum || !socket) return;
 
-    const socket = io(backendUrl);
+    socket.emit("join_location_public", { locationId: locationIdNum });
 
-    socket.on("connect", () => {
-      socket.emit("join_location_public", { locationId: locationIdNum });
-    });
-
-    socket.on("public_status_changed", (data: any) => {
+    const handlePublicStatus = (data: any) => {
       if (data?.type === "table" || data?.type === "pos_updated") {
-        if (isFoodLocation) {
-          void fetchPosTables().then((latest) => {
+        if (isFoodLocationRef.current) {
+          void fetchPosTablesRef.current().then((latest) => {
             if (latest) {
               setPosTables(latest);
               // Conflict resolution
@@ -1339,16 +1379,16 @@ const BookingPage = () => {
       }
 
       if (data?.type === "tourist_updated" || data?.type === "hotel_updated") {
-        void loadServices();
-        // Room conflict resolution can be done on reload implicitly if available rooms decrease, 
-        // but since we do not have specific room ID locking until payment, we just refresh.
+        void loadServicesRef.current();
       }
-    });
+    };
+
+    socket.on("public_status_changed", handlePublicStatus);
 
     return () => {
-      socket.disconnect();
+      socket.off("public_status_changed", handlePublicStatus);
     };
-  }, [locationIdNum, isFoodLocation, fetchPosTables, loadServices]);
+  }, [locationIdNum]);
 
   const handleChange = (field: keyof BookingFormState, value: string) => {
     if (field === "checkInDate" && !isHotelBooking) {
@@ -1401,41 +1441,7 @@ const BookingPage = () => {
     });
   }, [hotelComputedCheckout, isHotelBooking]);
 
-  // Defaults: vé mặc định hôm nay; khách sạn/ăn uống mặc định thời gian hiện tại
-  useEffect(() => {
-    if (isTicketBooking) {
-      if (!form.checkInDate) {
-        setForm((prev) => ({
-          ...prev,
-          checkInDate: dayjs().format("YYYY-MM-DD"),
-        }));
-      }
-      return;
-    }
-
-    if (isHotelBooking) {
-      if (!form.checkInDate) {
-        const now = dayjs().second(0).millisecond(0);
-        setForm((prev) => ({
-          ...prev,
-          checkInDate: now.format("YYYY-MM-DDTHH:mm:ss"),
-        }));
-      }
-      return;
-    }
-
-    if (isFoodLocation) {
-      if (!form.checkInDate) {
-        // include seconds so it's not considered "in the past" by strict now checks
-        const now = dayjs().second(0).millisecond(0);
-        setForm((prev) => ({
-          ...prev,
-          checkInDate: now.format("YYYY-MM-DDTHH:mm:ss"),
-        }));
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTicketBooking, isHotelBooking, isFoodLocation]);
+  // removed default time auto-fill to allow user to pick manually
 
   const resolveTicketUseDate = (bookingId: number): string | null => {
     const fromForm = form.checkInDate ? String(form.checkInDate) : null;
@@ -1474,6 +1480,7 @@ const BookingPage = () => {
         return;
       }
       const data = res.data as ConfirmTicketTransferResult;
+      sessionStorage.setItem("tc_booking_fade_message", "Đơn đang được xử lí");
       setTicketConfirmByBookingId((prev) => ({
         ...prev,
         [bookingId]: data,
@@ -1558,7 +1565,7 @@ const BookingPage = () => {
       if (latestTables) setPosTables(latestTables);
       setTableReservations(latestReservations);
       setSelectedTableIds([]);
-      sessionStorage.setItem("tc_booking_fade_message", "Đơn đặt trước của bạn đã thành công và đã được tiếp nhận và đang được xử lý");
+      sessionStorage.setItem("tc_booking_fade_message", "Đơn đang được xử lí");
       setTimeout(() => {
         window.location.reload();
       }, 50);
@@ -1585,6 +1592,7 @@ const BookingPage = () => {
         setRoomConfirmError(res?.message || "Không thể xác nhận thanh toán");
         return;
       }
+      setFadeNotice({ message: "Đơn đang được xử lí" });
 
       if (meta && Array.isArray(meta.bookingIds) && meta.bookingIds.length) {
         appendHotelNotice({
@@ -1628,7 +1636,7 @@ const BookingPage = () => {
         notes: "",
         voucherCode: "",
       }));
-      setFadeNotice({ message: "Đơn đặt trước của bạn đã thành công và đã được tiếp nhận và đang được xử lý" });
+      setFadeNotice({ message: "Đơn đang được xử lí" });
 
       if (locationIdNum) {
         const svcRes = await locationApi.getLocationServices(locationIdNum);
@@ -1880,7 +1888,7 @@ const BookingPage = () => {
     }
     return selectedRooms.reduce((sum, r) => {
       const basePrice = Number(r.price || 0);
-      const u = String(r.unit || "").toLowerCase().trim();
+      const u = String(r.unit || "giờ").toLowerCase().trim();
       let multiplier = hotelStayDays;
       
       const isHourly = u === "h" || u.includes("hour") || u.includes("giờ") || u.includes("gio") || u.includes("tiếng") || u.includes("tieng");
@@ -2042,32 +2050,133 @@ const BookingPage = () => {
     if (isHotelBooking && prepayChoice !== "transfer") return [];
 
     return savedVouchers.filter((v) => {
+      let parsedLocationIds = v.location_ids;
+      if (typeof parsedLocationIds === "string") {
+        try { parsedLocationIds = JSON.parse(parsedLocationIds); }
+        catch (e) { parsedLocationIds = []; }
+      }
       // Check location_ids từ voucher_locations (nhiều location)
-      const locIds: number[] = Array.isArray(v.location_ids)
-        ? v.location_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n))
+      const locIds: number[] = Array.isArray(parsedLocationIds)
+        ? parsedLocationIds.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
         : [];
+
       if (locIds.length > 0) {
         // Voucher chỉ áp dụng cho các location trong danh sách
         if (!locIds.includes(Number(locationIdNum))) return false;
       } else if (v.location_id && Number(v.location_id) !== locationIdNum) {
         // Voucher gắn 1 location cụ thể
         return false;
+      } else if (!v.location_id && locIds.length === 0) {
+        // Voucher "toàn hệ thống" (của admin) hoặc "toàn bộ cơ sở" (của owner)
+        if (v.owner_role !== "admin" && v.owner_id !== location?.owner_id) {
+          // Nếu không phải do Admin tạo, và cũng không phải do Chủ địa điểm này tạo -> Bỏ qua
+          return false;
+        }
       }
 
-      // Lọc theo loại dịch vụ đang đặt (Lỗi B)
+      // Lọc theo loại địa điểm
+      if (v.apply_to_location_type && v.apply_to_location_type !== "all" && location?.location_type) {
+        if (v.apply_to_location_type !== location.location_type) {
+          return false;
+        }
+      }
+
+      // Lọc theo loại dịch vụ đang đặt
       if (v.apply_to_service_type && v.apply_to_service_type !== "all") {
-        const currentType = isHotelBooking
-          ? "room"
-          : isFoodLocation
-          ? "food"
-          : isTouristLocation
-          ? "ticket"
-          : "other";
+        let currentType = "other";
+        if (isTicketBooking || isTouristLocation) currentType = "ticket";
+        else if (isRoomBooking || isHotelBooking) currentType = "room";
+        else if (isTableBooking || isFoodLocation) currentType = "food";
+
         if (v.apply_to_service_type !== currentType) return false;
       }
       return true;
     });
-  }, [savedVouchers, locationIdNum, isHotelBooking, isFoodLocation, isTouristLocation, prepayChoice, preorderEnabled]);
+  }, [
+    savedVouchers,
+    locationIdNum,
+    location?.owner_id,
+    isHotelBooking,
+    isRoomBooking,
+    isFoodLocation,
+    isTableBooking,
+    isTouristLocation,
+    isTicketBooking,
+    prepayChoice,
+    preorderEnabled,
+  ]);
+
+  const groupedApplicableVouchers = useMemo(() => {
+    return Object.values(
+      applicableVouchers.reduce((acc, v) => {
+        if (!acc[v.voucher_id]) {
+          acc[v.voucher_id] = { ...v, _rawItems: [] };
+        }
+        acc[v.voucher_id]._rawItems.push(v);
+        return acc;
+      }, {} as Record<string, any>)
+    ).map((group: any) => {
+      const maxUses = Number(group.max_uses_per_user || 1);
+      const usedCount = Number(group.user_used_count || 0);
+      const actualQuantity = Math.max(0, maxUses - usedCount);
+      return { ...group, actualQuantity };
+    }).filter((g) => g.actualQuantity > 0);
+  }, [applicableVouchers]);
+
+  const voucherOrderTotal = useMemo(() => {
+    if (isTouristLocation || isTicketBooking) return ticketTotal;
+    if (isHotelBooking || isRoomBooking) return selectedTotal;
+    return preorderTotal || 0;
+  }, [
+    isTouristLocation,
+    isTicketBooking,
+    ticketTotal,
+    isHotelBooking,
+    isRoomBooking,
+    selectedTotal,
+    preorderTotal,
+  ]);
+
+  useEffect(() => {
+    if (!selectedVoucherId) return;
+    const selectedVoucher = groupedApplicableVouchers.find(
+      (voucher: any) => (voucher.wallet_id || voucher.voucher_id) === selectedVoucherId,
+    );
+    if (!selectedVoucher) {
+      setSelectedVoucherId(null);
+      return;
+    }
+    const minOrder = Number(selectedVoucher.min_order_value || 0);
+    if (Number.isFinite(minOrder) && voucherOrderTotal < minOrder) {
+      setSelectedVoucherId(null);
+    }
+  }, [groupedApplicableVouchers, selectedVoucherId, voucherOrderTotal]);
+
+  const voucherDiscount = useMemo(() => {
+    if (!selectedVoucherId) return 0;
+    const v = groupedApplicableVouchers.find((voc: any) => (voc.wallet_id || voc.voucher_id) === selectedVoucherId);
+    if (!v) return 0;
+
+    const now = new Date();
+    if (new Date(v.end_date) < now) return 0;
+    const minOrder = Number(v.min_order_value || 0);
+    if (Number.isFinite(minOrder) && voucherOrderTotal < minOrder) return 0;
+
+    const total = voucherOrderTotal;
+
+    let discount = 0;
+    if (v.discount_type === "percent") {
+      discount = (total * Number(v.discount_value)) / 100;
+      if (v.max_discount_amount) discount = Math.min(discount, Number(v.max_discount_amount));
+    } else {
+      discount = Number(v.discount_value);
+    }
+    return Math.min(discount, total);
+  }, [
+    selectedVoucherId,
+    groupedApplicableVouchers,
+    voucherOrderTotal,
+  ]);
 
   const showVoucherSection = useMemo(() => {
     if (isFoodLocation && !preorderEnabled) return false;
@@ -2283,10 +2392,13 @@ const BookingPage = () => {
           source: "web",
           reserve_on_confirm: prepayChoice === "transfer" ? true : undefined,
           voucher_code: selectedVoucherId
-            ? applicableVouchers.find((v) => v.voucher_id === selectedVoucherId)?.code || null
+            ? applicableVouchers.find((v) => (v.wallet_id || v.voucher_id) === selectedVoucherId)?.code || null
             : null,
         };
         const res = await bookingApi.createBookingBatch(payload);
+        if (selectedVoucherId != null) {
+          await refreshVoucherHoldState();
+        }
 
         const makeNoticeBase = (): HotelBookingNotice => ({
           id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -2312,6 +2424,25 @@ const BookingPage = () => {
 
         if (prepayChoice === "transfer") {
           try {
+            if (selectedTotal - voucherDiscount <= 0) {
+              writeLastHotelBatchBooking(null);
+              setCreatedPayments([]);
+              setBatchResult(null);
+              setSelectedRoomIds([]);
+              setSelectedVoucherId(null);
+              setHotelSuccessEditingNoticeId(null);
+              setHotelSuccessContactDraftName("");
+              setHotelSuccessContactDraftPhone("");
+              setHotelSuccessContactSaveError(null);
+              setRoomConfirmError(null);
+              message.success("Đặt phòng thành công! Lịch trình của bạn đã được lưu.");
+              sessionStorage.setItem("tc_booking_fade_message", "Đơn đang được xử lí");
+              await loadServices();
+              window.setTimeout(() => {
+                window.location.reload();
+              }, 80);
+              return;
+            }
             const payRes = await bookingApi.createOrGetPaymentForBookingBatch(
               res.data.bookingIds || [],
             );
@@ -2360,6 +2491,7 @@ const BookingPage = () => {
           }
         } else {
           setSelectedRoomIds([]);
+          setSelectedVoucherId(null);
           setBatchResult(null);
           setForm((prev) => ({
             ...prev,
@@ -2367,7 +2499,12 @@ const BookingPage = () => {
             notes: "",
             voucherCode: "",
           }));
-          setFadeNotice({ message: "Đơn đặt trước của bạn đã thành công và đã được tiếp nhận và đang được xử lý" });
+          sessionStorage.setItem("tc_booking_fade_message", "Đơn đang được xử lí");
+          setFadeNotice({ message: "Đơn đang được xử lí" });
+          await loadServices();
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 80);
         }
       } catch (e: any) {
         setBatchError(getErrorMessage(e, "Không thể tạo booking"));
@@ -2492,12 +2629,12 @@ const BookingPage = () => {
         contact_phone: contactPhone,
         notes: form.notes || null,
         voucher_code: selectedVoucherId
-          ? applicableVouchers.find((v) => v.voucher_id === selectedVoucherId)?.code || null
+          ? applicableVouchers.find((v) => (v.wallet_id || v.voucher_id) === selectedVoucherId)?.code || null
           : null,
         source: "web",
         table_ids: selectedTableIds,
         preorder_items: preorderItems.length ? preorderItems : undefined,
-        reserve_on_confirm: preorderItems.length > 0 ? true : undefined,
+        reserve_on_confirm: preorderItems.length > 0 && Math.max(0, preorderTotal - voucherDiscount) > 0 ? true : undefined,
       };
 
       const hasPreorder = preorderItems.length > 0;
@@ -2505,9 +2642,14 @@ const BookingPage = () => {
         setFormError("Đặt món trước chỉ áp dụng khi bạn chọn đúng 1 bàn");
         return;
       }
-      if (!hasPreorder) {
+
+      const requirePayment = hasPreorder && Math.max(0, preorderTotal - voucherDiscount) > 0;
+      if (!requirePayment) {
         const created = await createBooking(payload);
         if (created) {
+          if (selectedVoucherId != null) {
+            await refreshVoucherHoldState();
+          }
           const [latestTables, latestReservations] = await Promise.all([
             fetchPosTables(),
             fetchMyTableReservations(),
@@ -2520,9 +2662,8 @@ const BookingPage = () => {
           setFoodPrepayBookingId(null);
           setFoodPrepayPaid(false);
           setFoodPrepayConfirmError(null);
-          
           setHideSingleSuccess(true);
-          setFadeNotice({ message: "Đơn đặt trước của bạn đã thành công và đã được tiếp nhận và đang được xử lý" });
+          setFadeNotice({ message: "Đặt chỗ thành công" });
         }
         return;
       }
@@ -2539,6 +2680,9 @@ const BookingPage = () => {
 
         const created = await createBooking(payload);
         if (!created) return;
+        if (selectedVoucherId != null) {
+          await refreshVoucherHoldState();
+        }
 
         setFoodPrepayBookingId(created.bookingId);
         try {
@@ -2578,7 +2722,7 @@ const BookingPage = () => {
         quantity: selectedTicketItems.reduce((sum, it) => sum + it.quantity, 0),
         notes: form.notes || null,
         voucher_code: selectedVoucherId
-          ? applicableVouchers.find((v) => v.voucher_id === selectedVoucherId)?.code || null
+          ? applicableVouchers.find((v) => (v.wallet_id || v.voucher_id) === selectedVoucherId)?.code || null
           : null,
         source: "web",
         ticket_items: selectedTicketItems.map((it) => ({
@@ -2589,6 +2733,25 @@ const BookingPage = () => {
 
       const ticketResult = await createBooking(payload);
       if (ticketResult) {
+        if (selectedVoucherId != null) {
+          await refreshVoucherHoldState();
+        }
+        const finalTicketTotal = Math.max(0, ticketTotal - voucherDiscount);
+        if (finalTicketTotal > 0) {
+          try {
+            const payRes = await bookingApi.createOrGetPaymentForBooking(
+              ticketResult.bookingId,
+            );
+            setCreatedPayments([payRes.data]);
+          } catch (e: any) {
+            setPaymentError(getErrorMessage(e, "Không thể tạo payment"));
+          }
+        } else {
+          setCreatedPayments([]);
+          setTicketQtyByServiceId({});
+          setSelectedVoucherId(null);
+          setFadeNotice({ message: "Đặt vé thành công" });
+        }
         void loadServices();
       }
       return;
@@ -2602,6 +2765,8 @@ const BookingPage = () => {
     if (isTableBooking && prepayChoice !== "none") {
       setPrepayChoice("none");
     }
+
+    const requireHotelPayment = prepayChoice === "transfer" && selectedServiceType === "room" && Math.max(0, selectedTotal - voucherDiscount) > 0;
 
     const payload: CreateBookingPayload = {
       location_id: Number(locationIdNum),
@@ -2617,21 +2782,20 @@ const BookingPage = () => {
           ? null
           : form.notes || null,
       voucher_code: selectedVoucherId
-        ? applicableVouchers.find((v) => v.voucher_id === selectedVoucherId)?.code || null
+        ? applicableVouchers.find((v) => (v.wallet_id || v.voucher_id) === selectedVoucherId)?.code || null
         : null,
       source: "web",
-      reserve_on_confirm:
-        prepayChoice === "transfer" && selectedServiceType === "room"
-          ? true
-          : undefined,
+      reserve_on_confirm: requireHotelPayment ? true : undefined,
     };
 
     const created = await createBooking(payload);
-    if (
-      created &&
-      prepayChoice === "transfer" &&
-      selectedServiceType === "room"
-    ) {
+    if (created && selectedVoucherId != null) {
+      await refreshVoucherHoldState();
+    }
+    if (created && !requireHotelPayment) {
+      setFadeNotice({ message: "Đơn đang được xử lí" });
+    }
+    if (created && requireHotelPayment) {
       try {
         const payRes = await bookingApi.createOrGetPaymentForBooking(
           created.bookingId,
@@ -2654,7 +2818,7 @@ const BookingPage = () => {
               opacity: fadeOpacity,
               transition: "opacity 0.2s ease-in-out",
             }}
-            className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] w-full max-w-md px-4"
+            className="fixed top-5 right-5 z-[9999] w-[260px]"
           >
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-xl flex items-center gap-3">
               <span className="text-xl shrink-0">✅</span>
@@ -2730,7 +2894,7 @@ const BookingPage = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_0.75fr] gap-6 mt-6">
-            <div className="space-y-5">
+            <div className="space-y-5 min-w-0">
               <div className="rounded-2xl border border-gray-100 p-4">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
@@ -2795,47 +2959,68 @@ const BookingPage = () => {
                       }
                     />
                   ) : (
-                    <DatePicker
-                      className="mt-2 w-full"
-                      value={form.checkInDate ? dayjs(form.checkInDate) : null}
-                      format="DD-MM-YYYY HH:mm"
-                      showTime={{ format: "HH:mm", use12Hours: false }}
-                      placeholder="Chọn ngày giờ"
-                      disabledDate={(current) => {
-                        if (!current) return false;
-                        return (
-                          current.isBefore(dayjs().startOf("day")) ||
-                          current.isAfter(maxAdvanceDay)
-                        );
-                      }}
-                      disabledTime={(current) => {
-                        if (!current) return {};
-                        if (!(isHotelBooking || isFoodLocation)) return {};
+                    <div className="mt-2 flex gap-2 w-full">
+                      <DatePicker
+                        className="flex-1"
+                        value={form.checkInDate ? dayjs(form.checkInDate) : null}
+                        format="DD-MM-YYYY"
+                        placeholder="Chọn ngày"
+                        disabledDate={(current) => {
+                          if (!current) return false;
+                          return (
+                            current.isBefore(dayjs().startOf("day")) ||
+                            current.isAfter(maxAdvanceDay)
+                          );
+                        }}
+                        onChange={(d) => {
+                          if (!d) {
+                            handleChange("checkInDate", "");
+                            return;
+                          }
+                          const old = form.checkInDate ? dayjs(form.checkInDate) : dayjs();
+                          handleChange(
+                            "checkInDate",
+                            d.hour(old.hour()).minute(old.minute()).format("YYYY-MM-DDTHH:mm")
+                          );
+                        }}
+                      />
+                      <TimePicker
+                        className="flex-1"
+                        value={form.checkInDate ? dayjs(form.checkInDate) : null}
+                        format="HH:mm"
+                        placeholder="Chọn giờ"
+                        allowClear={false}
+                        disabledTime={() => {
+                          if (!(isHotelBooking || isFoodLocation)) return {};
 
-                        const now = dayjs();
-                        if (!current.isSame(now, "day")) return {};
+                          const current = form.checkInDate ? dayjs(form.checkInDate) : null;
+                          const now = dayjs();
+                          if (current && !current.isSame(now, "day")) return {};
 
-                        const curHour = now.hour();
-                        const curMinute = now.minute();
-                        return {
-                          disabledHours: () =>
-                            Array.from({ length: curHour }, (_, i) => i),
-                          disabledMinutes: (selectedHour: number) => {
-                            if (selectedHour !== curHour) return [];
-                            return Array.from(
-                              { length: curMinute },
-                              (_, i) => i,
-                            );
-                          },
-                        };
-                      }}
-                      onChange={(d) =>
-                        handleChange(
-                          "checkInDate",
-                          d ? d.format("YYYY-MM-DDTHH:mm") : "",
-                        )
-                      }
-                    />
+                          const curHour = now.hour();
+                          const curMinute = now.minute();
+                          return {
+                            disabledHours: () =>
+                              Array.from({ length: curHour }, (_, i) => i),
+                            disabledMinutes: (selectedHour: number) => {
+                              if (selectedHour !== curHour) return [];
+                              return Array.from(
+                                { length: curMinute },
+                                (_, i) => i,
+                              );
+                            },
+                          };
+                        }}
+                        onChange={(t) => {
+                          if (!t) return;
+                          const old = form.checkInDate ? dayjs(form.checkInDate) : dayjs();
+                          handleChange(
+                            "checkInDate",
+                            old.hour(t.hour()).minute(t.minute()).format("YYYY-MM-DDTHH:mm")
+                          );
+                        }}
+                      />
+                    </div>
                   )}
 
                   {form.checkInDate &&
@@ -3638,102 +3823,161 @@ const BookingPage = () => {
               ) : null}
 
               {showVoucherSection && (
-                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4 w-full min-w-0">
                   <label className="text-sm font-semibold text-emerald-800">
                     🎫 Voucher đã lưu
                   </label>
-                  {applicableVouchers.length > 0 ? (
-                    <div className="mt-3 space-y-2 max-h-[530px] overflow-y-auto pr-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedVoucherId(null);
-                          setVoucherDiscount(0);
-                        }}
-                        className={`w-full text-left rounded-xl border p-3 transition text-sm ${
-                          selectedVoucherId == null
-                            ? "border-emerald-400 bg-emerald-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        }`}
-                      >
-                        <span className="font-medium text-gray-700">Không sử dụng voucher</span>
-                      </button>
-                      {applicableVouchers.map((v: any) => {
-                        const isSelected = selectedVoucherId === v.voucher_id;
+                  {groupedApplicableVouchers.length > 0 ? (
+                    <div
+                      className="mt-3 flex overflow-x-auto gap-4 pb-4 cursor-grab active:cursor-grabbing"
+                      {...voucherScrollProps}
+                    >
+                      {groupedApplicableVouchers.map((v: any) => {
+                        const uniqueId = v.wallet_id || v.voucher_id;
+                        const isSelected = selectedVoucherId === uniqueId;
                         const now = new Date();
                         const isExpired = new Date(v.end_date) < now;
+                        const minOrder = Number(v.min_order_value || 0);
+                        const isEligible = !Number.isFinite(minOrder) || voucherOrderTotal >= minOrder;
+                        const isDisabled = isExpired || !isEligible;
+                        const isPercent = v.discount_type === "percent" || v.discount_type === "percentage";
+                        const discountLabel = isPercent
+                          ? `-${Number(v.discount_value)}%`
+                          : `-${(Number(v.discount_value) / 1000).toFixed(0)}k`;
+
                         return (
                           <button
-                            key={v.voucher_id}
+                            key={uniqueId + "-" + Math.random()}
                             type="button"
-                            disabled={isExpired}
-                            onClick={() => {
-                              const id = v.voucher_id;
-                              setSelectedVoucherId(id);
-                              const total = isTouristLocation
-                                ? ticketTotal
-                                : isHotelBooking || isRoomBooking
-                                  ? selectedTotal
-                                  : preorderTotal || 0;
-                              let discount = 0;
-                              if (v.discount_type === "percent") {
-                                discount = (total * Number(v.discount_value)) / 100;
-                                if (v.max_discount_amount)
-                                  discount = Math.min(discount, Number(v.max_discount_amount));
-                              } else {
-                                discount = Number(v.discount_value);
+                            disabled={isDisabled}
+                            title={!isEligible ? `Cần đơn tối thiểu ${minOrder.toLocaleString("vi-VN")}đ` : undefined}
+                            onClick={(e) => {
+                              if (voucherScrollProps.hasDragged) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                return;
                               }
-                              discount = Math.min(discount, total);
-                              setVoucherDiscount(discount);
+                              if (isDisabled) return;
+                              if (isSelected) {
+                                setSelectedVoucherId(null);
+                              } else {
+                                setSelectedVoucherId(uniqueId);
+                              }
                             }}
-                            className={`w-full text-left rounded-xl border p-3 transition ${
-                              isExpired
-                                ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
+                            className={`relative flex flex-row rounded-xl overflow-hidden border bg-white shrink-0 w-[400px] transition-all duration-200 text-left ${
+                              isDisabled
+                                ? "border-slate-200 opacity-50 cursor-not-allowed grayscale"
                                 : isSelected
-                                  ? "border-emerald-400 bg-emerald-50 shadow-sm"
-                                  : "border-gray-200 bg-white hover:border-gray-300"
+                                ? "border-indigo-500 shadow-md ring-1 ring-indigo-500"
+                                : "border-slate-100 shadow-sm hover:border-slate-300 hover:shadow"
                             }`}
+                            style={{ height: "140px" }}
                           >
-                            <div className="text-sm font-bold text-rose-700">
-                              🎫{" "}
-                              {v.discount_type === "percent"
-                                ? `GIẢM ${Number(v.discount_value) % 1 === 0 ? Number(v.discount_value) : Number(v.discount_value).toFixed(0)}% hóa đơn`
-                                : `GIẢM ${Number(v.discount_value).toLocaleString("vi-VN")}đ`}
-                            </div>
-                            {v.discount_type === "percent" && v.max_discount_amount ? (
-                              <div className="mt-1 text-xs text-rose-600 font-semibold">
-                                Tối đa: {Number(v.max_discount_amount).toLocaleString("vi-VN")}đ
+                            {/* Left Violet Stub */}
+                            <div className="relative w-24 bg-indigo-600 flex flex-col justify-center items-center text-white shrink-0 p-4 select-none">
+                              <div className="absolute top-2 right-2 opacity-50">
+                                <svg className="w-3.5 h-3.5 text-indigo-200 fill-current" viewBox="0 0 24 24">
+                                  <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/>
+                                </svg>
                               </div>
-                            ) : null}
-                            <div className="mt-1.5 text-xs text-slate-700 font-semibold">
-                              {v.campaign_name || "Voucher"}
-                            </div>
-                            {v.campaign_description && (
-                              <div className="mt-0.5 text-xs text-slate-500">
-                                {v.campaign_description}
+                              <div className="absolute bottom-0 left-0 w-full h-7 flex flex-row items-end opacity-10 px-2 justify-between pointer-events-none">
+                                <div className="w-[12%] h-[60%] bg-white rounded-t-sm" />
+                                <div className="w-[15%] h-[80%] bg-white rounded-t-sm" />
+                                <div className="w-[10%] h-[40%] bg-white rounded-t-sm" />
+                                <div className="w-[18%] h-[90%] bg-white rounded-t-sm" />
+                                <div className="w-[14%] h-[70%] bg-white rounded-t-sm" />
+                                <div className="w-[12%] h-[50%] bg-white rounded-t-sm" />
                               </div>
-                            )}
-                            {Number(v.min_order_value) > 0 && (
-                              <div className="mt-1 text-xs text-slate-500">
-                                Đơn tối thiểu: {Number(v.min_order_value).toLocaleString("vi-VN")}đ
+                              <div className="text-2xl font-black tracking-tight">{discountLabel}</div>
+                              <div className="text-[9px] font-bold tracking-widest text-indigo-200 mt-0.5 uppercase">GIẢM GIÁ</div>
+                            </div>
+
+                            {/* Perforated Separator 1 */}
+                            <div className="relative w-3 shrink-0 flex flex-col items-center justify-between py-1 bg-white select-none">
+                              <div className="absolute -top-2.5 w-5 h-5 rounded-full bg-emerald-50 border border-slate-200" />
+                              <div className="h-full border-l border-dashed border-slate-200" />
+                              <div className="absolute -bottom-2.5 w-5 h-5 rounded-full bg-emerald-50 border border-slate-200" />
+                            </div>
+
+                            {/* Middle Info Block */}
+                            <div className="flex-1 p-3.5 pl-1.5 bg-white flex flex-col justify-between min-w-0">
+                              <div>
+                                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                  <span className="bg-indigo-50 text-indigo-700 text-[8px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                    MÃ GIẢM GIÁ
+                                  </span>
+                                  {v.actualQuantity > 0 && (
+                                    <span className="bg-rose-50 text-rose-600 text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <ClockCircleOutlined className="text-[8px]" /> Còn {v.actualQuantity} lượt
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h3 className="text-[13px] font-extrabold text-slate-800 flex items-center gap-1 line-clamp-1 leading-snug">
+                                  {v.campaign_name || "Voucher đặc biệt"} <span className="text-xs select-none">🎉</span>
+                                </h3>
+                                {v.campaign_description && (
+                                  <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1 leading-relaxed">
+                                    {v.campaign_description}
+                                  </p>
+                                )}
                               </div>
-                            )}
-                            <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-500">
-                              <span>NSD: {new Date(v.start_date).toLocaleDateString("vi-VN")}</span>
-                              <span>HSD: {new Date(v.end_date).toLocaleDateString("vi-VN")}</span>
+
+                              <div className="space-y-1">
+                                {v.discount_type === "percent" && v.max_discount_amount && (
+                                  <div className="text-[9px] text-purple-600 font-semibold leading-none">
+                                    Giảm tối đa: {Number(v.max_discount_amount).toLocaleString("vi-VN")}đ
+                                  </div>
+                                )}
+                                <div className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 flex items-center gap-1.5 w-fit">
+                                  <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                  </svg>
+                                  <span className="text-[10px] font-semibold text-slate-600 leading-none">
+                                    Đơn tối thiểu: {Number(v.min_order_value) > 0 ? `${Number(v.min_order_value).toLocaleString("vi-VN")}đ` : "0đ"}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              Địa điểm: {(() => {
-                                const locNames: string[] = Array.isArray(v.location_names)
-                                  ? v.location_names.filter((n: any) => n)
-                                  : [];
-                                if (locNames.length > 0) return locNames.join(", ");
-                                if (v.location_name) return v.location_name;
-                                return "Toàn hệ thống";
-                              })()}
+
+                            {/* Perforated Separator 2 */}
+                            <div className="relative w-3 shrink-0 flex flex-col items-center justify-between py-1 bg-white select-none">
+                              <div className="absolute -top-2.5 w-5 h-5 rounded-full bg-slate-50 border border-slate-200" />
+                              <div className="h-full border-l border-dashed border-slate-200" />
+                              <div className="absolute -bottom-2.5 w-5 h-5 rounded-full bg-slate-50 border border-slate-200" />
                             </div>
-                            {isExpired && (
-                              <div className="mt-1.5 text-xs font-semibold text-red-500">Đã hết hạn</div>
+
+                            {/* Right Metadata Block */}
+                            <div className="w-28 p-3 bg-slate-50/50 flex flex-col justify-between border-l border-transparent shrink-0">
+                              <div className="space-y-2">
+                                <div className="flex items-start gap-1 text-[10px] text-slate-500">
+                                  <CalendarOutlined className="text-indigo-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <div className="text-[8px] font-bold text-slate-400 leading-none">NSD</div>
+                                    <div className="font-semibold text-slate-600 mt-0.5 leading-none">{new Date(v.start_date).toLocaleDateString("vi-VN")}</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-1 text-[10px] text-slate-500">
+                                  <CalendarOutlined className="text-indigo-400 mt-0.5 shrink-0" />
+                                  <div>
+                                    <div className="text-[8px] font-bold text-slate-400 leading-none">HSD</div>
+                                    <div className="font-semibold text-slate-600 mt-0.5 leading-none">{new Date(v.end_date).toLocaleDateString("vi-VN")}</div>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="pt-1.5 border-t border-slate-100 flex items-start gap-1 text-[8px] text-slate-400 w-full relative min-w-0">
+                                <EnvironmentOutlined className="text-rose-400 shrink-0 mt-0.5" />
+                                <span className="line-clamp-2 leading-tight flex-1" title={location?.location_name || "Toàn hệ thống"}>
+                                  <span className="font-bold text-slate-500 block text-[8px] leading-none mb-0.5">Áp dụng tại</span>
+                                  {location?.location_name || "Toàn hệ thống"}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Selection Indicator */}
+                            {isSelected && (
+                              <div className="absolute top-0 right-0 bg-indigo-500 text-white rounded-bl-xl px-1.5 py-0.5 shadow-sm">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                              </div>
                             )}
                           </button>
                         );
@@ -3810,7 +4054,7 @@ const BookingPage = () => {
                 </div>
               )}
 
-              {isTicketBooking ? (
+              {isTicketBooking && Math.max(0, ticketTotal - voucherDiscount) > 0 ? (
                 <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
                   <p className="font-semibold">Bắt buộc chuyển khoản</p>
                   <p className="mt-1">
@@ -3917,7 +4161,8 @@ const BookingPage = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                                  className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  disabled={tableReservationsLoading}
                                   onClick={() =>
                                     void cancelTableReservation(Number(notice.id), "đặt phòng")
                                   }
@@ -4063,8 +4308,16 @@ const BookingPage = () => {
                             )}
                           </b>
                         </div>
-                        <div className="text-base font-bold text-gray-900">
-                          {formatMoney(preorderTotal)}
+                        <div className="text-base font-bold text-gray-900 flex flex-col items-end">
+                          {voucherDiscount > 0 ? (
+                            <>
+                              <span className="line-through text-gray-400 text-sm font-medium">{formatMoney(preorderTotal)}</span>
+                              <span className="text-green-600 text-sm">-{formatMoney(voucherDiscount)}</span>
+                              <span>{formatMoney(Math.max(0, preorderTotal - voucherDiscount))}</span>
+                            </>
+                          ) : (
+                            <span>{formatMoney(preorderTotal)}</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4072,50 +4325,7 @@ const BookingPage = () => {
                 </div>
               ) : null}
 
-              {false && isFoodLocation && tableReservations.length > 0 ? (
-                <div className="space-y-3">
-                  {tableReservations.map((reservation) => (
-                    <div
-                      key={reservation.bookingId}
-                      className="rounded-2xl border border-amber-100 bg-amber-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3 flex-wrap">
-                        <div>
-                          <h4 className="text-base font-semibold text-amber-800">
-                            {`Đặt chỗ ${reservation.tableNames.join(", ")} thành công`}
-                          </h4>
-                          <p className="text-sm text-amber-800 mt-2">
-                            {[
-                              reservation.locationName,
-                              formatDisplayDateTime(reservation.checkInDate),
-                            ]
-                              .filter(Boolean)
-                              .join(" • ")}
-                          </p>
-                          <p className="text-xs text-amber-700 mt-2">
-                            {[reservation.contactName, reservation.contactPhone]
-                              .filter(Boolean)
-                              .join(" • ") ||
-                              "Thông báo này sẽ tự mất khi booking check-in hoặc hết hạn."}
-                          </p>
-                        </div>
-                        {reservation.canCancel ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void cancelTableReservation(reservation.bookingId)
-                            }
-                            disabled={tableReservationsLoading}
-                            className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
-                          >
-                            Hủy bàn này
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (result && !hideSingleSuccess && !isTableBooking && !isRoomBooking && !isHotelBooking && !isFoodLocation) || (tableSuccess && !isFoodLocation && !isTableBooking) ? (
+              {result && !(result as any)?.payment && !hideSingleSuccess && !isTableBooking && !isRoomBooking && !isHotelBooking && !isFoodLocation ? (
                 <div className="rounded-2xl border border-green-100 bg-green-50 p-4">
                   <h4 className="text-base font-semibold text-green-700">
                     {(() => {
@@ -4149,164 +4359,7 @@ const BookingPage = () => {
                     </p>
                   ) : null}
 
-                  {!tableSuccess && result?.payment
-                    ? (() => {
-                        const qr = parseQrData((result as any).payment?.qrData);
-                        if (!qr) return null;
-
-                        const qrImg = buildVietQrImageUrl({
-                          bankName: String(qr.bank_name || ""),
-                          bankAccount: String(qr.bank_account || ""),
-                          accountHolder: String(qr.account_holder || ""),
-                          amount: Number(qr.amount || 0),
-                          addInfo: String(qr.content || ""),
-                          template: "compact2",
-                        });
-                        return (
-                          <div className="mt-4 rounded-xl border border-green-200 bg-white p-3 text-sm text-green-800">
-                            <p className="font-semibold">
-                              Thông tin chuyển khoản
-                            </p>
-
-                            {qrImg.url ? (
-                              <div className="mt-3 flex items-start gap-4 flex-wrap">
-                                <div className="shrink-0 rounded-xl border bg-slate-50 p-2">
-                                  <img
-                                    src={qrImg.url}
-                                    alt="VietQR"
-                                    className="h-44 w-44 rounded-lg"
-                                    loading="lazy"
-                                  />
-                                </div>
-                                <div className="min-w-[220px] flex-1">
-                                  <p className="mt-0">
-                                    Ngân hàng: {String(qr.bank_name || "")}
-                                  </p>
-                                  <p>
-                                    Số tài khoản:{" "}
-                                    {String(qr.bank_account || "")}
-                                  </p>
-                                  <p>
-                                    Chủ TK: {String(qr.account_holder || "")}
-                                  </p>
-                                  <p>
-                                    Số tiền:{" "}
-                                    {Number(qr.amount || 0).toLocaleString(
-                                      "vi-VN",
-                                    )}
-                                    đ
-                                  </p>
-                                  <p>Nội dung: {String(qr.content || "")}</p>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <p className="mt-2">
-                                  Ngân hàng: {String(qr.bank_name || "")}
-                                </p>
-                                <p>
-                                  Số tài khoản: {String(qr.bank_account || "")}
-                                </p>
-                                <p>Chủ TK: {String(qr.account_holder || "")}</p>
-                                <p>
-                                  Số tiền:{" "}
-                                  {Number(qr.amount || 0).toLocaleString(
-                                    "vi-VN",
-                                  )}
-                                  đ
-                                </p>
-                                <p>Nội dung: {String(qr.content || "")}</p>
-                                {qrImg.error ? (
-                                  <p className="mt-2 text-xs text-amber-700">
-                                    {qrImg.error}
-                                  </p>
-                                ) : null}
-                              </>
-                            )}
-                            {isTicketBooking ? (
-                              <>
-                                <p className="mt-1 text-xs text-gray-600">
-                                  Sau khi chuyển khoản, vui lòng bấm “Xác nhận
-                                  đã chuyển khoản” để nhận vé.
-                                </p>
-                                {(() => {
-                                  const bookingId = Number(
-                                    (result as any)?.bookingId,
-                                  );
-                                  if (
-                                    !Number.isFinite(bookingId) ||
-                                    bookingId <= 0
-                                  )
-                                    return null;
-                                  const confirmData =
-                                    ticketConfirmByBookingId[bookingId];
-                                  const paymentStatus =
-                                    confirmData?.paymentStatus ||
-                                    String(
-                                      (result as any)?.payment?.status ||
-                                        "pending",
-                                    );
-
-                                  if (paymentStatus === "completed") {
-                                    return (
-                                      <div className="mt-3 rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-800">
-                                        <p className="font-semibold">
-                                          Vé đã phát hành
-                                        </p>
-                                        <p className="mt-1 text-xs text-green-700">
-                                          Vui lòng xem chi tiết trong Vỏ vé du lịch.
-                                        </p>
-                                        <button
-                                          type="button"
-                                          className="mt-2 w-full rounded-xl border border-green-200 bg-white px-3 py-2 text-xs font-semibold text-green-700 hover:bg-green-50"
-                                          onClick={() => {
-                                            const target = Number.isFinite(
-                                              Number(locationIdNum),
-                                            )
-                                              ? `/user/tickets?locationId=${Number(locationIdNum)}`
-                                              : "/user/tickets";
-                                            navigate(target);
-                                          }}
-                                        >
-                                          Mở Vỏ vé du lịch
-                                        </button>
-                                      </div>
-                                    );
-                                  }
-
-                                  return (
-                                    <>
-                                      <button
-                                        type="button"
-                                        className="mt-3 w-full rounded-xl bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
-                                        onClick={() =>
-                                          confirmTicketTransfer(bookingId)
-                                        }
-                                        disabled={ticketConfirmLoading}
-                                      >
-                                        {ticketConfirmLoading
-                                          ? "Đang xác nhận..."
-                                          : "Xác nhận đã chuyển khoản"}
-                                      </button>
-                                      {ticketConfirmError ? (
-                                        <div className="mt-2 text-xs text-red-600">
-                                          {ticketConfirmError}
-                                        </div>
-                                      ) : null}
-                                    </>
-                                  );
-                                })()}
-                              </>
-                            ) : (
-                              <p className="mt-1 text-xs text-gray-600">
-                                Sau khi chuyển khoản, vui lòng chờ chủ địa điểm
-                                xác nhận.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })()
-                    : null}
+                  {/* duplicate qr code block removed */}
                 </div>
               ) : null}
 
@@ -4317,9 +4370,6 @@ const BookingPage = () => {
                       ? "Thanh toán món đặt trước"
                       : "Thanh toán (VietQR)"}
                   </h4>
-                  <p className="text-sm text-blue-600 mt-2">
-                    Đã tạo {visibleCreatedPayments.length} payment.
-                  </p>
                   <div className="mt-3 space-y-3">
                     {visibleCreatedPayments.map((p, idx) => {
                       const qr = parseQrData((p as any)?.qr_data);
@@ -4347,36 +4397,26 @@ const BookingPage = () => {
                           {qr ? (
                             <>
                               {qrImg.url ? (
-                                <div className="mt-3 flex items-start gap-4 flex-wrap">
-                                  <div className="shrink-0 rounded-xl border bg-slate-50 p-2">
-                                    <img
-                                      src={qrImg.url}
-                                      alt="VietQR"
-                                      className="h-72 w-72 rounded-lg"
-                                      loading="lazy"
-                                    />
+                                <>
+                                  <div className="mt-3 flex justify-center">
+                                    <div className="shrink-0 rounded-xl border bg-slate-50 p-2">
+                                      <img
+                                        src={qrImg.url}
+                                        alt="VietQR"
+                                        className="max-w-[280px] w-full rounded-lg"
+                                        loading="lazy"
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="min-w-[220px] flex-1">
-                                    <p className="mt-0">
-                                      Ngân hàng: {String(qr.bank_name || "")}
+                                  <div className="mt-3 text-center">
+                                    <p className="text-lg font-bold text-red-600">
+                                      {Number(qr.amount || 0).toLocaleString("vi-VN")}đ
                                     </p>
-                                    <p>
-                                      Số tài khoản:{" "}
-                                      {String(qr.bank_account || "")}
+                                    <p className="text-sm font-medium text-gray-700 mt-1">
+                                      Nội dung: <span className="text-blue-600 font-semibold">{String(qr.content || "")}</span>
                                     </p>
-                                    <p>
-                                      Chủ TK: {String(qr.account_holder || "")}
-                                    </p>
-                                    <p>
-                                      Số tiền:{" "}
-                                      {Number(qr.amount || 0).toLocaleString(
-                                        "vi-VN",
-                                      )}
-                                      đ
-                                    </p>
-                                    <p>Nội dung: {String(qr.content || "")}</p>
                                   </div>
-                                </div>
+                                </>
                               ) : (
                                 <>
                                   <p className="mt-2">

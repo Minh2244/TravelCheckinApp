@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import MapView, {
+  Marker,
   Polyline,
   PROVIDER_DEFAULT,
   Region,
@@ -29,7 +30,8 @@ import { useLocationPermissionStore } from "../../../src/modules/location-permis
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { osrmApi, type RouteInfo } from "../../../src/services/osrm.api";
 import { userApi } from "../../../src/services/user.api";
-import type { LocationItem } from "../../../src/types/location";
+import { locationApi } from "../../../src/services/location.api";
+import { isPrivateUserLocation, type LocationItem } from "../../../src/types/location";
 
 function getLocationCoordinate(location: LocationItem) {
   const latitude = Number(location.latitude);
@@ -90,6 +92,7 @@ export default function ExploreScreen() {
     startRoute?: string;
     requestKey?: string;
   }>();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
   const searchInputRef = useRef<TextInput>(null);
@@ -102,11 +105,17 @@ export default function ExploreScreen() {
   const [selectedLocation, setSelectedLocation] = useState<LocationItem | null>(null);
   const [ownerMarkerImages, setOwnerMarkerImages] = useState<Record<number, string>>({});
   const [favoriteLocationIds, setFavoriteLocationIds] = useState<number[]>([]);
+  const [privateMapLocations, setPrivateMapLocations] = useState<LocationItem[]>([]);
+  const [temporaryPin, setTemporaryPin] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [temporaryPinName, setTemporaryPinName] = useState("");
+  const [temporaryPinPurpose, setTemporaryPinPurpose] = useState<"draft" | "route-destination">("draft");
+  const [savingTemporaryPin, setSavingTemporaryPin] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [userMarkerImage, setUserMarkerImage] = useState<string | null>(null);
   const [userHeading, setUserHeading] = useState(0);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isRouting, setIsRouting] = useState(false);
+  const [routeTargetName, setRouteTargetName] = useState<string | null>(null);
   const [isUserZoomedIn, setIsUserZoomedIn] = useState(false);
 
   const [mapRegion] = useState<Region>({
@@ -120,18 +129,31 @@ export default function ExploreScreen() {
     () => new Set(favoriteLocationIds),
     [favoriteLocationIds],
   );
+  const mapLocations = useMemo(() => {
+    const seen = new Set<number>();
+    return [...privateMapLocations, ...locations].filter((location) => {
+      const locationId = Number(location.location_id);
+      if (!Number.isFinite(locationId) || seen.has(locationId)) return false;
+      seen.add(locationId);
+      return true;
+    });
+  }, [locations, privateMapLocations]);
   const searchResults = useMemo(
-    () => (keyword.trim() ? locations.slice(0, 5) : []),
-    [keyword, locations],
+    () => (keyword.trim() ? mapLocations.slice(0, 5) : []),
+    [keyword, mapLocations],
   );
 
   const loadFavorites = useCallback(async () => {
     try {
       const response = await userApi.getFavorites();
+      const favoriteItems = response.data || [];
       setFavoriteLocationIds(
-        (response.data || [])
+        favoriteItems
           .map((item) => Number(item.location_id))
           .filter((item) => Number.isFinite(item)),
+      );
+      setPrivateMapLocations(
+        favoriteItems.filter((item) => Boolean(item.is_private_location)),
       );
     } catch {
       setFavoriteLocationIds([]);
@@ -139,7 +161,7 @@ export default function ExploreScreen() {
   }, []);
 
   const centerOnUser = useCallback(async () => {
-    const ready = await ensureLocationAccess("ban do");
+    const ready = await ensureLocationAccess("bản đồ");
     if (!ready) return;
 
     try {
@@ -165,7 +187,7 @@ export default function ExploreScreen() {
   }, [ensureLocationAccess]);
 
   const toggleUserZoom = useCallback(async () => {
-    const ready = await ensureLocationAccess("ban do");
+    const ready = await ensureLocationAccess("bản đồ");
     if (!ready) return;
 
     try {
@@ -195,7 +217,7 @@ export default function ExploreScreen() {
   }, [ensureLocationAccess, isUserZoomedIn, userLocation]);
 
   const startWatchingUser = useCallback(async () => {
-    const ready = await ensureLocationAccess("ban do");
+    const ready = await ensureLocationAccess("bản đồ");
     if (!ready) {
       if (locationWatcherRef.current) {
         locationWatcherRef.current.remove();
@@ -248,6 +270,8 @@ export default function ExploreScreen() {
       }
 
       setSelectedLocation(location);
+      setTemporaryPin(null);
+      setTemporaryPinPurpose("draft");
       setSearchFocused(false);
       searchInputRef.current?.blur();
 
@@ -308,6 +332,11 @@ export default function ExploreScreen() {
 
         setUserLocation(origin);
         setSelectedLocation(target);
+        if (isPrivateUserLocation(target) || Number(target.location_id) < 0) {
+          setTemporaryPin(coordinate);
+          setTemporaryPinPurpose("route-destination");
+          setTemporaryPinName(target.location_name || "Vị trí tự do");
+        }
 
         const route = await osrmApi.getRoute(
           {
@@ -324,11 +353,74 @@ export default function ExploreScreen() {
           animated: true,
         });
       } catch {
+        setIsRouting(false);
+        if (Number(target.location_id) < 0) {
+          setTemporaryPinPurpose("draft");
+        }
         showToast("Không tìm được đường đi");
       }
     },
     [ensureLocationAccess, userLocation],
   );
+
+  const saveTemporaryPin = useCallback(async () => {
+    if (!temporaryPin || savingTemporaryPin) return;
+
+    const name = temporaryPinName.trim() || "Vị trí tự do";
+    setSavingTemporaryPin(true);
+    try {
+      const saveResponse = await userApi.createCheckin({
+        action: "save",
+        checkin_latitude: temporaryPin.latitude,
+        checkin_longitude: temporaryPin.longitude,
+        location_name: name,
+        location_address: `(${temporaryPin.latitude.toFixed(6)}, ${temporaryPin.longitude.toFixed(6)})`,
+        location_type: "other",
+      });
+      const locationId = Number(saveResponse.data?.location_id);
+      if (!Number.isFinite(locationId)) throw new Error("missing location id");
+
+      const detailResponse = await locationApi.getLocationById(locationId);
+      const savedLocation = detailResponse.data;
+      setPrivateMapLocations((current) => {
+        const rest = current.filter((item) => Number(item.location_id) !== locationId);
+        return [savedLocation, ...rest];
+      });
+      setFavoriteLocationIds((current) =>
+        current.includes(locationId) ? current : [locationId, ...current],
+      );
+      setTemporaryPin(null);
+      setTemporaryPinName("");
+      setTemporaryPinPurpose("draft");
+      setSelectedLocation(savedLocation);
+      showToast("Đã lưu vị trí tự do");
+      router.push(`/location/${locationId}`);
+    } catch {
+      showToast("Không thể lưu vị trí tự do");
+    } finally {
+      setSavingTemporaryPin(false);
+    }
+  }, [router, savingTemporaryPin, temporaryPin, temporaryPinName]);
+
+  const routeTemporaryPin = useCallback(() => {
+    if (!temporaryPin) return;
+    setTemporaryPinPurpose("route-destination");
+    setIsRouting(true);
+    const tempLocation: LocationItem = {
+      location_id: -1,
+      location_name: temporaryPinName.trim() || "Ghim tạm",
+      location_type: "other",
+      address: `(${temporaryPin.latitude.toFixed(6)}, ${temporaryPin.longitude.toFixed(6)})`,
+      latitude: temporaryPin.latitude,
+      longitude: temporaryPin.longitude,
+      first_image: null,
+      status: "active",
+      rating: 0,
+      total_reviews: 0,
+      source: "user",
+    };
+    void startRouteToLocation(tempLocation);
+  }, [startRouteToLocation, temporaryPin, temporaryPinName]);
 
   const handleOwnerMarkerReady = useCallback((locationId: number, uri: string) => {
     setOwnerMarkerImages((current) => {
@@ -372,10 +464,28 @@ export default function ExploreScreen() {
       return;
     }
 
-    const target = locations.find(
+    const target = mapLocations.find(
       (location) => Number(location.location_id) === focusId,
     );
     if (!target) {
+      processedNavigationRef.current = navigationKey;
+      locationApi
+        .getLocationById(focusId)
+        .then((response) => {
+          const privateTarget = response.data;
+          setPrivateMapLocations((current) => {
+            const rest = current.filter(
+              (item) => Number(item.location_id) !== Number(privateTarget.location_id),
+            );
+            return [privateTarget, ...rest];
+          });
+          if (params.startRoute === "1") {
+            void startRouteToLocation(privateTarget);
+          } else {
+            handleSelectLocation(privateTarget);
+          }
+        })
+        .catch(() => undefined);
       return;
     }
 
@@ -388,7 +498,7 @@ export default function ExploreScreen() {
     }
   }, [
     handleSelectLocation,
-    locations,
+    mapLocations,
     params.focusLocationId,
     params.requestKey,
     params.startRoute,
@@ -424,8 +534,23 @@ export default function ExploreScreen() {
         showsCompass={false}
         showsMyLocationButton={false}
         toolbarEnabled={false}
+        onLongPress={(event) => {
+          const { latitude, longitude } = event.nativeEvent.coordinate;
+          setTemporaryPin({ latitude, longitude });
+          setTemporaryPinPurpose("draft");
+          setTemporaryPinName("");
+          setSelectedLocation(null);
+          setSearchFocused(false);
+          searchInputRef.current?.blur();
+          mapRef.current?.animateToRegion({
+            latitude,
+            longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          });
+        }}
       >
-        {locations.map((location) => {
+        {mapLocations.map((location) => {
           const coordinate = getLocationCoordinate(location);
 
           if (!coordinate) {
@@ -443,6 +568,14 @@ export default function ExploreScreen() {
             />
           );
         })}
+
+        {temporaryPin ? (
+          <Marker coordinate={temporaryPin} anchor={{ x: 0.5, y: 1 }} zIndex={30}>
+            <View style={styles.tempMarker}>
+              <Ionicons name="location" size={30} color="#f59e0b" />
+            </View>
+          </Marker>
+        ) : null}
 
         {userLocation && userMarkerImage ? (
           <UserLocationMarker
@@ -464,7 +597,7 @@ export default function ExploreScreen() {
       </MapView>
 
       <OwnerMarkerBitmapFactory
-        locations={locations}
+        locations={mapLocations}
         onReady={handleOwnerMarkerReady}
       />
       <UserMarkerBitmapFactory onReady={setUserMarkerImage} />
@@ -476,6 +609,9 @@ export default function ExploreScreen() {
             onPress={() => {
               setIsRouting(false);
               setRouteInfo(null);
+              if (selectedLocation?.location_id === -1) {
+                setSelectedLocation(null);
+              }
             }}
           >
             <Ionicons name="chevron-back" size={24} color="#0f172a" />
@@ -558,6 +694,60 @@ export default function ExploreScreen() {
         <Ionicons name="locate" size={24} color="#0f766e" />
       </Pressable>
 
+      {temporaryPin && !isRouting && temporaryPinPurpose === "draft" ? (
+        <View style={[styles.tempPinCard, { bottom: Math.max(insets.bottom + 20, 20) }]}>
+          <View style={styles.tempPinHeader}>
+            <View style={styles.tempPinIcon}>
+              <Ionicons name="location" size={18} color="#b45309" />
+            </View>
+            <View style={styles.tempPinCopy}>
+              <Text style={styles.tempPinTitle}>Ghim vị trí tự do</Text>
+              <Text style={styles.tempPinCoords}>
+                {temporaryPin.latitude.toFixed(6)}, {temporaryPin.longitude.toFixed(6)}
+              </Text>
+            </View>
+          </View>
+          <TextInput
+            value={temporaryPinName}
+            onChangeText={setTemporaryPinName}
+            placeholder="Tên vị trí khi lưu"
+            placeholderTextColor="#94a3b8"
+            style={[styles.tempPinInput, styles.hidden]}
+          />
+          <View style={styles.tempPinActions}>
+            <Pressable style={styles.tempPinButton} onPress={routeTemporaryPin}>
+              <Ionicons name="navigate-outline" size={17} color="#0f766e" />
+              <Text style={styles.tempPinButtonText}>Chỉ đường</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tempPinButton, styles.tempPinSaveButton]}
+              disabled={savingTemporaryPin}
+              onPress={() => void saveTemporaryPin()}
+            >
+              <Ionicons name="bookmark-outline" size={17} color="#ffffff" />
+              <Text style={styles.tempPinSaveText}>
+                {savingTemporaryPin ? "Đang lưu" : "Lưu"}
+              </Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={styles.tempPinDelete}
+            onPress={() => {
+              setTemporaryPin(null);
+              setTemporaryPinName("");
+              setTemporaryPinPurpose("draft");
+              setRouteInfo(null);
+              setIsRouting(false);
+              if (selectedLocation?.location_id === -1) {
+                setSelectedLocation(null);
+              }
+            }}
+          >
+            <Text style={styles.tempPinDeleteText}>Xóa ghim</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {selectedLocation && !isRouting ? (
         <BottomSheetSummary
           isFavorite={favoriteLocationSet.has(selectedLocation.location_id)}
@@ -578,6 +768,14 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  tempMarker: {
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#92400e",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
   header: {
     position: "absolute",
@@ -701,5 +899,105 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
     zIndex: 70,
+  },
+  tempPinCard: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+    zIndex: 75,
+  },
+  tempPinHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  tempPinIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fef3c7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tempPinCopy: {
+    flex: 1,
+  },
+  tempPinTitle: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  tempPinCoords: {
+    marginTop: 2,
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  tempPinInput: {
+    height: 42,
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#dbe4ea",
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 12,
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  tempPinActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  tempPinButton: {
+    flex: 1,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  tempPinSaveButton: {
+    borderColor: "#0f766e",
+    backgroundColor: "#0f766e",
+  },
+  tempPinButtonText: {
+    color: "#0f766e",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  tempPinSaveText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  tempPinDelete: {
+    height: 34,
+    marginTop: 8,
+    borderRadius: 9,
+    backgroundColor: "#fff1f2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tempPinDeleteText: {
+    color: "#e11d48",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  hidden: {
+    display: "none",
   },
 });

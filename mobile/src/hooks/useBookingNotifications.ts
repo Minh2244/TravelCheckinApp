@@ -43,6 +43,10 @@ export function useBookingNotifications() {
             showToast("🆘 SOS: Đội cứu hộ đang di chuyển đến vị trí của bạn!", 6000);
           } else if (data.status === "resolved") {
             showToast("✅ SOS: Cứu hộ thành công! Bạn đã an toàn.", 6000);
+          } else if (data.status === "cancelled") {
+            showToast("❌ SOS: Yêu cầu cứu hộ đã bị hủy.", 6000);
+          } else if (data.status === "cancelled") {
+            showToast("❌ SOS: Yêu cầu cứu hộ đã bị hủy.", 6000);
           }
         }
 

@@ -84,8 +84,10 @@ export default function BookingPaymentScreen() {
   }, [bookingId]);
 
   const qr = useMemo(() => parseQrData(payment?.qr_data), [payment?.qr_data]);
+  const payableAmount = Number(qr?.amount || payment?.amount || 0);
+  const isFreePayment = Boolean(payment) && (!Number.isFinite(payableAmount) || payableAmount <= 0);
   const qrImage = useMemo(() => {
-    if (!qr) return { url: null, error: null };
+    if (!qr || isFreePayment) return { url: null, error: null };
     return buildVietQrImageUrl({
       bankName: String(qr.bank_name || ""),
       bankAccount: String(qr.bank_account || ""),
@@ -94,7 +96,7 @@ export default function BookingPaymentScreen() {
       addInfo: String(qr.content || qr.transaction_code || payment?.transaction_code || ""),
       template: "compact2",
     });
-  }, [payment?.amount, payment?.transaction_code, qr]);
+  }, [isFreePayment, payment?.amount, payment?.transaction_code, qr]);
 
   async function handleConfirmTransfer() {
     if (!Number.isFinite(bookingId) || bookingId <= 0) return;
@@ -161,7 +163,14 @@ export default function BookingPaymentScreen() {
           <Text style={styles.paymentCode}>
             Payment #{payment?.payment_id || "-"}
           </Text>
-          {qrImage.url ? (
+          {isFreePayment ? (
+            <View style={styles.qrFallback}>
+              <Ionicons name="checkmark-circle-outline" size={56} color="#0f766e" />
+              <Text style={styles.qrFallbackText}>
+                Đơn đã được giảm còn 0đ, không cần chuyển khoản.
+              </Text>
+            </View>
+          ) : qrImage.url ? (
             <Image
               source={{ uri: qrImage.url }}
               style={styles.qrImage}
@@ -202,11 +211,11 @@ export default function BookingPaymentScreen() {
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Pressable
           style={[styles.primaryButton, confirming && styles.disabledButton]}
-          onPress={handleConfirmTransfer}
+          onPress={isFreePayment ? () => router.replace(mode === "ticket" ? "/wallet/tickets" : mode === "room" || mode === "room-batch" ? "/wallet/room-pass" : "/wallet/table-pass") : handleConfirmTransfer}
           disabled={confirming}
         >
           <Text style={styles.primaryButtonText}>
-            {confirming ? "Đang xác nhận..." : "Xác nhận đã chuyển khoản"}
+            {isFreePayment ? "Xem vé của tôi" : confirming ? "Đang xác nhận..." : "Xác nhận đã chuyển khoản"}
           </Text>
         </Pressable>
       </View>

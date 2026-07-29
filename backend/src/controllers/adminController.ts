@@ -10,6 +10,7 @@ import { sendPushNotification } from "../services/adminService";
 import crypto from "crypto";
 import { sendOwnerTermsEmail } from "../utils/emailService";
 import { saveImageToDB, linkImageToEntity, removeEntityImages } from "../utils/uploadImage";
+import { emitToAll } from "../utils/socketHub";
 import { publishToUser } from "../utils/realtime";
 
 const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ỹ]+(?:\s+[A-Za-zÀ-ỹ]+)*$/u;
@@ -113,9 +114,8 @@ export const getDashboardStats = async (
          u.avatar_url,
          COALESCE(SUM(p.amount), 0) as total_spent
        FROM users u
-       JOIN payments p ON p.user_id = u.user_id AND p.status = 'completed'
+       LEFT JOIN payments p ON p.user_id = u.user_id AND p.status = 'completed' AND p.payment_time BETWEEN ? AND ?
        WHERE u.role = 'user' AND u.deleted_at IS NULL
-         AND p.payment_time BETWEEN ? AND ?
        GROUP BY u.user_id
        ORDER BY total_spent DESC
        LIMIT 3`,
@@ -131,10 +131,9 @@ export const getDashboardStats = async (
          u.avatar_url,
          COALESCE(SUM(p.amount), 0) as total_revenue
        FROM users u
-       JOIN locations l ON l.owner_id = u.user_id
-       JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed'
+       LEFT JOIN locations l ON l.owner_id = u.user_id
+       LEFT JOIN payments p ON p.location_id = l.location_id AND p.status = 'completed' AND p.payment_time BETWEEN ? AND ?
        WHERE u.role = 'owner' AND u.deleted_at IS NULL
-         AND p.payment_time BETWEEN ? AND ?
        GROUP BY u.user_id
        ORDER BY total_revenue DESC
        LIMIT 3`,
@@ -1755,7 +1754,7 @@ export const uploadBackgroundImage = async (
       return;
     }
 
-    const body = req.body as { type?: string; apply?: string | boolean };
+    const body = req.body as { type?: string; apply?: string | boolean; app_primary_color?: string; app_secondary_color?: string; app_text_color?: string };
     const type = String(body.type || "app");
     if (!"app,login".includes(type)) {
       res.status(400).json({ success: false, message: "type không hợp lệ" });
@@ -1787,6 +1786,38 @@ export const uploadBackgroundImage = async (
          ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), setting_value_file = VALUES(setting_value_file), setting_type = 'image'`,
         [key, result.url, result.url],
       );
+
+      if (type === "app") {
+        const primaryColor = body.app_primary_color ? String(body.app_primary_color) : "";
+        const secondaryColor = body.app_secondary_color ? String(body.app_secondary_color) : "";
+        const textColor = body.app_text_color ? String(body.app_text_color) : "";
+        if (primaryColor) {
+          await pool.query(
+            `INSERT INTO system_settings (setting_key, setting_value) VALUES ('app_primary_color', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [primaryColor]
+          );
+        }
+        if (secondaryColor) {
+          await pool.query(
+            `INSERT INTO system_settings (setting_key, setting_value) VALUES ('app_secondary_color', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [secondaryColor]
+          );
+        }
+        if (textColor) {
+          await pool.query(
+            `INSERT INTO system_settings (setting_key, setting_value) VALUES ('app_text_color', ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [textColor]
+          );
+        }
+        
+        // Phát sự kiện realtime để app tự động update màu
+        emitToAll("public_settings_updated", {
+          app_background_url: result.url,
+          app_primary_color: primaryColor,
+          app_secondary_color: secondaryColor,
+          app_text_color: textColor,
+        });
+      }
     }
 
     res.json({
@@ -2620,41 +2651,47 @@ export const deleteUser = async (
       return;
     }
 
-    // Vì sao: nút Xóa phải xóa thật; Khóa/Mở khóa dùng endpoint updateUserStatus.
-    const [roleRows] = await pool.query<RowDataPacket[]>(
-      `SELECT role FROM users WHERE user_id = ? LIMIT 1`,
-      [id],
-    );
-
-    if (roleRows.length === 0) {
-      res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy tài khoản" });
-      return;
-    }
-
-    if (roleRows[0].role === "admin") {
-      res
-        .status(403)
-        .json({ success: false, message: "Không thể xóa tài khoản admin" });
-      return;
-    }
-
-    let delResult: any;
+      // Vì sao: nút Xóa phải xóa thật; Khóa/Mở khóa dùng endpoint updateUserStatus.
+      const [roleRows] = await pool.query<RowDataPacket[]>(
+        `SELECT role FROM users WHERE user_id = ? LIMIT 1`,
+        [id],
+      );
+  
+      if (roleRows.length === 0) {
+        res
+          .status(404)
+          .json({ success: false, message: "Không tìm thấy tài khoản" });
+        return;
+      }
+  
+      if (roleRows[0].role === "admin") {
+        res
+          .status(403)
+          .json({ success: false, message: "Không thể xóa tài khoản admin" });
+        return;
+      }
+  
+      let delResult: any;
     try {
       const [result] = await pool.query(
         `UPDATE users
-         SET deleted_at = NOW()
+         SET email = CONCAT('deleted_', UUID(), '@travelcheckin.local'),
+             phone = NULL,
+             google_id = NULL,
+             facebook_id = NULL,
+             password_hash = NULL,
+             deleted_at = NOW()
          WHERE user_id = ? AND role IN ('user','owner','employee') AND deleted_at IS NULL`,
         [id],
       );
       delResult = result;
-    } catch {
-      const [result] = await pool.query(
-        `DELETE FROM users WHERE user_id = ? AND role IN ('user','owner','employee')`,
-        [id],
-      );
-      delResult = result;
+      
+      // Xóa dữ liệu rác
+      await pool.query(`DELETE FROM favorite_locations WHERE user_id = ?`, [id]);
+      await pool.query(`DELETE FROM search_history WHERE user_id = ?`, [id]);
+      await pool.query(`DELETE FROM login_history WHERE user_id = ?`, [id]);
+    } catch (e) {
+       console.error("Error anonymizing user:", e);
     }
 
     const affected = (delResult as unknown as { affectedRows: number })
@@ -2866,6 +2903,65 @@ export const deleteOwner = async (
       return;
     }
 
+    // -- BẮT ĐẦU: Logic tự động ẩn danh nhân viên khi xóa Owner --
+    const [empOwnerRows] = await pool.query<RowDataPacket[]>(
+      `SELECT employee_id FROM employee_locations WHERE owner_id = ?`,
+      [id]
+    );
+    const empIds = empOwnerRows.map((row) => row.employee_id).filter(Boolean);
+
+    if (empIds.length > 0) {
+      await pool.query(
+        `UPDATE employee_locations SET status = 'inactive' WHERE owner_id = ?`,
+        [id]
+      );
+      await pool.query(
+        `UPDATE users 
+         SET email = CONCAT('deleted_', UUID(), '@travelcheckin.local'), 
+             phone = NULL, 
+             password_hash = NULL, 
+             google_id = NULL,
+             facebook_id = NULL,
+             deleted_at = NOW()
+         WHERE user_id IN (?) AND role = 'employee'`,
+        [empIds]
+      );
+    }
+    // -- KẾT THÚC --
+
+    // Cascade delete locations
+    await pool.query(
+      `UPDATE locations SET deleted_at = NOW(), status = 'inactive', updated_at = NOW() WHERE owner_id = ? AND deleted_at IS NULL`,
+      [id]
+    );
+    
+    // Cascade delete location reviews
+    await pool.query(
+      `DELETE FROM reviews WHERE location_id IN (SELECT location_id FROM locations WHERE owner_id = ?)`,
+      [id]
+    );
+
+    // -- BẮT ĐẦU: Cascade xóa các dữ liệu liên quan khi xóa Owner --
+    // 1. Hủy các booking tương lai
+    await pool.query(
+      `UPDATE bookings SET status = 'cancelled', cancelled_at = NOW(), notes = CONCAT('Đã hủy tự động do địa điểm ngừng hoạt động. ', IFNULL(notes, '')) 
+       WHERE location_id IN (SELECT location_id FROM locations WHERE owner_id = ?) AND status IN ('pending', 'confirmed') AND check_in_date >= NOW()`,
+      [id]
+    );
+    // 2. Vô hiệu hóa Dịch vụ
+    await pool.query(
+      `UPDATE services SET deleted_at = NOW(), admin_status = 'rejected', updated_at = NOW() 
+       WHERE location_id IN (SELECT location_id FROM locations WHERE owner_id = ?) AND deleted_at IS NULL`,
+      [id]
+    );
+    // 3. Hết hạn Voucher
+    await pool.query(
+      `UPDATE vouchers SET status = 'expired' 
+       WHERE owner_id = ? AND status = 'active'`,
+      [id]
+    );
+    // -- KẾT THÚC --
+
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
       [
@@ -2917,6 +3013,53 @@ export const deleteLocation = async (
         .json({ success: false, message: "Không tìm thấy địa điểm" });
       return;
     }
+
+    // -- BẮT ĐẦU: Logic tự động ẩn danh nhân viên khi xóa địa điểm --
+    const [empLocRows] = await pool.query<RowDataPacket[]>(
+      `SELECT employee_id FROM employee_locations WHERE location_id = ?`,
+      [id]
+    );
+    const employeeIds = empLocRows.map((row) => row.employee_id).filter(Boolean);
+
+    if (employeeIds.length > 0) {
+      await pool.query(
+        `UPDATE employee_locations SET status = 'inactive' WHERE location_id = ?`,
+        [id]
+      );
+      await pool.query(
+        `UPDATE users 
+         SET email = CONCAT('deleted_', UUID(), '@travelcheckin.local'), 
+             phone = NULL, 
+             password_hash = NULL, 
+             google_id = NULL,
+             facebook_id = NULL,
+             deleted_at = NOW()
+         WHERE user_id IN (?) AND role = 'employee'`,
+        [employeeIds]
+      );
+    }
+    // -- KẾT THÚC --
+
+    // -- BẮT ĐẦU: Cascade xóa các dữ liệu liên quan khi xóa Địa điểm --
+    // 1. Hủy các booking tương lai
+    await pool.query(
+      `UPDATE bookings SET status = 'cancelled', cancelled_at = NOW(), notes = CONCAT('Đã hủy tự động do địa điểm ngừng hoạt động. ', IFNULL(notes, '')) 
+       WHERE location_id = ? AND status IN ('pending', 'confirmed') AND check_in_date >= NOW()`,
+      [id]
+    );
+    // 2. Vô hiệu hóa Dịch vụ
+    await pool.query(
+      `UPDATE services SET deleted_at = NOW(), admin_status = 'rejected', updated_at = NOW() 
+       WHERE location_id = ? AND deleted_at IS NULL`,
+      [id]
+    );
+    // 3. Hết hạn Voucher
+    await pool.query(
+      `UPDATE vouchers SET status = 'expired' 
+       WHERE location_id = ? AND status = 'active'`,
+      [id]
+    );
+    // -- KẾT THÚC --
 
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
@@ -3062,7 +3205,7 @@ export const getCheckins = async (
         c.notes,
         c.checkin_latitude,
         c.checkin_longitude,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.email as user_email,
         u.phone as user_phone,
         l.location_name,
@@ -3272,7 +3415,7 @@ export const getLocationCheckinHistory = async (
         c.booking_id,
         c.checkin_time,
         c.status,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.email as user_email
        FROM checkins c
        JOIN users u ON c.user_id = u.user_id
@@ -4142,7 +4285,7 @@ export const getCheckinById = async (
         c.notes,
         c.checkin_latitude,
         c.checkin_longitude,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.email as user_email,
         u.phone as user_phone,
         l.location_name,
@@ -4878,7 +5021,7 @@ export const getAdminLocations = async (
         l.updated_at
       FROM locations l
       JOIN users u ON l.owner_id = u.user_id
-      WHERE u.role != 'user'
+      WHERE u.role != 'user' AND l.deleted_at IS NULL
     `;
     const params: Array<string | number> = [];
 
@@ -4913,7 +5056,7 @@ export const getAdminLocations = async (
       SELECT COUNT(*) as total
       FROM locations l
       JOIN users u ON l.owner_id = u.user_id
-      WHERE u.role != 'user'
+      WHERE u.role != 'user' AND l.deleted_at IS NULL
     `;
     const countParams: Array<string | number> = [];
 
@@ -4996,7 +5139,7 @@ export const approveLocation = async (
 
     await pool.query(
       `UPDATE locations
-       SET status = 'active', previous_status = NULL, updated_at = NOW()
+       SET status = 'active', previous_status = NULL, backup_data = NULL, deleted_at = NULL, updated_at = NOW()
        WHERE location_id = ?`,
       [id],
     );
@@ -5026,16 +5169,10 @@ export const approveLocation = async (
 
       // Gửi sự kiện SSE realtime cho Owner và các Admin khác
       try {
-        const { publishToUser, publishToAll } = require("../utils/realtime");
+        const { publishToUser } = require("../utils/realtime");
         publishToUser(ownerId, {
           type: "location_approved",
-          location_id: Number(id),
-          message: `Địa điểm "${ownerRows[0]?.location_name}" của bạn đã được duyệt hoạt động!`
-        });
-        publishToAll({
-          type: "location_approved",
-          location_id: Number(id),
-          message: `Địa điểm "${ownerRows[0]?.location_name}" đã được phê duyệt.`
+          location_id: Number(id)
         });
       } catch (sseErr: any) {
         console.error("Lỗi gửi SSE duyệt địa điểm:", sseErr.message);
@@ -5065,7 +5202,7 @@ export const rejectLocation = async (
     const adminId = (req as any).userId;
 
     const [ownerRows] = await pool.query<RowDataPacket[]>(
-      `SELECT l.location_name, u.user_id as owner_id
+      `SELECT l.location_name, u.user_id as owner_id, l.previous_status, l.backup_data
        FROM locations l
        JOIN users u ON l.owner_id = u.user_id
        WHERE l.location_id = ?
@@ -5073,15 +5210,39 @@ export const rejectLocation = async (
       [id],
     );
 
-    await pool.query(
-      `UPDATE locations 
-       SET status = 'inactive', 
-           rejection_reason = ?, 
-           updated_at = NOW() 
-       WHERE location_id = ?`,
-      [reason, id],
-    );
+    const backupData = ownerRows[0]?.backup_data;
+    const prevStatus = ownerRows[0]?.previous_status || 'inactive';
 
+    if (backupData) {
+      try {
+        const backup = typeof backupData === "string" ? JSON.parse(backupData) : backupData;
+        const updates = [];
+        const params = [];
+        for (const key of Object.keys(backup)) {
+          if (key !== "location_id" && key !== "owner_id" && key !== "status" && key !== "previous_status" && key !== "backup_data") {
+            updates.push(`${key} = ?`);
+            params.push(backup[key]);
+          }
+        }
+        updates.push("status = ?"); params.push(prevStatus);
+        updates.push("previous_status = NULL");
+        updates.push("backup_data = NULL");
+        updates.push("rejection_reason = ?"); params.push(reason);
+        updates.push("updated_at = NOW()");
+        
+        await pool.query(
+          `UPDATE locations SET ${updates.join(", ")} WHERE location_id = ?`,
+          [...params, id]
+        );
+      } catch (err) {
+        await pool.query(
+          `UPDATE locations SET status = ?, rejection_reason = ?, backup_data = NULL, previous_status = NULL, updated_at = NOW() WHERE location_id = ?`,
+          [prevStatus, reason, id],
+        );
+      }
+    } else {
+      await pool.query(`DELETE FROM locations WHERE location_id = ?`, [id]);
+    }
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
       [
@@ -5110,16 +5271,10 @@ export const rejectLocation = async (
 
       // Gửi sự kiện SSE realtime cho Owner và các Admin khác
       try {
-        const { publishToUser, publishToAll } = require("../utils/realtime");
+        const { publishToUser } = require("../utils/realtime");
         publishToUser(ownerId, {
           type: "location_rejected",
-          location_id: Number(id),
-          message: `Địa điểm "${ownerRows[0]?.location_name}" của bạn đã bị từ chối duyệt. Lý do: ${reason || "Không có lý do chi tiết."}`
-        });
-        publishToAll({
-          type: "location_rejected",
-          location_id: Number(id),
-          message: `Địa điểm "${ownerRows[0]?.location_name}" đã bị từ chối.`
+          location_id: Number(id)
         });
       } catch (sseErr: any) {
         console.error("Lỗi gửi SSE từ chối địa điểm:", sseErr.message);
@@ -5593,7 +5748,7 @@ export const getLocationDuplicates = async (
     const [rows] = await pool.query<LocationDupRow[]>(
       `SELECT location_id, location_name, location_type, province, address, latitude, longitude
        FROM locations
-       WHERE latitude IS NOT NULL AND longitude IS NOT NULL`,
+       WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND status != 'deleted'`,
     );
 
     const normalized = rows.map((r) => ({
@@ -5786,50 +5941,63 @@ export const getCheckinAnalytics = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { from, to } = req.query;
-    const endDate = typeof to === "string" ? new Date(to) : new Date();
-    const startDate =
-      typeof from === "string"
-        ? new Date(from)
-        : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const { from, to, province } = req.query;
+    
+    let whereSql = "WHERE 1=1";
+    const params: any[] = [];
 
-    const fromSql = startDate.toISOString().slice(0, 19).replace("T", " ");
-    const toSql = endDate.toISOString().slice(0, 19).replace("T", " ");
+    if (from !== "all" && to !== "all") {
+      const endDate = typeof to === "string" ? new Date(to) : new Date();
+      const startDate = typeof from === "string" ? new Date(from) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const fromSql = startDate.toISOString().slice(0, 19).replace("T", " ");
+      const toSql = endDate.toISOString().slice(0, 19).replace("T", " ");
+      whereSql += " AND c.checkin_time BETWEEN ? AND ?";
+      params.push(fromSql, toSql);
+    }
+
+    if (typeof province === "string" && province !== "all") {
+      whereSql += " AND l.province = ?";
+      params.push(province);
+    }
+
+    // Không lấy địa điểm tự do do user tạo
+    whereSql += " AND l.source != 'user'";
 
     const [byDay] = await pool.query<RowDataPacket[]>(
       `SELECT DATE(c.checkin_time) as date, COUNT(*) as total
        FROM checkins c
-       WHERE c.checkin_time BETWEEN ? AND ?
+       LEFT JOIN locations l ON c.location_id = l.location_id
+       ${whereSql}
        GROUP BY DATE(c.checkin_time)
        ORDER BY DATE(c.checkin_time) ASC`,
-      [fromSql, toSql],
+      params,
     );
 
     const [byProvince] = await pool.query<RowDataPacket[]>(
       `SELECT COALESCE(l.province, 'Không rõ') as province, COUNT(*) as total
        FROM checkins c
        JOIN locations l ON c.location_id = l.location_id
-       WHERE c.checkin_time BETWEEN ? AND ?
+       ${whereSql}
        GROUP BY l.province
        ORDER BY total DESC`,
-      [fromSql, toSql],
+      params,
     );
 
     const [byType] = await pool.query<RowDataPacket[]>(
       `SELECT l.location_type, COUNT(*) as total
        FROM checkins c
        JOIN locations l ON c.location_id = l.location_id
-       WHERE c.checkin_time BETWEEN ? AND ?
+       ${whereSql}
        GROUP BY l.location_type
        ORDER BY total DESC`,
-      [fromSql, toSql],
+      params,
     );
 
     res.json({
       success: true,
       data: {
-        from: fromSql,
-        to: toSql,
+        from: from || null,
+        to: to || null,
         by_day: byDay,
         by_province: byProvince,
         by_type: byType,
@@ -6701,6 +6869,13 @@ export const markCommissionsPaid = async (
     }
 
     const placeholders = commissionIds.map(() => "?").join(",");
+    
+    const [ownerRows] = await pool.query<RowDataPacket[]>(
+      `SELECT DISTINCT owner_id FROM commissions 
+       WHERE commission_id IN (${placeholders}) AND status IN ('pending','overdue')`,
+      commissionIds
+    );
+
     const [result] = await pool.query<ResultSetHeader>(
       `UPDATE commissions
        SET status = 'paid',
@@ -6723,6 +6898,24 @@ export const markCommissionsPaid = async (
         }),
       ],
     );
+
+    if (result.affectedRows > 0 && ownerRows.length > 0) {
+      for (const row of ownerRows) {
+        const oId = Number(row.owner_id);
+        if (oId > 0) {
+          await pool.query(
+            `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by)
+             VALUES (?, ?, 'specific_user', ?, ?)`,
+            [
+              "Hoa hồng đã được thanh toán",
+              `[owner:commission] Admin đã duyệt chốt đối soát và thanh toán hoa hồng cho bạn. Vui lòng kiểm tra lại.`,
+              oId,
+              adminId,
+            ]
+          ).catch(e => console.error("Lỗi gửi thông báo:", e));
+        }
+      }
+    }
 
     res.json({
       success: true,
@@ -6817,6 +7010,20 @@ export const confirmCommissionPaymentRequest = async (
         }),
       ],
     );
+
+    const ownerId = Number(rows[0].user_id);
+    if (ownerId > 0 && result.affectedRows > 0) {
+      await pool.query(
+        `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by)
+         VALUES (?, ?, 'specific_user', ?, ?)`,
+        [
+          "Yêu cầu thanh toán được xác nhận",
+          `[owner:commission] Admin đã duyệt chốt đối soát và xác nhận thanh toán hoa hồng cho bạn.`,
+          ownerId,
+          adminId,
+        ]
+      ).catch(e => console.error("Lỗi gửi thông báo:", e));
+    }
 
     res.json({
       success: true,
@@ -7737,7 +7944,7 @@ export const getAdminReviews = async (
         ow.full_name AS owner_name,
         ow.email AS owner_email,
         ow.phone AS owner_phone,
-        u.full_name AS user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) AS user_name,
         u.email AS user_email,
         u.phone AS user_phone,
         rr.reply_id,
@@ -8091,7 +8298,7 @@ export const getSystemLogs = async (
     let query = `
       SELECT 
         al.*,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.email as user_email
       FROM audit_logs al
       LEFT JOIN users u ON al.user_id = u.user_id
@@ -8403,6 +8610,18 @@ export const updateSystemSettings = async (
       ],
     );
 
+    // Emit socket event to mobile apps if theme colors were updated
+    const emitPayload: Record<string, any> = {};
+    const themeKeys = ["app_primary_color", "app_secondary_color", "app_text_color", "app_background_url"];
+    for (const key of themeKeys) {
+      if (settings[key] !== undefined) {
+        emitPayload[key] = settings[key];
+      }
+    }
+    if (Object.keys(emitPayload).length > 0) {
+      emitToAll("public_settings_updated", emitPayload);
+    }
+
     res.json({
       success: true,
       message: "Cập nhật cài đặt hệ thống thành công",
@@ -8650,7 +8869,7 @@ export const getSosAlerts = async (
         sa.created_at,
         ST_X(sa.location_coordinates) as latitude,
         ST_Y(sa.location_coordinates) as longitude,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.phone as user_phone
       FROM sos_alerts sa
       LEFT JOIN users u ON sa.user_id = u.user_id
@@ -8700,11 +8919,11 @@ export const updateSosAlertStatus = async (
   try {
     const { id } = req.params;
     const { status } = req.body as {
-      status?: "pending" | "processing" | "resolved";
+      status?: "pending" | "processing" | "resolved" | "cancelled";
     };
     const adminId = (req as any).userId;
 
-    if (!status || !["pending", "processing", "resolved"].includes(status)) {
+    if (!status || !["pending", "processing", "resolved", "cancelled"].includes(status)) {
       res.status(400).json({
         success: false,
         message: "Trạng thái SOS không hợp lệ",
@@ -8737,7 +8956,7 @@ export const updateSosAlertStatus = async (
 
     // Phát sự kiện SSE realtime để cập nhật trạng thái
     try {
-      const { publishToUser, publishToAll } = require("../utils/realtime");
+      const { publishToUser, publishToUsers } = require("../utils/realtime");
       if (alertUserId) {
         publishToUser(alertUserId, {
           type: "sos_status_update",
@@ -8750,7 +8969,11 @@ export const updateSosAlertStatus = async (
               : "Yêu cầu SOS đã được cập nhật."
         });
       }
-      publishToAll({
+      const [adminRows] = await pool.query<any[]>(
+        "SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'"
+      );
+      const adminIds = adminRows.map((r: any) => r.user_id);
+      publishToUsers(adminIds, {
         type: "sos_status_update",
         alert_id: Number(id),
         status
@@ -8975,7 +9198,7 @@ export const updateOwnerServiceApprovalAdmin = async (
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT s.service_id, s.admin_status, s.service_name, l.location_name, u.user_id as owner_id
+      `SELECT s.service_id, s.admin_status, s.service_name, s.pending_updates, l.location_name, u.user_id as owner_id
        FROM services s
        JOIN locations l ON l.location_id = s.location_id
        JOIN users u ON u.user_id = l.owner_id
@@ -9000,16 +9223,42 @@ export const updateOwnerServiceApprovalAdmin = async (
         return;
       }
 
-      await pool.query(
-        `UPDATE services
-         SET admin_status = 'rejected', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = ?
-         WHERE service_id = ?`,
-        [adminId, r, serviceId],
-      );
+      const pendingUpdatesRaw = rows[0]?.pending_updates;
+      if (pendingUpdatesRaw) {
+        let pending = {};
+        try {
+          pending = typeof pendingUpdatesRaw === 'string' ? JSON.parse(pendingUpdatesRaw) : pendingUpdatesRaw;
+        } catch(e) {}
+        
+        const backupFields = ["service_name", "service_type", "description", "price", "quantity", "unit", "images", "category_id", "status"];
+        const updates: string[] = [];
+        const params: any[] = [];
+        for (const f of backupFields) {
+          if (f in pending) {
+            updates.push(`${f} = ?`);
+            const val = pending[f as keyof typeof pending];
+            params.push(f === "images" && val !== null ? JSON.stringify(val) : val);
+          }
+        }
+        updates.push(`admin_status = 'approved', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = ?, pending_updates = NULL`);
+        params.push(adminId, r, serviceId);
+        
+        await pool.query(
+          `UPDATE services SET ${updates.join(", ")} WHERE service_id = ?`,
+          params
+        );
+      } else {
+        await pool.query(
+          `UPDATE services
+           SET admin_status = 'rejected', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = ?, pending_updates = NULL
+           WHERE service_id = ?`,
+          [adminId, r, serviceId],
+        );
+      }
     } else {
       await pool.query(
         `UPDATE services
-         SET admin_status = 'approved', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = NULL
+         SET admin_status = 'approved', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = NULL, pending_updates = NULL
          WHERE service_id = ?`,
         [adminId, serviceId],
       );
@@ -9131,25 +9380,18 @@ export const bulkUpdateOwnerServiceApprovalAdmin = async (
 
     const excludedIds = normalizeIds(exclude_service_ids);
 
-    // Shared SET clause
     const newRejectReason = status === "rejected" ? normalizedReason : null;
-    const setSql =
-      status === "rejected"
-        ? `s.admin_status = 'rejected', s.admin_reviewed_by = ?, s.admin_reviewed_at = NOW(), s.admin_reject_reason = ?`
-        : `s.admin_status = 'approved', s.admin_reviewed_by = ?, s.admin_reviewed_at = NOW(), s.admin_reject_reason = NULL`;
-    const setParams =
-      status === "rejected" ? [adminId, newRejectReason] : [adminId];
 
-    let updateSql = `
-      UPDATE services s
+    let selectSql = `
+      SELECT s.service_id, s.pending_updates
+      FROM services s
       JOIN locations l ON l.location_id = s.location_id
       JOIN users u ON u.user_id = l.owner_id
       LEFT JOIN service_categories c ON c.category_id = s.category_id AND c.deleted_at IS NULL
-      SET ${setSql}
       WHERE s.deleted_at IS NULL
         AND u.role = 'owner'
     `;
-    const updateParams: any[] = [...setParams];
+    const selectParams: any[] = [];
 
     let effectiveFilter: {
       status?: string;
@@ -9169,12 +9411,12 @@ export const bulkUpdateOwnerServiceApprovalAdmin = async (
         return;
       }
 
-      updateSql += ` AND s.service_id IN (?)`;
-      updateParams.push(targetIds);
+      selectSql += ` AND s.service_id IN (?)`;
+      selectParams.push(targetIds);
 
       if (excludedIds.length > 0) {
-        updateSql += ` AND s.service_id NOT IN (?)`;
-        updateParams.push(excludedIds);
+        selectSql += ` AND s.service_id NOT IN (?)`;
+        selectParams.push(excludedIds);
       }
     } else {
       // filter scope
@@ -9196,44 +9438,88 @@ export const bulkUpdateOwnerServiceApprovalAdmin = async (
       };
 
       if (effectiveFilter.status) {
-        updateSql += ` AND s.admin_status = ?`;
-        updateParams.push(effectiveFilter.status);
+        selectSql += ` AND s.admin_status = ?`;
+        selectParams.push(effectiveFilter.status);
       }
 
       if (effectiveFilter.search) {
         const q = `%${effectiveFilter.search}%`;
-        updateSql += ` AND (
+        selectSql += ` AND (
           s.service_name LIKE ?
           OR l.location_name LIKE ?
           OR u.full_name LIKE ?
           OR u.email LIKE ?
           OR c.category_name LIKE ?
         )`;
-        updateParams.push(q, q, q, q, q);
+        selectParams.push(q, q, q, q, q);
       }
 
       if (ownerIds.length > 0) {
-        updateSql += ` AND u.user_id IN (?)`;
-        updateParams.push(ownerIds);
+        selectSql += ` AND u.user_id IN (?)`;
+        selectParams.push(ownerIds);
       }
 
       if (serviceTypes.length > 0) {
-        updateSql += ` AND s.service_type IN (?)`;
-        updateParams.push(serviceTypes);
+        selectSql += ` AND s.service_type IN (?)`;
+        selectParams.push(serviceTypes);
       }
 
       if (excludedIds.length > 0) {
-        updateSql += ` AND s.service_id NOT IN (?)`;
-        updateParams.push(excludedIds);
+        selectSql += ` AND s.service_id NOT IN (?)`;
+        selectParams.push(excludedIds);
       }
     }
 
-    const [updateResult] = await pool.query<ResultSetHeader>(
-      updateSql,
-      updateParams,
-    );
+    const [rows] = await pool.query<RowDataPacket[]>(selectSql, selectParams);
+    let affected = 0;
 
-    const affected = Number(updateResult?.affectedRows ?? 0);
+    for (const row of rows) {
+      const sId = row.service_id;
+      if (status === "rejected") {
+        const pendingUpdatesRaw = row.pending_updates;
+        if (pendingUpdatesRaw) {
+          let pending = {};
+          try {
+            pending = typeof pendingUpdatesRaw === 'string' ? JSON.parse(pendingUpdatesRaw) : pendingUpdatesRaw;
+          } catch(e) {}
+          
+          const backupFields = ["service_name", "service_type", "description", "price", "quantity", "unit", "images", "category_id", "status"];
+          const updates: string[] = [];
+          const updateParams: any[] = [];
+          for (const f of backupFields) {
+            if (f in pending) {
+              updates.push(`${f} = ?`);
+              const val = pending[f as keyof typeof pending];
+              updateParams.push(f === "images" && val !== null ? JSON.stringify(val) : val);
+            }
+          }
+          updates.push(`admin_status = 'approved', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = ?, pending_updates = NULL`);
+          updateParams.push(adminId, newRejectReason, sId);
+          
+          const [uRes] = await pool.query<ResultSetHeader>(
+            `UPDATE services SET ${updates.join(", ")} WHERE service_id = ?`,
+            updateParams
+          );
+          affected += uRes.affectedRows;
+        } else {
+          const [uRes] = await pool.query<ResultSetHeader>(
+            `UPDATE services
+             SET admin_status = 'rejected', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = ?, pending_updates = NULL
+             WHERE service_id = ?`,
+            [adminId, newRejectReason, sId]
+          );
+          affected += uRes.affectedRows;
+        }
+      } else {
+        const [uRes] = await pool.query<ResultSetHeader>(
+          `UPDATE services
+           SET admin_status = 'approved', admin_reviewed_by = ?, admin_reviewed_at = NOW(), admin_reject_reason = NULL, pending_updates = NULL
+           WHERE service_id = ?`,
+          [adminId, sId]
+        );
+        affected += uRes.affectedRows;
+      }
+    }
 
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,
@@ -9401,7 +9687,7 @@ export const getSystemVouchers = async (
       FROM vouchers v
       JOIN users u ON v.owner_id = u.user_id
       LEFT JOIN locations l ON l.location_id = v.location_id
-      WHERE u.role = 'admin'
+      WHERE u.role = 'admin' AND v.owner_deleted_at IS NULL
     `;
 
     const queryFallback = `
@@ -9427,7 +9713,7 @@ export const getSystemVouchers = async (
       FROM vouchers v
       JOIN users u ON v.owner_id = u.user_id
       LEFT JOIN locations l ON l.location_id = v.location_id
-      WHERE u.role = 'admin'
+      WHERE u.role = 'admin' AND v.owner_deleted_at IS NULL
     `;
 
     let query = queryWithLocationCount;
@@ -11563,7 +11849,7 @@ export const deleteSystemVoucher = async (
       return;
     }
 
-    await pool.query(`DELETE FROM vouchers WHERE voucher_id = ?`, [id]);
+    await pool.query(`UPDATE vouchers SET status = 'inactive', owner_deleted_at = NOW() WHERE voucher_id = ?`, [id]);
 
     await pool.query(
       `INSERT INTO audit_logs (user_id, action, details) VALUES (?, ?, ?)`,

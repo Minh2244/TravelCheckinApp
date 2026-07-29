@@ -19,6 +19,7 @@ import {
   getUserLoginHistory,
   claimVoucher,
   getMySavedVouchers,
+  getUsableVouchersByLocation,
   getVouchersByLocation,
   getUserDiaries,
   createUserDiary,
@@ -36,6 +37,8 @@ import {
   deleteUserReview,
   userReplyToReview,
   getUserTouristTickets,
+  uploadUserCreatedLocationCover,
+  uploadUserDiaryImage,
 } from "../controllers/userController";
 
 const router = Router();
@@ -68,6 +71,7 @@ router.get("/recommendations/locations", getUserLocationRecommendations);
 
 router.get("/created-locations", getUserCreatedLocations);
 router.patch("/created-locations/:id", updateUserCreatedLocation);
+router.post("/created-locations/:id/cover", upload.single("image"), uploadUserCreatedLocationCover);
 router.delete("/created-locations/:id", deleteUserCreatedLocation);
 
 router.get("/profile", getUserProfile);
@@ -80,10 +84,12 @@ router.post(
 );
 router.get("/profile/login-history", getUserLoginHistory);
 router.get("/vouchers/location/:locationId", getVouchersByLocation);
+router.get("/vouchers/usable/:locationId", getUsableVouchersByLocation);
 router.get("/vouchers/saved", getMySavedVouchers);
 router.post("/vouchers/:id/claim", claimVoucher);
 router.get("/tickets", getUserTouristTickets);
 router.get("/diary", getUserDiaries);
+router.post("/diary/upload", upload.single("image"), uploadUserDiaryImage);
 router.post("/diary", createUserDiary);
 router.delete("/diary/:id", deleteUserDiary);
 

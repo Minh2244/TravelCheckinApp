@@ -53,7 +53,6 @@ const Checkins = () => {
   const [diaries, setDiaries] = useState<DiaryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // States for writing/editing diary modal
@@ -215,24 +214,6 @@ const Checkins = () => {
   useEffect(() => {
     void fetchData();
   }, []);
-
-  const handleShare = async (locationId: number) => {
-    const url = `${window.location.origin}/user/location/${locationId}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ url });
-        setShareStatus("Đã chia sẻ liên kết thành công");
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-        setShareStatus("Đã sao chép liên kết vào bộ nhớ tạm");
-      } else {
-        setShareStatus(url);
-      }
-    } catch {
-      setShareStatus("Không thể thực hiện chia sẻ");
-    }
-    setTimeout(() => setShareStatus(null), 3000);
-  };
 
   const handleViewOnMap = (item: {
     location_id: number;
@@ -415,12 +396,6 @@ const Checkins = () => {
           </div>
         ) : null}
 
-        {shareStatus ? (
-          <div className="mt-4 text-xs text-teal-600 text-center font-bold">
-            {shareStatus}
-          </div>
-        ) : null}
-
         {!loading && items.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-12 text-sm text-gray-500 text-center">
             Bạn chưa có bước chân check-in nào trong lịch sử.
@@ -463,8 +438,11 @@ const Checkins = () => {
                       {/* Glassmorphic timeline card */}
                       <div className="bg-white border border-slate-100 shadow-sm hover:shadow-md rounded-2xl p-4 transition-all duration-300 flex flex-col gap-4">
                         <div className="flex flex-col sm:flex-row gap-4 items-start">
-                          {/* Image Box */}
-                          <div className="relative h-20 w-20 flex-shrink-0 rounded-xl overflow-hidden bg-slate-100 border border-slate-100 shadow-inner">
+                          {/* Location Image */}
+                          <div 
+                            onClick={() => navigate(`/user/location/${group.location_id}`)}
+                            className="h-20 w-24 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-200/60 shadow-sm group-hover:shadow transition cursor-pointer"
+                          >
                             {imageUrl ? (
                               <img
                                 src={imageUrl}
@@ -487,7 +465,10 @@ const Checkins = () => {
                               </span>
                             </div>
 
-                            <h3 className="text-sm font-black text-slate-800 group-hover:text-teal-600 transition truncate">
+                            <h3 
+                              onClick={() => navigate(`/user/location/${group.location_id}`)}
+                              className="text-sm font-black text-slate-800 group-hover:text-teal-600 transition truncate cursor-pointer"
+                            >
                               {group.location_name}
                             </h3>
 
@@ -611,10 +592,10 @@ const Checkins = () => {
 
                           <button
                             type="button"
-                            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-1.5 text-[10px] font-bold text-slate-700 shadow-sm transition flex items-center gap-1"
-                            onClick={() => handleShare(group.location_id)}
+                            className="rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 text-[10px] font-bold text-teal-800 shadow-sm transition flex items-center gap-1 cursor-pointer"
+                            onClick={() => navigate(`/user/location/${group.location_id}?tab=reviews`)}
                           >
-                            Chia sẻ
+                            Viết đánh giá
                           </button>
 
                           {group.is_user_created && (

@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "../../modules/auth/store";
+import { showToast } from "../../modules/ui/toast-store";
 import { chatApi, LocationChatMessageItem } from "../../services/chat.api";
 import { resolveBackendUrl } from "../../lib/url";
 
@@ -43,6 +44,7 @@ export function LocationChatModal({
   const [inputText, setInputText] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ uri: string; base64?: string | null } | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const imageLoadingIdsRef = useRef<Set<number>>(new Set());
   
   const token = useAuthStore((state: any) => state.accessToken);
   const user = useAuthStore((state: any) => state.user);
@@ -67,6 +69,27 @@ export function LocationChatModal({
     }
   }, [activeLocationId, customerId]);
 
+  const loadMessageImage = useCallback(async (messageId: number) => {
+    if (!activeLocationId || imageLoadingIdsRef.current.has(messageId)) return;
+    imageLoadingIdsRef.current.add(messageId);
+    try {
+      const res = await chatApi.getMessageImage(activeLocationId, messageId);
+      if (res?.success && res.data?.image_data) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            Number(m.message_id) === Number(messageId)
+              ? { ...m, image_data: res.data.image_data, has_image: true }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      console.error("[LocationChatModal] Load image error:", err);
+    } finally {
+      imageLoadingIdsRef.current.delete(messageId);
+    }
+  }, [activeLocationId]);
+
   useEffect(() => {
     if (visible) {
       fetchHistory();
@@ -84,6 +107,7 @@ export function LocationChatModal({
 
     const socketUrl = backendUrl.replace(/\/api\/?$/, "");
     const socket = io(socketUrl, {
+      auth: { token },
       path: "/socket.io",
       transports: ["websocket", "polling"],
       reconnectionAttempts: 5,
@@ -94,37 +118,35 @@ export function LocationChatModal({
       socket.emit("join_location_room", {
         locationId: activeLocationId,
         customerId,
-        token,
       });
     });
 
     socket.on("location_chat_message", (msg: LocationChatMessageItem) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.message_id === msg.message_id)) return prev;
+        return [...prev, msg];
+      });
       if (msg.has_image) {
-        fetchHistory();
-      } else {
-        setMessages((prev) => {
-          if (prev.some((m) => m.message_id === msg.message_id)) return prev;
-          return [...prev, msg];
-        });
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        void loadMessageImage(msg.message_id);
       }
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [activeLocationId, token, customerId, visible, fetchHistory]);
+  }, [activeLocationId, token, customerId, visible, loadMessageImage]);
 
   const handleImagePick = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
-      alert("Bạn cần cấp quyền truy cập thư viện ảnh!");
+      showToast("Bạn cần cấp quyền truy cập thư viện ảnh!");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       quality: 0.8,
       base64: true,
@@ -194,6 +216,14 @@ export function LocationChatModal({
               resizeMode="cover" 
             />
           )}
+          {!item.image_data && item.has_image ? (
+            <View style={[styles.imagePlaceholder, isMine ? styles.imagePlaceholderMine : styles.imagePlaceholderTheirs]}>
+              <Ionicons name="image-outline" size={18} color={isMine ? "#1d4ed8" : "#64748b"} />
+              <Text style={[styles.imagePlaceholderText, isMine ? styles.imagePlaceholderTextMine : styles.imagePlaceholderTextTheirs]}>
+                Ảnh đã gửi
+              </Text>
+            </View>
+          ) : null}
           {item.content ? (
             <View style={[styles.msgBubble, isMine ? styles.msgBubbleMine : styles.msgBubbleTheirs]}>
               <Text style={[styles.msgText, isMine ? styles.msgTextMine : styles.msgTextTheirs]}>
@@ -393,6 +423,34 @@ const styles = StyleSheet.create({
   },
   msgTextTheirs: {
     color: "#334155",
+  },
+  imagePlaceholder: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  imagePlaceholderMine: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#bfdbfe",
+  },
+  imagePlaceholderTheirs: {
+    backgroundColor: "#fff",
+    borderColor: "#e2e8f0",
+  },
+  imagePlaceholderText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  imagePlaceholderTextMine: {
+    color: "#1d4ed8",
+  },
+  imagePlaceholderTextTheirs: {
+    color: "#64748b",
   },
   inputArea: {
     flexDirection: "row",

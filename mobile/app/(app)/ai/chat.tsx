@@ -21,6 +21,7 @@ import * as Location from "expo-location";
 import { chatApi } from "../../../src/services/chat.api";
 import { userApi } from "../../../src/services/user.api";
 import { resolveBackendUrl } from "../../../src/lib/url";
+import { showToast } from "../../../src/modules/ui/toast-store";
 
 type ChatMessage = {
   history_id: number;
@@ -86,8 +87,20 @@ export default function AiChatScreen() {
     }
   };
 
+  const fetchSavedLocations = async () => {
+    try {
+      const resp = await userApi.getFavorites();
+      if (resp?.success && Array.isArray(resp.data)) {
+        setSavedLocations(new Set(resp.data.map((item) => Number(item.location_id)).filter(Number.isFinite)));
+      }
+    } catch (e) {
+      console.error("Lỗi tải danh sách địa điểm đã lưu:", e);
+    }
+  };
+
   useEffect(() => {
     void fetchHistory();
+    void fetchSavedLocations();
   }, []);
 
   // Auto scroll to bottom when history or sending state changes
@@ -167,6 +180,36 @@ export default function AiChatScreen() {
     clickedChipRef.current.add(chipId);
     void handleSend(chipText);
   }, [sending, handleSend]);
+
+  const handleClearHistory = () => {
+    if (history.length === 0) return;
+    Alert.alert(
+      "Xóa lịch sử",
+      "Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện với AI?",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await chatApi.clearAiHistory();
+              setHistory([]);
+              setConversationId(undefined);
+              setShowChips(true);
+              showToast("Đã xóa lịch sử trò chuyện");
+            } catch (e) {
+              console.error(e);
+              Alert.alert("Lỗi", "Không thể xóa lịch sử.");
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const handleToggleFavorite = async (locationId: number) => {
     if (savingIds.has(locationId)) return;
@@ -253,6 +296,16 @@ export default function AiChatScreen() {
             <Text className="text-[10px] text-slate-400 font-semibold">Tự động phản hồi nhanh</Text>
           </View>
         </View>
+
+        {/* Clear History Button */}
+        {history.length > 0 && (
+          <Pressable
+            className="h-10 w-10 items-center justify-center rounded-full active:bg-slate-100"
+            onPress={handleClearHistory}
+          >
+            <Ionicons name="trash-outline" size={20} color="#ef4444" />
+          </Pressable>
+        )}
       </View>
 
       <KeyboardAvoidingView

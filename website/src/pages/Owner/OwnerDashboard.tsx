@@ -16,9 +16,9 @@ import {
   FileExcelOutlined,
   GiftOutlined,
   ShopOutlined,
-  CalendarOutlined,
   EnvironmentOutlined,
   ThunderboltOutlined,
+  WalletOutlined,
 } from "@ant-design/icons";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
@@ -27,6 +27,7 @@ import { useNavigate } from "react-router-dom";
 import { asRecord, getErrorMessage } from "../../utils/safe";
 import dayjs from "dayjs";
 import InvoiceExportModal from "../../components/InvoiceExportModal";
+import OwnerTempCloseModal from "../../components/OwnerTempCloseModal";
 import { handleExportBatchExcel } from "../../utils/exportExcel";
 
 
@@ -83,8 +84,8 @@ const OwnerDashboard = () => {
   const [rangeType, setRangeType] = useState<string>("today");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs(), dayjs()]);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isTempCloseModalOpen, setIsTempCloseModalOpen] = useState(false);
 
-  const role = String(asRecord(asRecord(asRecord(me).data).actor).role || "");
   const ownerName = String(asRecord(asRecord(asRecord(me).data).actor).full_name || "Chủ địa điểm");
 
   useEffect(() => {
@@ -93,9 +94,9 @@ const OwnerDashboard = () => {
       console.log("[Export DEBUG] event.detail =", JSON.stringify(e?.detail));
       try {
         message.loading({ content: "Đang tải báo cáo...", key: "exporting" });
-        
+
         let targetPayments = payments.filter(inv => String(inv.status).toLowerCase() === "completed").map(inv => ({ ...inv, location_name: inv.location_name || "" }));
-        
+
         let excelStart = dayjs("2020-01-01");
         let excelEnd = dayjs();
 
@@ -105,8 +106,8 @@ const OwnerDashboard = () => {
             excelStart = e.detail.start_date ? dayjs(e.detail.start_date).startOf('day') : dayjs("2000-01-01");
             excelEnd = e.detail.end_date ? dayjs(e.detail.end_date).endOf('day') : dayjs().endOf('day');
             targetPayments = targetPayments.filter(inv => {
-               const p = dayjs(inv.payment_time);
-               return (p.isAfter(excelStart) || p.isSame(excelStart)) && (p.isBefore(excelEnd) || p.isSame(excelEnd));
+              const p = dayjs(inv.payment_time);
+              return (p.isAfter(excelStart) || p.isSame(excelStart)) && (p.isBefore(excelEnd) || p.isSame(excelEnd));
             });
           } else {
             const targetMonths: number[] = [];
@@ -126,18 +127,18 @@ const OwnerDashboard = () => {
               const tr = e.detail.time_range;
               excelEnd = dayjs().endOf('day');
               if (tr === "today") {
-                 excelStart = dayjs().startOf('day');
-                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'day'));
+                excelStart = dayjs().startOf('day');
+                targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'day'));
               } else if (tr === "this_week") {
-                 excelStart = dayjs().subtract(7, 'day').startOf('day');
-                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isAfter(excelStart));
+                excelStart = dayjs().subtract(7, 'day').startOf('day');
+                targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isAfter(excelStart));
               } else if (tr === "this_month") {
-                 excelStart = dayjs().startOf('month');
-                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+                excelStart = dayjs().startOf('month');
+                targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
               } else if (tr === "last_month") {
-                 excelStart = dayjs().subtract(1, 'month').startOf('month');
-                 excelEnd = dayjs().subtract(1, 'month').endOf('month');
-                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+                excelStart = dayjs().subtract(1, 'month').startOf('month');
+                excelEnd = dayjs().subtract(1, 'month').endOf('month');
+                targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
               }
             }
           }
@@ -219,11 +220,14 @@ const OwnerDashboard = () => {
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0);
 
+    const totalReceivable = totalRevenue - totalCommissionDue;
+
     return {
       totalLocations,
       pendingBookings,
       totalRevenue,
       totalCommissionDue,
+      totalReceivable,
     };
   }, [filteredBookings, filteredPayments, locations.length]);
 
@@ -299,7 +303,7 @@ const OwnerDashboard = () => {
     filteredPayments.forEach(p => {
       if (String(p.status || "").toLowerCase() !== "completed") return;
       if (!p.location_id) return;
-      
+
       const type = locTypeMap.get(p.location_id) || "other";
       const amt = Number(p.amount || 0);
 
@@ -310,7 +314,7 @@ const OwnerDashboard = () => {
     });
 
     const total = hotelRev + restaurantRev + touristRev;
-    
+
     let hotelPct = 0, restaurantPct = 0, touristPct = 0;
     if (total > 0) {
       hotelPct = Math.round((hotelRev / total) * 100);
@@ -328,9 +332,9 @@ const OwnerDashboard = () => {
   // Tính toán Top 3 Địa điểm có doanh thu tốt nhất trong kỳ lọc
   const topLocations = useMemo(() => {
     const completed = filteredPayments.filter((p) => String(p.status || "").toLowerCase() === "completed");
-    
+
     const map = new Map<number, { name: string; revenue: number }>();
-    
+
     // Khởi tạo tất cả địa điểm với doanh thu 0
     for (const loc of locations) {
       map.set(loc.location_id, { name: loc.location_name, revenue: 0 });
@@ -393,39 +397,39 @@ const OwnerDashboard = () => {
               <Radio.Button value="year">1 năm</Radio.Button>
               <Radio.Button value="all">Tất cả</Radio.Button>
             </Radio.Group>
-          <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
-            <DatePicker 
-              value={dateRange[0]}
-              onChange={(d) => {
-                if (d) {
-                  let end = dateRange[1];
-                  if (end.isBefore(d, 'day')) end = d;
-                  setDateRange([d, end]);
-                  setRangeType("custom");
-                }
-              }}
-              format="DD/MM/YYYY"
-              allowClear={false}
-              className="w-32"
-              disabledDate={(current) => current && current > dayjs().endOf('day')}
-              placeholder="Từ ngày"
-            />
-            <span className="text-gray-400">→</span>
-            <DatePicker 
-              value={dateRange[1]}
-              onChange={(d) => {
-                if (d) {
-                  setDateRange([dateRange[0], d]);
-                  setRangeType("custom");
-                }
-              }}
-              format="DD/MM/YYYY"
-              allowClear={false}
-              className="w-32"
-              disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
-              placeholder="Đến ngày"
-            />
-          </Space>
+            <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
+              <DatePicker
+                value={dateRange[0]}
+                onChange={(d) => {
+                  if (d) {
+                    let end = dateRange[1];
+                    if (end.isBefore(d, 'day')) end = d;
+                    setDateRange([d, end]);
+                    setRangeType("custom");
+                  }
+                }}
+                format="DD/MM/YYYY"
+                allowClear={false}
+                className="w-32"
+                disabledDate={(current) => current && current > dayjs().endOf('day')}
+                placeholder="Từ ngày"
+              />
+              <span className="text-gray-400">→</span>
+              <DatePicker
+                value={dateRange[1]}
+                onChange={(d) => {
+                  if (d) {
+                    setDateRange([dateRange[0], d]);
+                    setRangeType("custom");
+                  }
+                }}
+                format="DD/MM/YYYY"
+                allowClear={false}
+                className="w-32"
+                disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
+                placeholder="Đến ngày"
+              />
+            </Space>
           </Space>
         </div>
 
@@ -444,10 +448,6 @@ const OwnerDashboard = () => {
                   >
                     Chuyển chế độ Vận hành
                   </Button>
-                  <div className="hidden sm:block h-8 w-px bg-slate-100" />
-                  <div className="hidden sm:block text-xs text-slate-400 font-medium">
-                    Lối tắt nhanh đến các chức năng quản trị
-                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -485,6 +485,7 @@ const OwnerDashboard = () => {
           </Col>
 
           {/* 4 Thẻ Chỉ số Hiệu suất thiết kế Gradient Cực kỳ Sang trọng và Rực rỡ */}
+          {/* Card 1: Số điểm */}
           <Col xs={24} sm={12} md={6}>
             <Card
               loading={loading}
@@ -504,25 +505,7 @@ const OwnerDashboard = () => {
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} md={6}>
-            <Card
-              loading={loading}
-              className="relative overflow-hidden border-0 rounded-2xl bg-gradient-to-br from-cyan-500 to-emerald-600 text-white shadow-md hover:scale-[1.03] transition-all duration-300"
-              bodyStyle={{ padding: "20px" }}
-            >
-              <div className="pointer-events-none absolute right-3 top-3 z-0 h-16 w-16 rounded-full bg-white/10 flex items-center justify-center opacity-30 text-3xl font-bold">
-                <CalendarOutlined />
-              </div>
-              <div className="relative z-10">
-                <div className="text-white/80 font-medium text-xs uppercase tracking-wider mb-1">Booking chờ</div>
-                <div className="text-3xl font-extrabold mb-2">{stats.pendingBookings}</div>
-                <div className="text-white/60 text-xs flex items-center gap-1 font-medium">
-                  <CheckCircleOutlined /> Chờ khách đến trải nghiệm
-                </div>
-              </div>
-            </Card>
-          </Col>
-
+          {/* Card 2: Doanh Thu */}
           <Col xs={24} sm={12} md={6}>
             <Card
               loading={loading}
@@ -542,6 +525,7 @@ const OwnerDashboard = () => {
             </Card>
           </Col>
 
+          {/* Card 3: Hoa Hồng */}
           <Col xs={24} sm={12} md={6}>
             <Card
               loading={loading}
@@ -552,10 +536,30 @@ const OwnerDashboard = () => {
                 <GiftOutlined />
               </div>
               <div className="relative z-10">
-                <div className="text-white/80 font-medium text-xs uppercase tracking-wider mb-1">{role === "owner" ? "Hoa hồng" : "Hoa hồng"}</div>
+                <div className="text-white/80 font-medium text-xs uppercase tracking-wider mb-1">Hoa hồng</div>
                 <div className="text-2xl font-extrabold mb-2 truncate">{formatMoney(stats.totalCommissionDue)}</div>
                 <div className="text-white/60 text-xs flex items-center gap-1 font-medium">
                   <CheckCircleOutlined /> Phí đối soát hệ thống
+                </div>
+              </div>
+            </Card>
+          </Col>
+
+          {/* Card 4: Thực Nhận (Thay thế Booking Chờ) */}
+          <Col xs={24} sm={12} md={6}>
+            <Card
+              loading={loading}
+              className="relative overflow-hidden border-0 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md hover:scale-[1.03] transition-all duration-300"
+              bodyStyle={{ padding: "20px" }}
+            >
+              <div className="pointer-events-none absolute right-3 top-3 z-0 h-16 w-16 rounded-full bg-white/10 flex items-center justify-center opacity-30 text-3xl font-bold">
+                <WalletOutlined />
+              </div>
+              <div className="relative z-10">
+                <div className="text-white/80 font-medium text-xs uppercase tracking-wider mb-1">Thực nhận ({periodLabel})</div>
+                <div className="text-2xl font-extrabold mb-2 truncate">{formatMoney(stats.totalReceivable)}</div>
+                <div className="text-white/60 text-xs flex items-center gap-1 font-medium">
+                  <CheckCircleOutlined /> Doanh thu trừ hoa hồng
                 </div>
               </div>
             </Card>
@@ -718,6 +722,7 @@ const OwnerDashboard = () => {
         role="owner"
         currentUserName={ownerName}
         invoices={payments.map((p) => ({
+          ...p,
           payment_id: p.payment_id,
           booking_id: (p as any).booking_id,
           status: p.status,
@@ -735,6 +740,10 @@ const OwnerDashboard = () => {
           phone: p.booked_phone || p.user_phone,
           check_in_date: p.booking_check_in_date,
           check_out_date: p.booking_check_out_date,
+          voucher_code: (p as any).voucher_code || (p as any).booking_voucher_code,
+          booking_voucher_code: (p as any).booking_voucher_code,
+          discount_amount: (p as any).discount_amount || (p as any).booking_discount_amount,
+          booking_discount_amount: (p as any).booking_discount_amount,
           notes: (p as any).notes,
           qr_data: (p as any).qr_data,
         }))}
@@ -743,8 +752,15 @@ const OwnerDashboard = () => {
           location_name: l.location_name,
         }))}
       />
-      
-      
+
+
+
+      <OwnerTempCloseModal
+        open={isTempCloseModalOpen}
+        onClose={() => setIsTempCloseModalOpen(false)}
+        locations={locations}
+        onSuccess={() => loadData()}
+      />
     </MainLayout>
   );
 };

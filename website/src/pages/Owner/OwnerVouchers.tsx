@@ -28,7 +28,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
-import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
+
 import dayjs from "dayjs";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
 import { asRecord, getErrorMessage } from "../../utils/safe";
@@ -210,57 +210,9 @@ const OwnerVouchers = () => {
     void load();
   }, [load]);
 
-  const managerAiContext = useMemo(() => {
-    const computedStatus = (value: OwnerVoucherRow) =>
-      String(value.computed_status || value.status || "").toLowerCase();
-    return {
-      totalVouchers: items.length,
-      activeVouchers: items.filter((item) => computedStatus(item) === "active").length,
-      inactiveVouchers: items.filter((item) => computedStatus(item) === "inactive").length,
-      expiredVouchers: items.filter((item) => computedStatus(item) === "expired").length,
-      locationCount: locations.length,
-      voucherStats: stats || null,
-      statusFilter,
-      searchText: search,
-      topVouchers: items.slice(0, 6).map((item) => ({
-        voucher_id: item.voucher_id,
-        code: item.code,
-        campaign_name: item.campaign_name,
-        discount_type: item.discount_type,
-        discount_value: item.discount_value,
-        used_count: item.used_count,
-        status: item.computed_status || item.status,
-      })),
-      adminVoucherCount: adminVouchers.length,
-    };
-  }, [adminVouchers.length, items, locations.length, search, stats, statusFilter]);
-
-  // Realtime: SSE để Owner thấy trạng thái mới ngay sau khi Admin duyệt/xóa
+  // MainLayout owns the single realtime connection. Refresh once when the tab
+  // becomes visible so this page stays current without opening a second SSE.
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    const url = resolveBackendUrl(
-      `/api/events?token=${encodeURIComponent(token)}`,
-    );
-    if (!url) return;
-
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data) as { type?: string };
-        if (
-          data?.type === "owner_voucher_updated" ||
-          data?.type === "owner_voucher_deleted"
-        ) {
-          void refreshVouchers(true);
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    // Fallback: khi quay lại tab thì refresh 1 lần
     const onVisibility = () => {
       if (!document.hidden) void refreshVouchers(true);
     };
@@ -268,7 +220,6 @@ const OwnerVouchers = () => {
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      es.close();
     };
   }, []);
 
@@ -338,10 +289,10 @@ const OwnerVouchers = () => {
         ...rest,
         ...locationPayload,
         start_date: valuesRaw.start_date
-          ? dayjs(valuesRaw.start_date).format("YYYY-MM-DD HH:mm:ss")
+          ? dayjs(valuesRaw.start_date).startOf('day').format("YYYY-MM-DD HH:mm:ss")
           : null,
         end_date: valuesRaw.end_date
-          ? dayjs(valuesRaw.end_date).format("YYYY-MM-DD HH:mm:ss")
+          ? dayjs(valuesRaw.end_date).endOf('day').format("YYYY-MM-DD HH:mm:ss")
           : null,
       };
       setSaving(true);
@@ -946,12 +897,27 @@ const OwnerVouchers = () => {
                     <div className="font-semibold">Thông tin cơ bản</div>
                   </div>
 
-                  <Form.Item
-                    name="code"
-                    label="Mã Code"
-                    rules={[{ required: true }]}
-                  >
-                    <Input placeholder="VD: TET2026" />
+                  <Form.Item label="Mã Code" required>
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Form.Item
+                        name="code"
+                        noStyle
+                        rules={[{ required: true, message: "Vui lòng nhập mã code!" }]}
+                      >
+                        <Input placeholder="VD: TET2026" />
+                      </Form.Item>
+                      <Button
+                        type="default"
+                        onClick={() => {
+                          const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                          let randomCode = "VC-";
+                          for (let i = 0; i < 6; i++) randomCode += chars.charAt(Math.floor(Math.random() * chars.length));
+                          form.setFieldsValue({ code: randomCode });
+                        }}
+                      >
+                        Ngẫu nhiên
+                      </Button>
+                    </Space.Compact>
                   </Form.Item>
 
                   <Form.Item
@@ -1052,31 +1018,52 @@ const OwnerVouchers = () => {
                   </Form.Item>
 
                   <Row gutter={12}>
-                    <Col span={12}>
-                      <Form.Item
-                        name="discount_value"
-                        label="Giá trị giảm"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber style={{ width: "100%" }} min={0} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item
-                        name="max_discount_amount"
-                        label="Giảm tối đa (nếu %)"
-                      >
-                        <InputNumber style={{ width: "100%" }} min={0} />
-                      </Form.Item>
-                    </Col>
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prev, cur) => prev.discount_type !== cur.discount_type}
+                    >
+                      {({ getFieldValue }) => {
+                        const isPercent = getFieldValue("discount_type") === "percent";
+                        return (
+                          <>
+                            <Col span={isPercent ? 12 : 24}>
+                              <Form.Item
+                                name="discount_value"
+                                label={isPercent ? "Giá trị giảm (%)" : "Giá trị giảm (VNĐ)"}
+                                rules={[
+                                  { required: true, message: "Vui lòng nhập giá trị" },
+                                  { transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }
+                                ]}
+                              >
+                                <InputNumber style={{ width: "100%" }} />
+                              </Form.Item>
+                            </Col>
+                            {isPercent && (
+                              <Col span={12}>
+                                <Form.Item
+                                  name="max_discount_amount"
+                                  label="Giảm tối đa (nếu %)"
+                                  rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }]}
+                                >
+                                  <InputNumber style={{ width: "100%" }} />
+                                </Form.Item>
+                              </Col>
+                            )}
+                          </>
+                        );
+                      }}
+                    </Form.Item>
                   </Row>
 
                   <Form.Item
                     name="min_order_value"
                     label="Giá trị đơn tối thiểu"
-                    rules={[{ required: true }]}
+                    rules={[
+                      { required: true, message: "Vui lòng nhập giá trị" },
+                      { transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }
+                    ]}
                   >
-                    <InputNumber style={{ width: "100%" }} min={0} />
+                    <InputNumber style={{ width: "100%" }} />
                   </Form.Item>
                 </div>
 
@@ -1099,8 +1086,7 @@ const OwnerVouchers = () => {
                           "all",
                           "room",
                           "food",
-                          "ticket",
-                          "other",
+                          "ticket"
                         ] as ServiceScope[]
                       ).map((v) => ({ value: v, label: scopeLabel[v] }))}
                     />
@@ -1194,18 +1180,24 @@ const OwnerVouchers = () => {
                       <Form.Item
                         name="usage_limit"
                         label="Giới hạn lượt dùng"
-                        rules={[{ required: true }]}
+                        rules={[
+                          { required: true, message: "Vui lòng nhập giới hạn" },
+                          { type: 'number', min: 1, message: 'Phải >= 1' }
+                        ]}
                       >
-                        <InputNumber style={{ width: "100%" }} min={1} />
+                        <InputNumber style={{ width: "100%" }} />
                       </Form.Item>
                     </Col>
                     <Col span={12}>
                       <Form.Item
                         name="max_uses_per_user"
                         label="Tối đa mỗi user"
-                        rules={[{ required: true }]}
+                        rules={[
+                          { required: true, message: "Vui lòng nhập tối đa" },
+                          { type: 'number', min: 1, message: 'Phải >= 1' }
+                        ]}
                       >
-                        <InputNumber style={{ width: "100%" }} min={1} />
+                        <InputNumber style={{ width: "100%" }} />
                       </Form.Item>
                     </Col>
                   </Row>
@@ -1225,9 +1217,13 @@ const OwnerVouchers = () => {
                   >
                     {({ getFieldValue }) =>
                       getFieldValue("target_group") === "loyal" ? (
-                        <Form.Item name="loyalty_min_spend" label="Chi tiêu tối thiểu (VNĐ)">
+                        <Form.Item
+                          name="loyalty_min_spend"
+                          label="Chi tiêu tối thiểu (VNĐ)"
+                          tooltip="Tổng chi tiêu được tính dựa trên toàn bộ các giao dịch của khách hàng trên hệ thống."
+                          rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }]}
+                        >
                           <InputNumber
-                            min={0}
                             step={100000}
                             style={{ width: "100%" }}
                             formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}

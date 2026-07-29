@@ -82,6 +82,14 @@ const locationApi = {
     }>(`/locations/${id}/reviews`);
     return response.data;
   },
+
+  updateCustomLocationName: async (id: number, location_name: string) => {
+    const response = await axiosClient.put<{
+      success: boolean;
+      message: string;
+    }>(`/locations/custom/${id}`, { location_name });
+    return response.data;
+  },
 };
 
 export default locationApi;

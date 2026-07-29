@@ -10,7 +10,6 @@ BLOCKED_OWNER_ROUTE_PREFIXES = (
     "/owner/tourist",
     "/owner/employees",
     "/owner/bank",
-    "/owner/commissions"
 )
 
 
@@ -42,24 +41,24 @@ OWNER_COMMON = (
     PromptSuggestion(
         id="owner_common_revenue_today",
         title="Doanh thu hôm nay",
-        prompt="Hôm nay doanh thu quán tăng hay giảm?",
-        intent_hint="owner_revenue_summary",
+        prompt="Hôm nay doanh thu quán tăng hay giảm so với hôm qua?",
+        intent_hint="get_dashboard_stats",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_revenue_month",
         title="Doanh thu tháng này",
-        prompt="Doanh thu tháng này sao roi?",
-        intent_hint="owner_revenue_summary",
+        prompt="Báo cáo doanh thu tháng này cho tui xem",
+        intent_hint="get_dashboard_stats",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_cancel_rate",
-        title="Tỉ lệ hủy đơn",
-        prompt="Tỉ lệ hủy đơn thang nay va thang truoc sao roi?",
-        intent_hint="owner_revenue_summary",
+        title="Đơn bị hủy",
+        prompt="Hôm nay có bao nhiêu đơn bị hủy?",
+        intent_hint="owner_get_order_stats",
         risk_level="read",
         requires_confirmation=False,
     ),
@@ -67,16 +66,24 @@ OWNER_COMMON = (
         id="owner_common_review_bad",
         title="Tóm tắt đánh giá xấu",
         prompt="Tóm tắt giúp tui các đánh giá xấu gần đây",
-        intent_hint="owner_review_summary",
+        intent_hint="owner_analyze_reviews",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="owner_common_voucher",
-        title="Gợi ý voucher",
-        prompt="Gợi ý giúp tui voucher cuối tuần",
+        title="Tạo voucher cực sốc",
+        prompt="Tạo 5 voucher giảm 100k cho toàn hệ thống với mã SIEUDEAL",
         intent_hint="owner_voucher_draft",
         risk_level="low",
+        requires_confirmation=False,
+    ),
+    PromptSuggestion(
+        id="owner_common_top_services",
+        title="Dịch vụ bán chạy",
+        prompt="Dịch vụ nào đang bán chạy nhất tháng này?",
+        intent_hint="owner_get_top_services",
+        risk_level="read",
         requires_confirmation=False,
     ),
 )
@@ -109,38 +116,64 @@ OWNER_BY_ROUTE = (
         requires_confirmation=False,
         route_prefixes=("/owner/vouchers",),
     ),
+    PromptSuggestion(
+        id="owner_bookings_today",
+        title="Đặt chỗ hôm nay",
+        prompt="Xem giúp tui các đơn đặt chỗ hôm nay",
+        intent_hint="owner_view_bookings",
+        risk_level="read",
+        requires_confirmation=False,
+        route_prefixes=("/owner/bookings", "/owner/dashboard"),
+    ),
+    PromptSuggestion(
+        id="owner_commissions_month",
+        title="Hoa hồng tháng này",
+        prompt="Báo cáo hoa hồng tháng này cho tui",
+        intent_hint="view_commissions",
+        risk_level="read",
+        requires_confirmation=False,
+        route_prefixes=("/owner/commissions", "/owner/dashboard"),
+    ),
 )
 
 ADMIN_COMMON = (
     PromptSuggestion(
         id="admin_common_system_revenue",
         title="Tổng quan doanh thu",
-        prompt="Tổng quan doanh thu toan he thong hom nay",
-        intent_hint="admin_read_analysis",
+        prompt="Tổng quan doanh thu toàn hệ thống hôm nay",
+        intent_hint="get_dashboard_stats",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="admin_common_month_revenue",
         title="Doanh thu tháng này",
-        prompt="Doanh thu tháng này cua he thong sao roi?",
-        intent_hint="admin_read_analysis",
+        prompt="Doanh thu tháng này của hệ thống tăng hay giảm?",
+        intent_hint="get_dashboard_stats",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
         id="admin_common_cancel_rate",
         title="Tỉ lệ hủy đơn",
-        prompt="Tỉ lệ hủy đơn thang nay va thang truoc the nao?",
+        prompt="Tháng này hệ thống có bao nhiêu đơn bị hủy?",
         intent_hint="admin_read_analysis",
         risk_level="read",
         requires_confirmation=False,
     ),
     PromptSuggestion(
-        id="admin_common_bad_locations",
-        title="Địa điểm bị đánh giá xấu",
-        prompt="Địa điểm nào đang bị đánh giá xấu nhiều?",
-        intent_hint="admin_read_analysis",
+        id="admin_common_create_voucher",
+        title="Tạo voucher hệ thống",
+        prompt="Tạo 5 voucher giảm 100k cho hệ thống với mã SYSDEAL",
+        intent_hint="admin_create_system_voucher",
+        risk_level="medium",
+        requires_confirmation=True,
+    ),
+    PromptSuggestion(
+        id="admin_common_sos",
+        title="Theo dõi SOS",
+        prompt="Có cảnh báo SOS nào đang mở không?",
+        intent_hint="admin_view_sos_alerts",
         risk_level="read",
         requires_confirmation=False,
     ),
@@ -253,11 +286,16 @@ def get_prompt_suggestions(role: str, route: str) -> dict[str, object]:
             "disabled_reason": "OWNER_AI_DISABLED_ON_OPERATIONS_ROUTE",
         }
 
+    import random
     source = (*OWNER_BY_ROUTE, *OWNER_COMMON) if role == "owner" else (*ADMIN_BY_ROUTE, *ADMIN_COMMON)
     suggestions = [item.to_dict() for item in source if _matches_route(item, route)]
+    
+    # Shuffle the suggestions to show different ones each time
+    selected_suggestions = random.sample(suggestions, min(4, len(suggestions)))
+    
     return {
         "role": role,
         "route": route,
-        "suggestions": suggestions[:4],
+        "suggestions": selected_suggestions,
         "disabled_reason": None,
     }

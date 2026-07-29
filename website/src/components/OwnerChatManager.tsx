@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { Modal } from "antd";
 import { io, Socket } from "socket.io-client";
 import locationChatApi from "../api/locationChatApi";
 import type { LocationChatMessageItem } from "../api/locationChatApi";
@@ -47,10 +48,25 @@ interface ChatSession {
   customerAvatar?: string | null;
   unreadCount?: number;       // Số tin chưa đọc từ OwnerChatWindow
   lastMessageAt?: string;     // Thời điểm tin nhắn cuối cùng để check dismissed state
+  lastMessage?: string;       // Nội dung tin nhắn cuối
 }
+
+const normalizeChatSession = (session: ChatSession): ChatSession | null => {
+  const customerId = Number(session.customerId);
+  if (!Number.isFinite(customerId) || customerId <= 0) return null;
+  return {
+    ...session,
+    customerId,
+    unreadCount: Math.max(0, Number(session.unreadCount || 0)),
+  };
+};
 
 export default function OwnerChatManager({ locationId, locationImageUrl }: OwnerChatManagerProps) {
   const [openChats, setOpenChats] = useState<ChatSession[]>([]);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historySessions, setHistorySessions] = useState<ChatSession[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [incomingMessages, setIncomingMessages] = useState<Record<number, LocationChatMessageItem>>({});
   const socketRef = useRef<Socket | null>(null);
   const activeLocationId = Number(locationId);
   const socketUrl = useMemo(() => resolveSocketUrl(), []);
@@ -67,7 +83,9 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
       try {
         const stored = localStorage.getItem(`owner_open_chats_${activeLocationId}`);
         if (stored) {
-          storedChats = JSON.parse(stored) as ChatSession[];
+          storedChats = ((JSON.parse(stored) as ChatSession[]) || [])
+            .map(normalizeChatSession)
+            .filter((item): item is ChatSession => Boolean(item));
         }
       } catch (e) {
         console.error("[OwnerChatManager] Lỗi khi đọc localStorage:", e);
@@ -79,6 +97,7 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
         const res = await locationChatApi.getActiveSessions(activeLocationId);
         if (res.success && res.data && isMounted) {
           const apiSessions = res.data;
+          const apiCustomerIds = new Set(apiSessions.map((sess) => Number(sess.customerId)));
           const mergedChatsMap = new Map<number, ChatSession>();
 
           // Lấy danh sách các chat đã bị chủ động đóng (dismissed)
@@ -94,6 +113,9 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
 
           // Đưa các chat từ localStorage vào trước
           for (const c of storedChats) {
+            if (!apiCustomerIds.has(Number(c.customerId))) {
+              continue;
+            }
             mergedChatsMap.set(c.customerId, c);
           }
 
@@ -108,16 +130,30 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
             if (existing) {
               // Nếu session đã tồn tại trong local state/localStorage
               // Chỉ coi là tin nhắn mới nếu unreadCount > 0 VÀ thời điểm tin nhắn mới từ API mới hơn thời điểm tin cũ đã lưu
-              const isNewMessageArrived = sess.unreadCount > 0 && existing.lastMessageAt && sess.lastMessageAt && new Date(sess.lastMessageAt).getTime() > new Date(existing.lastMessageAt).getTime();
+              const existingLastMessageTime = existing.lastMessageAt
+                ? new Date(existing.lastMessageAt).getTime()
+                : 0;
+              const sessionLastMessageTime = sess.lastMessageAt
+                ? new Date(sess.lastMessageAt).getTime()
+                : 0;
+              const existingUnreadCount = existing.unreadCount || 0;
+              const sessionUnreadCount = sess.unreadCount || 0;
+              const hasUnreadFromApi =
+                sessionUnreadCount > 0 &&
+                (sessionLastMessageTime > existingLastMessageTime ||
+                  sessionUnreadCount > existingUnreadCount ||
+                  !existing.lastMessageAt);
               
               mergedChatsMap.set(sess.customerId, {
                 customerId: sess.customerId,
                 customerName: sess.customerName,
                 customerAvatar: sess.customerAvatar || existing.customerAvatar,
                 isMinimized: existing.isMinimized,
-                hasNewMessage: isNewMessageArrived ? true : existing.hasNewMessage,
-                unreadCount: isNewMessageArrived ? sess.unreadCount : (existing.unreadCount || 0),
-                lastMessageAt: isNewMessageArrived ? sess.lastMessageAt : existing.lastMessageAt,
+                hasNewMessage: hasUnreadFromApi,
+                unreadCount: hasUnreadFromApi
+                  ? Math.max(sessionUnreadCount, existingUnreadCount)
+                  : sessionUnreadCount,
+                lastMessageAt: sess.lastMessageAt || existing.lastMessageAt,
               });
             } else if (sess.unreadCount > 0 && !isDismissed) {
               // Nếu chưa tồn tại nhưng có tin nhắn chưa đọc từ API và chưa bị dismissed
@@ -143,18 +179,44 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
         console.error("[OwnerChatManager] Lỗi khi lấy active sessions từ API:", err);
         setOpenChats(storedChats);
       } finally {
-        if (isMounted) {
-          hasLoadedRef.current[activeLocationId] = true;
-        }
+        isMounted && (hasLoadedRef.current[activeLocationId] = true);
       }
     };
-
     void loadChats();
-
     return () => {
       isMounted = false;
     };
   }, [activeLocationId]);
+
+  // Lắng nghe event mở popup Lịch sử Chat
+  useEffect(() => {
+    const handleOpenHistory = () => setIsHistoryModalOpen(true);
+    window.addEventListener("tc-open-owner-chat-history", handleOpenHistory);
+    return () => window.removeEventListener("tc-open-owner-chat-history", handleOpenHistory);
+  }, []);
+
+  // Khi popup mở, fetch danh sách session
+  useEffect(() => {
+    if (isHistoryModalOpen && activeLocationId) {
+      setHistoryLoading(true);
+      locationChatApi.getActiveSessions(activeLocationId).then(res => {
+        if (res.success && res.data) {
+          setHistorySessions(res.data.map(normalizeChatSession).filter((c): c is ChatSession => Boolean(c)));
+        }
+      }).catch(console.error).finally(() => setHistoryLoading(false));
+    }
+  }, [isHistoryModalOpen, activeLocationId]);
+
+  const handleOpenChat = useCallback((session: ChatSession) => {
+    setOpenChats((prev) => {
+      const exists = prev.some((c) => c.customerId === session.customerId);
+      if (exists) {
+        return prev.map(c => c.customerId === session.customerId ? { ...c, isMinimized: false } : c);
+      }
+      return [...prev, session];
+    });
+    setIsHistoryModalOpen(false);
+  }, []);
 
   // Tự động lưu openChats vào localStorage mỗi khi có thay đổi
   useEffect(() => {
@@ -185,6 +247,7 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
     console.log("[OwnerChatManager] Đang kết nối socket tới:", socketUrl);
     const socket = io(socketUrl, {
       auth: { token },
+      transports: ["websocket"],
     });
 
     socketRef.current = socket;
@@ -213,6 +276,7 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
       const customerId = Number(msg.customer_id);
       const customerName = msg.sender_name || `Khách hàng #${customerId}`;
       const customerAvatar = msg.customer_avatar || null;
+      setIncomingMessages((prev) => ({ ...prev, [customerId]: msg }));
 
       console.log(`[OwnerChatManager] Mở/Highlight khung chat cho customerId: ${customerId}`);
       setOpenChats((prev) => {
@@ -220,11 +284,28 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
         if (exists) {
           return prev.map((c) =>
             c.customerId === customerId 
-              ? { ...c, hasNewMessage: true, customerAvatar: customerAvatar || c.customerAvatar } 
+              ? {
+                  ...c,
+                  hasNewMessage: true,
+                  unreadCount: (c.unreadCount || 0) + 1,
+                  customerAvatar: customerAvatar || c.customerAvatar,
+                  lastMessageAt: msg.created_at,
+                } 
               : c
           );
         } else {
-          return [...prev, { customerId, customerName, hasNewMessage: true, isMinimized: false, customerAvatar }];
+          return [
+            ...prev,
+            {
+              customerId,
+              customerName,
+              hasNewMessage: true,
+              unreadCount: 1,
+              isMinimized: false,
+              customerAvatar,
+              lastMessageAt: msg.created_at,
+            },
+          ];
         }
       });
     });
@@ -325,6 +406,8 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
               onAvatarLoaded={(avatarUrl) => handleAvatarLoaded(chat.customerId, avatarUrl)}
               onUnreadChange={(count) => handleUnreadChange(chat.customerId, count)}
               locationImageUrl={locationImageUrl}
+              initialUnreadCount={chat.unreadCount || 0}
+              incomingMessage={incomingMessages[chat.customerId]}
             />
           </div>
         ))}
@@ -381,6 +464,59 @@ export default function OwnerChatManager({ locationId, locationImageUrl }: Owner
           })}
         </div>
       )}
+
+      <Modal
+        title={<span className="font-heading font-bold text-slate-800 text-lg">Lịch sử Chat Khách Hàng</span>}
+        open={isHistoryModalOpen}
+        onCancel={() => setIsHistoryModalOpen(false)}
+        footer={null}
+        width={800}
+        bodyStyle={{ maxHeight: "75vh", overflowY: "auto", padding: "20px" }}
+      >
+        {historyLoading ? (
+          <div className="flex justify-center p-8">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
+          </div>
+        ) : historySessions.length === 0 ? (
+          <div className="text-center text-slate-400 py-10 font-medium">
+            Chưa có đoạn chat nào.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {historySessions.sort((a,b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()).map(session => (
+              <div 
+                key={session.customerId}
+                onClick={() => handleOpenChat(session)}
+                className="flex flex-col items-center text-center p-4 rounded-xl border border-slate-100 hover:border-teal-300 hover:shadow-md bg-white cursor-pointer transition-all duration-200 relative group"
+              >
+                {session.unreadCount ? (
+                  <div className="absolute top-2 right-2 bg-rose-500 text-white text-[10px] font-bold h-5 min-w-[20px] flex items-center justify-center rounded-full px-1 shadow-sm z-10 animate-pulse">
+                    {session.unreadCount}
+                  </div>
+                ) : null}
+                
+                <div className="relative mb-3 group-hover:scale-105 transition-transform duration-300">
+                  {session.customerAvatar ? (
+                    <img src={resolveBackendUrl(session.customerAvatar) as string} className="w-16 h-16 rounded-full object-cover shadow-sm border-2 border-white ring-2 ring-slate-100" alt="" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-slate-100 to-slate-200 flex items-center justify-center text-2xl shadow-sm border-2 border-white ring-2 ring-slate-100 text-slate-400">👤</div>
+                  )}
+                </div>
+                
+                <div className="font-bold text-slate-800 text-sm truncate w-full mb-1" title={session.customerName}>{session.customerName}</div>
+                
+                <div className="text-xs text-slate-500 truncate w-full mb-2 h-4" title={session.lastMessage || "Chưa có tin nhắn"}>
+                  {session.lastMessage || "Chưa có tin nhắn"}
+                </div>
+                
+                <div className="text-[10px] text-slate-400 font-semibold bg-slate-50 px-2 py-1 rounded-md mt-auto">
+                  {session.lastMessageAt ? new Date(session.lastMessageAt).toLocaleString("vi-VN", { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </>
   );
 }
@@ -396,6 +532,8 @@ interface OwnerChatWindowProps {
   onAvatarLoaded: (avatarUrl: string) => void;
   onUnreadChange: (count: number) => void;
   locationImageUrl?: string | null;
+  initialUnreadCount?: number;
+  incomingMessage?: LocationChatMessageItem;
 }
 
 function OwnerChatWindow({
@@ -409,6 +547,8 @@ function OwnerChatWindow({
   onAvatarLoaded,
   onUnreadChange,
   locationImageUrl,
+  initialUnreadCount = 0,
+  incomingMessage,
 }: OwnerChatWindowProps) {
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [content, setContent] = useState("");
@@ -416,77 +556,45 @@ function OwnerChatWindow({
   const [error, setError] = useState<string | null>(null);
 
   // Số tin nhắn chưa đọc của cửa sổ chat này
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
   const [isFocused, setIsFocused] = useState(false);
 
   // Trạng thái ảnh đại diện của khách hàng
   const [customerAvatar, setCustomerAvatar] = useState<string | null>(null);
 
-  // Vị trí và kéo thả
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-
-  const handleHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("input") || target.closest("a")) {
-      return;
-    }
-    e.preventDefault();
-
-    const parentEl = e.currentTarget.closest("[id^='owner-chat-box-']") as HTMLElement;
-    if (!parentEl) return;
-
-    const rect = parentEl.getBoundingClientRect();
-    parentEl.style.transition = "none";
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const posX = rect.left;
-    const posY = rect.top;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-
-      let newX = posX + dx;
-      let newY = posY + dy;
-
-      const maxX = window.innerWidth - rect.width;
-      const maxY = window.innerHeight - rect.height;
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-
-      parentEl.style.left = `${newX}px`;
-      parentEl.style.top = `${newY}px`;
-      parentEl.style.bottom = "auto";
-      parentEl.style.right = "auto";
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      parentEl.style.transition = "";
-
-      const finalRect = parentEl.getBoundingClientRect();
-      setPosition({ x: finalRect.left, y: finalRect.top });
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  };
+  // Ref để truy cập messages hiện tại trong socket event (tránh stale closure)
+  const messagesRef = useRef<typeof messages>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  // isPreloadedRef: đánh dấu đã preload xong
 
   // Ảnh đính kèm (base64)
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const socketUrl = useMemo(() => resolveSocketUrl(), []);
+  const imageLoadingIdsRef = useRef<Set<number>>(new Set());
+  const getCurrentUserId = useCallback(() => {
+    try {
+      return sessionStorage.getItem("user")
+        ? Number(JSON.parse(sessionStorage.getItem("user") || "{}").user_id)
+        : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   const onFocusRef = useRef(onFocus);
   useEffect(() => {
     onFocusRef.current = onFocus;
   }, [onFocus]);
+
+  const onAvatarLoadedRef = useRef(onAvatarLoaded);
+  useEffect(() => {
+    onAvatarLoadedRef.current = onAvatarLoaded;
+  }, [onAvatarLoaded]);
 
   const isFocusedRef = useRef(isFocused);
   const onUnreadChangeRef = useRef(onUnreadChange);
@@ -494,23 +602,58 @@ function OwnerChatWindow({
 
   useEffect(() => {
     isFocusedRef.current = isFocused;
-    if (isFocused) {
+    if (isFocused && unreadCount > 0) {
       setUnreadCount(0);
       onFocusRef.current();
+      locationChatApi.markRead(locationId, customerId).catch(console.error);
+    } else if (isFocused) {
+      // Just mark read when first focused if unreadCount was 0
+      onFocusRef.current();
+      locationChatApi.markRead(locationId, customerId).catch(console.error);
     }
-  }, [isFocused]);
+  }, [isFocused, unreadCount, locationId, customerId]);
 
   // Truyền unreadCount lên OwnerChatManager để hiển thị badge
   useEffect(() => {
     onUnreadChangeRef.current(unreadCount);
   }, [unreadCount]);
 
+  const handleClearHistory = useCallback(async () => {
+    if (!window.confirm("Bạn có chắc muốn xóa toàn bộ lịch sử trò chuyện này không? Tin nhắn sẽ chỉ được ẩn ở phía bạn.")) {
+      return;
+    }
+    try {
+      const res = await locationChatApi.clearHistory(locationId, customerId);
+      if (res.success) {
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("Lỗi xóa đoạn chat:", err);
+      alert("Không thể xóa đoạn chat.");
+    }
+  }, [locationId, customerId]);
+
+  useEffect(() => {
+    setUnreadCount((prev) => Math.max(prev, initialUnreadCount));
+  }, [initialUnreadCount]);
+
   // Cuộn tin nhắn xuống dưới cùng
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && !isFetchingMore) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isFetchingMore]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && hasMore && !isFetchingMore && !loading) {
+      const currentScrollHeight = e.currentTarget.scrollHeight;
+      void fetchHistoryRef.current("older").then(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight - currentScrollHeight;
+        }
+      });
+    }
+  };
 
   // Nhấp ra ngoài cửa sổ để hủy focus (nếu nhấp ra ngoài, tin nhắn mới đến sẽ hiện số đỏ tiếp)
   useEffect(() => {
@@ -524,98 +667,150 @@ function OwnerChatWindow({
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [customerId]);
 
-  // Helper: fetch lịch sử chat (dùng chung load đầu + refresh khi nhận has_image)
-  const fetchHistory = useCallback(async (showLoading = false) => {
+  const loadMessageImage = useCallback(async (messageId: number) => {
+    if (!Number.isFinite(messageId) || imageLoadingIdsRef.current.has(messageId)) return;
+    imageLoadingIdsRef.current.add(messageId);
     try {
-      if (showLoading) {
+      const res = await locationChatApi.getMessageImage(locationId, messageId);
+      if (res.success && res.data?.image_data) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            Number(m.message_id) === Number(messageId)
+              ? { ...m, image_data: res.data.image_data, has_image: true }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      console.error("[OwnerChatWindow] Không thể tải ảnh chat:", err);
+    } finally {
+      imageLoadingIdsRef.current.delete(messageId);
+    }
+  }, [locationId]);
+
+  useEffect(() => {
+    messages.forEach((item) => {
+      if (item.has_image && !item.image_data) {
+        void loadMessageImage(item.message_id);
+      }
+    });
+  }, [loadMessageImage, messages]);
+
+  // Lấy lịch sử hỗ trợ Infinite Scroll
+  const fetchHistory = useCallback(async (direction?: "older" | "newer"): Promise<boolean> => {
+    try {
+      const isInitial = !direction;
+      if (isInitial) {
         setLoading(true);
         setError(null);
+        setHasMore(true);
+      } else if (direction === "older") {
+        setIsFetchingMore(true);
       }
-      const res = await locationChatApi.getHistory(locationId, customerId);
-      if (res.success) {
-        const list = res.data || [];
-        setMessages(list);
-        const firstWithAvatar = list.find((m) => m.customer_avatar);
-        if (firstWithAvatar && firstWithAvatar.customer_avatar) {
-          setCustomerAvatar(firstWithAvatar.customer_avatar);
-          onAvatarLoaded(firstWithAvatar.customer_avatar);
+
+      let afterId: number | undefined = undefined;
+      let beforeId: number | undefined = undefined;
+
+      if (direction === "newer") {
+        if (messagesRef.current.length > 0) {
+          afterId = Math.max(...messagesRef.current.map((m) => Number(m.message_id)));
+        }
+      } else if (direction === "older") {
+        if (messagesRef.current.length > 0) {
+          beforeId = Math.min(...messagesRef.current.map((m) => Number(m.message_id)));
         }
       }
+
+      const res = await locationChatApi.getHistory(
+        locationId,
+        customerId,
+        afterId,
+        beforeId,
+        50, // limit
+        false,
+        false
+      );
+
+      if (res.success) {
+        let list = res.data || [];
+        if (isInitial) {
+          setMessages(list);
+          if (list.length < 50) setHasMore(false);
+        } else if (direction === "older") {
+          if (list.length > 0) {
+            setMessages((prev) => {
+              const newMsgs = list.filter((m: any) => !prev.some((p) => p.message_id === m.message_id));
+              return [...newMsgs, ...prev];
+            });
+          }
+          if (list.length < 50) setHasMore(false);
+        } else if (direction === "newer") {
+          if (list.length > 0) {
+            setMessages((prev) => {
+              const newMsgs = list.filter((m: any) => !prev.some((p) => p.message_id === m.message_id));
+              return [...prev, ...newMsgs];
+            });
+          }
+        }
+        
+        const firstWithAvatar = (list as any[]).find((m) => m.customer_avatar);
+        if (firstWithAvatar && firstWithAvatar.customer_avatar) {
+          setCustomerAvatar(firstWithAvatar.customer_avatar);
+          onAvatarLoadedRef.current(firstWithAvatar.customer_avatar);
+        }
+        return true;
+      }
+      if (isInitial) setError("Không thể tải lịch sử.");
+      return false;
     } catch {
-      if (showLoading) setError("Không thể tải lịch sử.");
+      if (!direction) setError("Không thể tải lịch sử.");
+      return false;
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
+      setIsFetchingMore(false);
     }
-  }, [locationId, customerId, onAvatarLoaded]);
+  }, [customerId, locationId]);
 
   // Ref để tránh stale closure trong socket event listener
   const fetchHistoryRef = useRef(fetchHistory);
   useEffect(() => { fetchHistoryRef.current = fetchHistory; }, [fetchHistory]);
 
-  // Kết nối socket riêng và lấy lịch sử tin nhắn của thread khách hàng này
+  // Tải history một lần khi cửa sổ mở. Socket realtime dùng chung ở OwnerChatManager.
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    console.log(`[OwnerChatWindow - Customer ${customerId}] Tải lịch sử chat...`);
-    void fetchHistory(true);
-    locationChatApi.markRead(locationId, customerId).catch(console.error);
-
-    console.log(`[OwnerChatWindow - Customer ${customerId}] Đang kết nối socket chat riêng...`);
-    const socket = io(socketUrl, {
-      auth: { token },
-    });
-
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log(`[OwnerChatWindow - Customer ${customerId}] Đã kết nối socket! ID:`, socket.id);
-      socket.emit("join_location_room", { locationId, customerId });
-    });
-
-    socket.on("location_chat_message", (msg: LocationChatMessageItem & { has_image?: boolean; customer_avatar?: string }) => {
-      console.log(`[OwnerChatWindow - Customer ${customerId}] Nhận socket event:`, {
-        message_id: msg.message_id,
-        has_image: msg.has_image,
-        content: msg.content?.slice(0, 30),
-      });
-
-      if (
-        Number(msg.location_id) !== locationId ||
-        Number(msg.customer_id) !== customerId
-      ) return;
-
-      if (msg.customer_avatar) {
-        setCustomerAvatar(msg.customer_avatar);
-      }
-
-      // Tăng badge NGAY LẬP TỨC từ metadata (không cần chờ ảnh)
-      const currentUserId = sessionStorage.getItem("user")
-        ? JSON.parse(sessionStorage.getItem("user") || "{}").user_id
-        : null;
-      if (Number(msg.sender_id) !== Number(currentUserId) && !isFocusedRef.current) {
-        setUnreadCount((prev) => prev + 1);
-      }
-
-      // Luôn append ngay lập tức để hiển thị cả tin nhắn từ khách
-      setMessages((prev) => {
-        if (prev.some((m) => m.message_id === msg.message_id)) return prev;
-        return [...prev, msg];
-      });
-
-      if (msg.has_image) {
-        // Tin nhắn có ảnh → refetch history để lấy image_data đầy đủ (dùng ref để tránh stale closure)
-        console.log(`[OwnerChatWindow - Customer ${customerId}] has_image=true, đang refetch history...`);
-        void fetchHistoryRef.current(false);
+    let cancelled = false;
+    void fetchHistory().then((loaded) => {
+      if (!cancelled && loaded) {
+        locationChatApi.markRead(locationId, customerId).catch(console.error);
       }
     });
-
     return () => {
-      socket.off("location_chat_message");
-      socket.disconnect();
-      socketRef.current = null;
+      cancelled = true;
     };
-  }, [locationId, customerId, socketUrl]);
+  }, [customerId, fetchHistory, locationId]);
+
+  useEffect(() => {
+    if (!incomingMessage) return;
+    if (
+      Number(incomingMessage.location_id) !== locationId ||
+      Number(incomingMessage.customer_id) !== customerId
+    ) return;
+
+    if (incomingMessage.customer_avatar) {
+      setCustomerAvatar(incomingMessage.customer_avatar);
+    }
+
+    const currentUserId = getCurrentUserId();
+    if (Number(incomingMessage.sender_id) !== Number(currentUserId) && !isFocusedRef.current) {
+      setUnreadCount((prev) => prev + 1);
+    }
+
+    setMessages((prev) => {
+      if (prev.some((m) => m.message_id === incomingMessage.message_id)) return prev;
+      return [...prev, incomingMessage];
+    });
+  }, [customerId, getCurrentUserId, incomingMessage, locationId]);
+
+
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -682,23 +877,10 @@ function OwnerChatWindow({
           ? "ring-2 ring-emerald-500 animate-pulse-subtle"
           : ""
       }`}
-      style={
-        position
-          ? {
-              position: "fixed",
-              left: `${position.x}px`,
-              top: `${position.y}px`,
-              bottom: "auto",
-              right: "auto",
-              zIndex: 1000,
-            }
-          : {}
-      }
     >
       {/* Header */}
       <div
-        onMouseDown={handleHeaderMouseDown}
-        className="p-3 text-white bg-gradient-to-r from-teal-600 to-emerald-600 flex items-center justify-between cursor-move select-none shrink-0 h-[48px]"
+        className="p-3 text-white bg-gradient-to-r from-teal-600 to-emerald-600 flex items-center justify-between select-none shrink-0 h-[48px]"
       >
         <div className="flex items-center gap-2 min-w-0">
           {resolvedAvatar ? (
@@ -723,7 +905,22 @@ function OwnerChatWindow({
             <p className="text-[10px] opacity-80 font-semibold">Khách hàng trực tuyến</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 ml-2">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              className="text-white/80 hover:text-rose-400 transition p-1 shrink-0 bg-rose-500/10 hover:bg-rose-500/20 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleClearHistory();
+              }}
+              title="Xóa toàn bộ trò chuyện"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="text-white/80 hover:text-white transition p-1 shrink-0"
@@ -756,6 +953,7 @@ function OwnerChatWindow({
       {/* Message List */}
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-3 space-y-2.5 relative"
         style={
           locationImageUrl
@@ -769,12 +967,13 @@ function OwnerChatWindow({
             : { backgroundColor: "rgba(250, 251, 252, 0.5)" }
         }
       >
-        {loading && (
-          <div className="text-center text-xs text-slate-400 py-6 font-medium">
-            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-teal-500 border-t-transparent mb-1" />
-            <p>Đang tải lịch sử...</p>
-          </div>
-        )}
+        <div className="relative z-10 space-y-2.5 min-h-full">
+            {(loading || isFetchingMore) && (
+              <div className="flex flex-col items-center justify-center py-4 space-y-2">
+                <span className="block h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                <span className="text-[10px] text-slate-500 font-medium">Đang tải...</span>
+              </div>
+            )}
 
         {error && (
           <div className="rounded-lg bg-rose-50 border border-rose-100 p-2 text-center text-xs text-rose-600">
@@ -800,10 +999,10 @@ function OwnerChatWindow({
           return (
             <div
               key={item.message_id}
-              className={`flex flex-col max-w-[80%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}
+              className={`group flex flex-col max-w-[80%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}
             >
               {/* Image message */}
-              {item.image_data && (
+              {item.image_data ? (
                 <div className="mb-0.5">
                   <img
                     src={item.image_data}
@@ -817,7 +1016,17 @@ function OwnerChatWindow({
                     }}
                   />
                 </div>
-              )}
+              ) : item.has_image ? (
+                <div
+                  className={`mb-0.5 rounded-lg border px-3 py-2 text-xs font-semibold shadow-sm ${
+                    isMe
+                      ? "border-teal-200 bg-teal-50 text-teal-700"
+                      : "border-slate-200 bg-white text-slate-500"
+                  }`}
+                >
+                  Ảnh đã gửi
+                </div>
+              ) : null}
 
               {/* Text message */}
               {item.content && (
@@ -833,12 +1042,15 @@ function OwnerChatWindow({
               )}
 
               {/* Hiển thị thời gian bên dưới tin nhắn */}
-              <span className="text-[10px] text-slate-400 mt-0.5 px-1">
-                {formatMessageTime(item.created_at)}
-              </span>
+              <div className="flex items-center gap-1 mt-0.5 px-1">
+                <span className="text-[10px] text-slate-400">
+                  {formatMessageTime(item.created_at)}
+                </span>
+              </div>
             </div>
           );
         })}
+        </div>
       </div>
 
       {/* Image Preview inside window */}

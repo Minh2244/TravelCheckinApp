@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import { pool } from "../config/database";
 import type { RowDataPacket } from "mysql2/promise";
+import { emitToUser, emitToAll } from "./socketHub";
 
 export type RealtimeEvent = {
   type: string;
@@ -27,7 +28,11 @@ export const removeSseClient = (userId: number, res: Response) => {
 };
 
 export const publishToUser = (userId: number, event: RealtimeEvent) => {
+  // Bắn sự kiện sang Socket.IO cho Web
+  emitToUser(userId, "realtime_event", event);
+
   const set = clientsByUserId.get(userId);
+  console.log(`[SSE] publishToUser called for userId=${userId}, event.type=${event.type}. Set size: ${set ? set.size : 0}`);
   if (!set || set.size === 0) return;
 
   const payload = `data: ${JSON.stringify(event)}\n\n`;
@@ -62,6 +67,9 @@ export const publishToUsers = (userIds: number[], event: RealtimeEvent) => {
 };
 
 export const publishToAll = (event: RealtimeEvent) => {
+  // Bắn sự kiện sang Socket.IO cho Web
+  emitToAll("realtime_event", event);
+
   const payload = `data: ${JSON.stringify(event)}\n\n`;
   console.log(`[SSE] Broadcasting event to all users:`, JSON.stringify(event));
 

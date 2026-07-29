@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { resolveBackendUrl } from "../../../utils/resolveBackendUrl";
+import { useSocket } from "../../../contexts/SocketContext";
 
 type SyncState = "idle" | "connected" | "disconnected";
 
@@ -11,6 +11,7 @@ type Params = {
 const MIN_SYNC_GAP_MS = 1500;
 
 const useTouristTicketSync = ({ locationId, onSync }: Params) => {
+  const socket = useSocket();
   const [sseState, setSseState] = useState<SyncState>("idle");
   const onSyncRef = useRef(onSync);
   const lastSyncRef = useRef(0);
@@ -27,41 +28,15 @@ const useTouristTicketSync = ({ locationId, onSync }: Params) => {
   }, []);
 
   useEffect(() => {
-    if (!locationId) return;
-
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) {
+    if (!locationId || !socket) {
       setSseState("disconnected");
       return;
     }
 
-    const url = resolveBackendUrl(
-      `/api/events?token=${encodeURIComponent(token)}`,
-    );
-    if (!url) {
-      setSseState("disconnected");
-      return;
-    }
+    setSseState("connected");
 
-    let closed = false;
-    const es = new EventSource(url);
-
-    es.onopen = () => {
-      if (closed) return;
-      setSseState("connected");
-    };
-
-    es.onerror = () => {
-      if (closed) return;
-      setSseState("disconnected");
-    };
-
-    es.onmessage = (evt) => {
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          location_id?: number;
-        };
         if (data?.type !== "tourist_updated") return;
         if (Number(data.location_id) !== Number(locationId)) return;
         triggerSync();
@@ -70,11 +45,12 @@ const useTouristTicketSync = ({ locationId, onSync }: Params) => {
       }
     };
 
+    socket.on("realtime_event", handleEvent);
+
     return () => {
-      closed = true;
-      es.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, [locationId, triggerSync]);
+  }, [locationId, triggerSync, socket]);
 
   useEffect(() => {
     if (!locationId) return;

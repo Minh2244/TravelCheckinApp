@@ -38,7 +38,7 @@ export function useBookingRealtime(
     const backendUrl = resolveBackendUrl("/");
     if (!backendUrl) return;
 
-    const socket = io(backendUrl);
+    const socket = io(backendUrl, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
 
     const joinRoom = () => {

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
+import { OAuth2Client } from "google-auth-library";
 import { pool } from "../config/database";
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import {
@@ -32,6 +33,30 @@ interface User extends RowDataPacket {
   refresh_token: string | null;
   deleted_at?: string | null;
 }
+
+export const getPublicSettings = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>("SELECT setting_key, setting_value FROM system_settings");
+    const settings: Record<string, string> = {};
+    rows.forEach((row) => {
+      settings[row.setting_key] = row.setting_value;
+    });
+    // Chỉ trả về các thông tin công khai
+    const publicSettings = {
+      support_hotline: settings.support_hotline || "",
+      support_zalo: settings.support_zalo || "",
+      support_email: settings.support_email || "",
+      app_background_url: settings.app_background_url || "",
+      app_primary_color: settings.app_primary_color || "",
+      app_secondary_color: settings.app_secondary_color || "",
+      app_text_color: settings.app_text_color || "",
+    };
+    res.json({ success: true, data: publicSettings });
+  } catch (error) {
+    console.error("Error getting public settings:", error);
+    res.status(500).json({ success: false, message: "Lỗi hệ thống" });
+  }
+};
 
 // ==================== HELPER FUNCTIONS ====================
 const generateToken = (
@@ -842,21 +867,82 @@ export const socialLogin = async (
   const connection = await pool.getConnection();
 
   try {
-    const { provider, socialId, email, fullName, avatarUrl } = req.body;
+    const provider = String(req.body?.provider || "");
+    let socialId = String(req.body?.socialId || "");
+    let email = typeof req.body?.email === "string" ? req.body.email : "";
+    let fullName = typeof req.body?.fullName === "string" ? req.body.fullName : "";
+    let avatarUrl =
+      typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl : null;
+
+    if (provider === "google") {
+      const code = String(req.body?.code || "");
+      const redirectUri = String(req.body?.redirectUri || process.env.GOOGLE_REDIRECT_URI || "http://localhost:5173/auth/google/callback");
+      const clientId = String(process.env.GOOGLE_CLIENT_ID || "");
+      const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "");
+
+      if (!code || !clientId || !clientSecret) {
+        res.status(400).json({
+          success: false,
+          message: "Thiếu Google code hoặc cấu hình Google Client ID/Secret",
+        });
+        return;
+      }
+
+      try {
+        const oauthClient = new OAuth2Client(clientId, clientSecret, redirectUri);
+        const { tokens } = await oauthClient.getToken(code);
+        const accessToken = tokens.access_token;
+
+        if (!accessToken) throw new Error("No access token from Google");
+
+        const tokenInfo = await oauthClient.getTokenInfo(accessToken);
+        if (tokenInfo.aud !== clientId) {
+          res.status(401).json({
+            success: false,
+            code: "INVALID_SOCIAL_TOKEN",
+            message: "Google token không thuộc ứng dụng này",
+          });
+          return;
+        }
+        const profileResponse = await fetch(
+          "https://www.googleapis.com/oauth2/v2/userinfo",
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!profileResponse.ok) throw new Error("Google userinfo failed");
+        const profile = (await profileResponse.json()) as {
+          id?: string;
+          email?: string;
+          verified_email?: boolean;
+          name?: string;
+          picture?: string;
+        };
+        if (!profile.id || !profile.email || profile.verified_email === false) {
+          res.status(401).json({
+            success: false,
+            code: "INVALID_SOCIAL_TOKEN",
+            message: "Google không xác minh được tài khoản hoặc email",
+          });
+          return;
+        }
+        socialId = profile.id;
+        email = profile.email;
+        fullName = profile.name || "Google User";
+        avatarUrl = profile.picture || null;
+      } catch (error) {
+        console.error("[auth] Google code exchange failed:", error);
+        res.status(401).json({
+          success: false,
+          code: "INVALID_SOCIAL_TOKEN",
+          message: "Google code không hợp lệ hoặc đã hết hạn",
+        });
+        return;
+      }
+    }
 
     const normalizedProviderAvatarUrl =
       typeof avatarUrl === "string" && avatarUrl.trim().length
         ? avatarUrl.trim()
         : null;
-
-    // ⭐ LOG ĐỂ DEBUG
-    console.log("📥 Received social login request:", {
-      provider,
-      socialId,
-      email,
-      fullName,
-      avatarUrl,
-    });
 
     if (!provider || !socialId) {
       console.error("❌ Missing provider or socialId:", req.body);
@@ -921,9 +1007,8 @@ export const socialLogin = async (
 
     let processedFullName = fullName;
     if (!processedFullName || processedFullName.trim().length === 0) {
-      processedFullName = `${
-        provider.charAt(0).toUpperCase() + provider.slice(1)
-      } User`;
+      processedFullName = `${provider.charAt(0).toUpperCase() + provider.slice(1)
+        } User`;
       console.log(`⚠️ Tạo tên giả: ${processedFullName}`);
     }
 
@@ -990,9 +1075,9 @@ export const socialLogin = async (
     } else {
       const [existingUsers] = processedEmail
         ? await connection.query<User[]>(
-            "SELECT * FROM users WHERE email = ?",
-            [processedEmail],
-          )
+          "SELECT * FROM users WHERE email = ?",
+          [processedEmail],
+        )
         : [[], []];
 
       if (existingUsers.length > 0) {
@@ -1214,10 +1299,10 @@ export const refreshAccessToken = async (
       [decoded.userId, refreshToken],
     );
 
-    if (users.length === 0) {
+    if (users.length === 0 || users[0].deleted_at) {
       res.status(401).json({
         success: false,
-        message: "Refresh token không hợp lệ",
+        message: "Tài khoản không tồn tại hoặc token không hợp lệ",
       });
       return;
     }

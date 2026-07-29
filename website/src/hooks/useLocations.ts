@@ -58,6 +58,7 @@ export const useLocations = () => {
   }, [params]);
 
   useEffect(() => {
+    // Gọi API khi params thay đổi
     fetchLocations();
   }, [fetchLocations]);
 

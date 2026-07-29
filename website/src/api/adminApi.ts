@@ -151,7 +151,7 @@ const adminApi = {
     );
     return response.data;
   },
-  getCheckinAnalytics: async (params?: { from?: string; to?: string }) => {
+  getCheckinAnalytics: async (params?: { from?: string; to?: string; province?: string; type?: string }) => {
     const response = await axiosClient.get("/admin/analytics/checkins", {
       params,
     });
@@ -165,7 +165,7 @@ const adminApi = {
   },
   getHistoryInvoices: async (params?: QueryParams) => {
     const response = await axiosClient.get("/admin/history/invoices", {
-      params,
+      params: { ...params, _t: Date.now() },
     });
     return response.data;
   },
@@ -677,6 +677,7 @@ const adminApi = {
     return response.data;
   },
 
+
   exportSystemLogsCsv: async (params?: {
     user_id?: number;
     action?: string;
@@ -697,6 +698,24 @@ const adminApi = {
   },
   updateSystemSettings: async (settings: JsonBody) => {
     const response = await axiosClient.put("/admin/settings", settings);
+    return response.data;
+  },
+  uploadAppTheme: async (file: File, primaryColor: string, secondaryColor: string, textColor: string = "#ffffff") => {
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("type", "app");
+    formData.append("apply", "1");
+    if (primaryColor) formData.append("app_primary_color", primaryColor);
+    if (secondaryColor) formData.append("app_secondary_color", secondaryColor);
+    if (textColor) formData.append("app_text_color", textColor);
+
+    const response = await axiosClient.post(
+      "/admin/backgrounds/upload",
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      },
+    );
     return response.data;
   },
 

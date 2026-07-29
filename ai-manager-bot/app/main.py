@@ -1,4 +1,8 @@
 from __future__ import annotations
+import sys
+
+# Đảm bảo in tiếng Việt ra console trên Windows không bị UnicodeEncodeError
+sys.stdout.reconfigure(encoding='utf-8')
 
 from fastapi import FastAPI, HTTPException
 from starlette.responses import JSONResponse

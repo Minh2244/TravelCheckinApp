@@ -6,8 +6,10 @@ import {
   AppState,
   FlatList,
   Image,
+  ImageBackground,
   Pressable,
   RefreshControl,
+  ScrollView,
   Text,
   TextInput,
   useWindowDimensions,
@@ -19,121 +21,121 @@ import { resolveBackendUrl } from "../../../src/lib/url";
 import { useAuthStore } from "../../../src/modules/auth/store";
 import { useLocations } from "../../../src/modules/locations/use-locations";
 import { useLocationPermissionStore } from "../../../src/modules/location-permission/store";
+import { useAppSettingsStore } from "../../../src/store/app-settings";
 import { geoApi } from "../../../src/services/geo.api";
 import { userApi } from "../../../src/services/user.api";
+import { travelColors, travelShadow } from "../../../src/theme/travel";
 import type { LocationItem } from "../../../src/types/location";
+import {
+  formatDistanceKm,
+  type Coordinates,
+} from "../../../src/utils/location-distance";
 
 type GeoState =
   | { status: "idle" | "loading" }
   | { status: "ready"; city: string; temperature?: number; weather?: string }
   | { status: "error"; message: string };
 
-type StatsState = {
-  checkins: number;
-  favorites: number;
-  vouchers: number;
-};
-
 const quickActions: Array<{
   label: string;
   description: string;
-  action: "wallet" | "vouchers" | "sos" | "diary" | "reminders" | "history";
+  action:
+    | "wallet"
+    | "vouchers"
+    | "sos"
+    | "diary"
+    | "reminders"
+    | "itineraries"
+    | "ai_chat"
+    | "notifications";
   icon: keyof typeof Ionicons.glyphMap;
-  iconBackground: string;
-  cardBackground: string;
+  tint: string;
+  background: string;
 }> = [
   {
     label: "Giỏ vé",
     description: "Vé bàn, phòng & tour",
     action: "wallet",
     icon: "ticket-outline",
-    iconBackground: "#0ea5e9",
-    cardBackground: "#f0f9ff",
+    tint: "#2587d9",
+    background: "#eaf5ff",
   },
   {
     label: "Ví Voucher",
     description: "Mã giảm giá đã nhận",
     action: "vouchers",
     icon: "gift-outline",
-    iconBackground: "#e11d48",
-    cardBackground: "#fff5f5",
+    tint: "#ff6b4a",
+    background: "#fff0eb",
   },
   {
-    label: "Cứu hộ SOS",
-    description: "Hỗ trợ khẩn cấp 24/7",
-    action: "sos",
-    icon: "alert-circle-outline",
-    iconBackground: "#dc2626",
-    cardBackground: "#fef2f2",
+    label: "Thông báo",
+    description: "Hộp thư & tin tức mới",
+    action: "notifications",
+    icon: "notifications-outline",
+    tint: "#ef4444",
+    background: "#fff1f2",
   },
   {
     label: "Nhật ký",
     description: "Lưu giữ kỷ niệm đi đi",
     action: "diary",
     icon: "journal-outline",
-    iconBackground: "#7c3aed",
-    cardBackground: "#f5f3ff",
+    tint: "#6d35f5",
+    background: "#f1ebff",
+  },
+  {
+    label: "Trợ lý AI",
+    description: "Trò chuyện & tư vấn",
+    action: "ai_chat",
+    icon: "sparkles",
+    tint: "#ffffff",
+    background: "#6d35f5", // Use purple background to make it stand out
   },
   {
     label: "Nhắc lịch",
     description: "Thông báo lịch đặt hẹn",
     action: "reminders",
     icon: "alarm-outline",
-    iconBackground: "#d97706",
-    cardBackground: "#fef3c7",
+    tint: "#f59e0b",
+    background: "#fff7df",
   },
   {
-    label: "Lịch sử GD",
-    description: "Nhật ký chi tiêu du lịch",
-    action: "history",
-    icon: "wallet-outline",
-    iconBackground: "#059669",
-    cardBackground: "#ecfdf5",
+    label: "Lịch trình",
+    description: "Quản lý chuyến đi",
+    action: "itineraries",
+    icon: "calendar-outline",
+    tint: "#0f8f83",
+    background: "#e4f7f4",
+  },
+  {
+    label: "SOS",
+    description: "Hỗ trợ khẩn cấp",
+    action: "sos",
+    icon: "alert-circle-outline",
+    tint: "#ef4444",
+    background: "#fff1f2",
   },
 ];
 
 const categories = ["Tất cả", "Ẩm thực", "Lưu trú", "Du lịch"] as const;
-const statItems: Array<{
-  key: "checkins" | "favorites" | "vouchers";
-  label: string;
-  icon: "location-outline" | "bookmark-outline" | "ticket-outline";
-  tint: string;
-}> = [
-  {
-    key: "checkins",
-    label: "Check-in",
-    icon: "location-outline",
-    tint: "#0f766e",
-  },
-  {
-    key: "favorites",
-    label: "Đã lưu",
-    icon: "bookmark-outline",
-    tint: "#7c3aed",
-  },
-  {
-    key: "vouchers",
-    label: "Voucher",
-    icon: "ticket-outline",
-    tint: "#2563eb",
-  },
-];
-
 export default function HomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((state) => state.user);
+  const appBgRaw = useAppSettingsStore((state) => state.app_background_url);
+  const appBg = resolveBackendUrl(appBgRaw) || "";
+  const appPrimary = useAppSettingsStore((state) => state.app_primary_color) || travelColors.teal;
+  const appSecondary = useAppSettingsStore((state) => state.app_secondary_color) || "#f0fdf4";
+  const appTextColor = useAppSettingsStore((state) => state.app_text_color) || "#ffffff";
   const refreshLocationStatus = useLocationPermissionStore((state) => state.refreshStatus);
   const ensureLocationAccess = useLocationPermissionStore((state) => state.ensureAccess);
   const [searchText, setSearchText] = useState("");
   const [geoState, setGeoState] = useState<GeoState>({ status: "idle" });
-  const [stats, setStats] = useState<StatsState>({
-    checkins: 0,
-    favorites: 0,
-    vouchers: 0,
-  });
-  const [statsLoading, setStatsLoading] = useState(false);
+  const [currentCoordinates, setCurrentCoordinates] =
+    useState<Coordinates | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const {
     locations,
@@ -143,7 +145,7 @@ export default function HomeScreen() {
     setCategory,
     setKeyword,
     refetch,
-  } = useLocations();
+  } = useLocations(currentCoordinates);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -179,23 +181,37 @@ export default function HomeScreen() {
 
   const loadStats = useCallback(async () => {
     try {
-      setStatsLoading(true);
-      const [checkins, favorites, vouchers] = await Promise.allSettled([
-        userApi.getCheckins(),
-        userApi.getFavorites(),
-        userApi.getMySavedVouchers(),
+      const [notificationsRes, remindersRes] = await Promise.allSettled([
+        userApi.getNotifications(),
+        userApi.getBookingReminders(),
       ]);
 
-      setStats({
-        checkins:
-          checkins.status === "fulfilled" ? (checkins.value.data?.length ?? 0) : 0,
-        favorites:
-          favorites.status === "fulfilled" ? (favorites.value.data?.length ?? 0) : 0,
-        vouchers:
-          vouchers.status === "fulfilled" ? (vouchers.value.data?.length ?? 0) : 0,
-      });
-    } finally {
-      setStatsLoading(false);
+      let count = 0;
+      if (notificationsRes.status === "fulfilled" && notificationsRes.value?.success) {
+        const list = notificationsRes.value.data || [];
+        count += list.filter((item: any) => Number(item.is_read) !== 1).length;
+      }
+
+      if (remindersRes.status === "fulfilled" && remindersRes.value?.success) {
+        const list = remindersRes.value.data || [];
+        const now = Date.now();
+        const soonMs = 24 * 60 * 60 * 1000;
+        const hasReminders = list.some((item: any) => {
+          if (item.status === "cancelled" || item.status === "completed") {
+            return false;
+          }
+          const t = new Date(`${item.check_in_date}T00:00:00`).getTime();
+          if (!Number.isFinite(t)) return false;
+          return t <= now + soonMs;
+        });
+        if (hasReminders) {
+          count += 1;
+        }
+      }
+
+      setUnreadCount(count);
+    } catch {
+      setUnreadCount(0);
     }
   }, []);
 
@@ -235,11 +251,13 @@ export default function HomeScreen() {
       }
 
       if (!coords) {
+        setCurrentCoordinates(null);
         setGeoState({ status: "error", message: "Không lấy được vị trí. Thử lại hoặc di chuyển ra ngoài trời." });
         return;
       }
 
       // 4. Call backend geo API
+      setCurrentCoordinates(coords);
       const geo = await geoApi.reverse(coords.latitude, coords.longitude);
       setGeoState({
         status: "ready",
@@ -275,6 +293,8 @@ export default function HomeScreen() {
     useCallback(() => {
       let active = true;
 
+      void loadStats();
+
       const syncGeoOnFocus = async () => {
         const ready = await ensureLocationAccess("ứng dụng");
 
@@ -295,7 +315,7 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [ensureLocationAccess, fetchGeo]),
+    }, [ensureLocationAccess, fetchGeo, loadStats]),
   );
 
   const onRefresh = useCallback(async () => {
@@ -331,6 +351,10 @@ export default function HomeScreen() {
 
   const shellWidth = useMemo(() => Math.min(Math.max(width - 40, 0), 560), [width]);
   const gridGap = 12;
+  const utilityWidth = useMemo(
+    () => Math.max(Math.floor((shellWidth - gridGap * 3) / 4), 70),
+    [gridGap, shellWidth],
+  );
   const cardWidth = useMemo(
     () => Math.max(Math.floor((shellWidth - gridGap) / 2), 148),
     [gridGap, shellWidth],
@@ -338,31 +362,83 @@ export default function HomeScreen() {
 
   const headerNode = useMemo(
     () => (
-      <View className="gap-6 pb-5 pt-2.5">
-      <View className="gap-2">
-        <Text className="text-[28px] font-extrabold leading-[34px] text-slate-900">
-          {greeting}, {firstName}
-        </Text>
-        <Text className="text-base text-slate-500">{dateLabel}</Text>
+      <View className="pb-5">
+        
+        {/* Dynamic Header Background */}
+        <View 
+          style={{ 
+            marginHorizontal: -20, 
+            marginTop: -12, 
+            paddingTop: 36, 
+            paddingHorizontal: 20,
+            paddingBottom: 64,
+            backgroundColor: appPrimary
+          }}
+        >
+          {appBg ? (
+            <ImageBackground 
+              source={{ uri: appBg }} 
+              style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+              resizeMode="cover"
+            />
+          ) : null}
+          
+          {/* Lớp Overlay nếu dùng ảnh để chữ dễ đọc hơn */}
+          {appBg && <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.15)' }} />}
 
-        {geoState.status === "ready" ? (
-          <View className="rounded-xl border border-cyan-200 bg-cyan-50 px-3.5 py-3">
-            <Text className="text-[17px] font-bold leading-5 text-brand-800">
-              {geoState.temperature != null ? `${Math.round(geoState.temperature)}\u00b0C` : "--"} |{" "}
-              {geoState.city} | {geoState.weather ?? "Th\u1eddi ti\u1ebft \u0111ang c\u1eadp nh\u1eadt"}
-            </Text>
-          </View>
-        ) : geoState.status === "loading" ? (
-          <View className="rounded-xl border border-cyan-100 bg-cyan-50 px-3.5 py-3">
-            <Text className="text-[15px] text-slate-400">Đang lấy vị trí và thời tiết...</Text>
-          </View>
-        ) : null}
-      </View>
+          <View className="flex-row items-start justify-between relative z-10">
+            <View className="gap-1 flex-1">
+              <Text className="text-[28px] font-extrabold leading-[34px]" style={{ color: appTextColor }}>
+                {greeting}, {firstName}
+              </Text>
+              <Text className="text-[14px]" style={{ color: appTextColor, opacity: 0.9 }}>{dateLabel}</Text>
+            </View>
 
-      <View className="gap-3.5">
-        <Text className="text-[18px] font-extrabold text-slate-900">Truy cập nhanh</Text>
-        <View className="flex-row flex-wrap justify-between gap-y-3">
-          {quickActions.map((item) => (
+            {geoState.status === "ready" ? (
+              <View className="flex-row items-center gap-2 ml-4">
+                <Ionicons name="partly-sunny" size={24} color="#eab308" />
+                <View>
+                  <Text className="text-[14px] font-extrabold leading-[16px]" style={{ color: appTextColor }}>
+                    {geoState.temperature != null ? `${Math.round(geoState.temperature)}\u00b0C` : "--"}
+                  </Text>
+                  <Text className="text-[10px]" style={{ color: appTextColor, opacity: 0.9 }}>
+                    {geoState.city}
+                  </Text>
+                </View>
+              </View>
+            ) : geoState.status === "loading" ? (
+              <View 
+                className="rounded-2xl px-3 py-2 ml-4"
+                style={{ backgroundColor: 'rgba(255, 255, 255, 0.95)' }}
+              >
+                <Text className="text-[12px] font-semibold text-muted">Đang lấy...</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Khung trắng chồng lên Header */}
+        <View 
+          className="bg-white px-5 pt-6 pb-2" 
+          style={{ 
+            marginHorizontal: -20, 
+            marginTop: -40, 
+            borderTopLeftRadius: 32, 
+            borderTopRightRadius: 32 
+          }}
+        >
+
+          {/* Wrapper card for Tiện ích */}
+          <View style={{ backgroundColor: appSecondary, borderRadius: 24, padding: 16, marginHorizontal: -4 }}>
+            <View className="flex-row items-center justify-between mb-4">
+              <Text className="text-[18px] font-extrabold text-ink">Tiện ích du lịch</Text>
+              <View className="flex-row items-center gap-1">
+                <Text className="text-[12px] font-bold text-muted">{quickActions.length} mục</Text>
+                <Ionicons name="chevron-forward" size={12} color="#94a3b8" />
+              </View>
+            </View>
+            <View className="flex-row flex-wrap justify-between gap-y-3">
+              {quickActions.map((item) => (
             <Pressable
               key={item.label}
               hitSlop={{ top: 10, left: 10, right: 10, bottom: 10 }}
@@ -376,8 +452,12 @@ export default function HomeScreen() {
                   router.push("/profile/vouchers");
                   return;
                 }
-                if (item.action === "sos") {
-                  router.push("/profile/sos");
+                if (item.action === "ai_chat") {
+                  router.push("/ai/chat");
+                  return;
+                }
+                if (item.action === "notifications") {
+                  router.push("/profile/notifications");
                   return;
                 }
                 if (item.action === "diary") {
@@ -388,63 +468,74 @@ export default function HomeScreen() {
                   router.push("/profile/reminders");
                   return;
                 }
-                if (item.action === "history") {
-                  router.push("/profile/history");
+                if (item.action === "sos") {
+                  router.push("/profile/sos");
+                  return;
+                }
+                if (item.action === "itineraries") {
+                  router.push("/itineraries");
                   return;
                 }
               }}
-              className="min-h-[112px] justify-between rounded-2xl border border-line p-4"
-              style={{ width: cardWidth, backgroundColor: item.cardBackground }}
+              className="relative min-h-[68px] items-center justify-start gap-1.5 px-1 py-1"
+              style={{ width: utilityWidth }}
             >
-              <View className="gap-2.5">
-                <View
-                  className="h-10 w-10 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: item.iconBackground }}
-                >
-                  <Ionicons name={item.icon} size={18} color="#ffffff" />
+              {item.action === "notifications" && unreadCount > 0 && (
+                <View className="absolute right-3 top-0 z-10 h-5 min-w-[20px] items-center justify-center rounded-full border border-white bg-red-500 px-1.5">
+                  <Text className="text-[10px] font-black text-white">{unreadCount}</Text>
                 </View>
-                <Text className="text-[16px] font-extrabold text-slate-900">{item.label}</Text>
+              )}
+              <View className="items-center gap-1.5">
+                {item.action === "ai_chat" ? (
+                  <View 
+                    style={{ 
+                      height: 48, 
+                      width: 48, 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      borderRadius: 24, 
+                      backgroundColor: 'white',
+                      elevation: 2, 
+                      shadowColor: '#000', 
+                      shadowOffset: { width: 0, height: 2 }, 
+                      shadowOpacity: 0.1, 
+                      shadowRadius: 3,
+                      overflow: 'hidden'
+                    }}
+                  >
+                    <Image 
+                      source={require('../../../assets/ai-avatar.png')} 
+                      style={{ width: '100%', height: '100%' }} 
+                      resizeMode="cover" 
+                    />
+                  </View>
+                ) : (
+                  <View
+                    className="h-[52px] w-[52px] items-center justify-center rounded-2xl"
+                    style={{ 
+                      backgroundColor: item.action === "sos" ? "#fee2e2" : "#ffffff",
+                      borderWidth: 1,
+                      borderColor: item.action === "sos" ? "#fecaca" : "rgba(0,0,0,0.03)"
+                    }}
+                  >
+                    <Ionicons name={item.icon} size={26} color={item.action === "sos" ? "#ef4444" : appPrimary} />
+                  </View>
+                )}
+                <Text className="text-center text-[12px] font-bold leading-[16px] text-slate-700" numberOfLines={2}>
+                  {item.label}
+                </Text>
               </View>
-              <Text className="text-[13px] leading-[18px] text-slate-600">{item.description}</Text>
             </Pressable>
           ))}
-        </View>
-      </View>
+              </View>
+            </View>
+          </View>
 
-      <View className="gap-3.5">
-        <Text className="text-[18px] font-extrabold text-slate-900">Hoạt động của bạn</Text>
-        <View
-          className="flex-row rounded-2xl border border-line bg-white px-1 py-1.5"
-          style={{
-            shadowColor: "#0f172a",
-            shadowOpacity: 0.06,
-            shadowRadius: 14,
-            shadowOffset: {
-              width: 0,
-              height: 8,
-            },
-            elevation: 3,
-          }}
-        >
-          {statItems.map((item, index) => (
-            <StatTile
-              key={item.key}
-              label={item.label}
-              value={stats[item.key]}
-              loading={statsLoading}
-              icon={item.icon}
-              tint={item.tint}
-              bordered={index < statItems.length - 1}
-            />
-          ))}
-        </View>
-      </View>
-
-      <View className="gap-3.5">
-        <View className="flex-row items-start justify-between gap-3">
+          <View className="gap-3 mt-8">
+            <View className="flex-row items-start justify-between gap-3">
           <View className="flex-1 gap-1">
-            <Text className="text-[18px] font-extrabold text-slate-900">Đề xuất cho bạn</Text>
-            <Text className="leading-5 text-slate-500">
+            <Text className="text-[20px] font-extrabold text-ink">Khám phá gần bạn</Text>
+            <Text className="text-[13px] leading-5 text-muted">
               Chọn nhóm phù hợp để xem đúng nơi ăn uống, lưu trú hoặc tham quan.
             </Text>
           </View>
@@ -454,7 +545,7 @@ export default function HomeScreen() {
             hitSlop={{ top: 8, left: 8, right: 8, bottom: 8 }}
             accessibilityRole="button"
           >
-            <Text className="font-extrabold text-brand-600">Xem tất cả</Text>
+            <Text className="text-[13px] font-extrabold text-brand-600">Xem tất cả</Text>
           </Pressable>
         </View>
 
@@ -465,7 +556,7 @@ export default function HomeScreen() {
           onChangeText={setSearchText}
           placeholder="Tìm địa điểm, nhà hàng, khách sạn"
           placeholderTextColor="#94a3b8"
-          className="min-h-[52px] rounded-xl border border-slate-300 bg-white px-4 text-slate-900"
+          className="min-h-[48px] rounded-xl border border-line bg-white px-4 text-[15px] text-ink"
         />
 
         <FlatList
@@ -482,7 +573,7 @@ export default function HomeScreen() {
               accessibilityRole="button"
               onPress={() => setCategory(item)}
               className={[
-                "min-h-[38px] items-center justify-center rounded-full border px-4",
+                "min-h-[36px] items-center justify-center rounded-full border px-4",
                 category === item
                   ? "border-brand-600 bg-brand-600"
                   : "border-slate-300 bg-white",
@@ -503,7 +594,6 @@ export default function HomeScreen() {
     </View>
     ),
     [
-      cardWidth,
       category,
       dateLabel,
       firstName,
@@ -512,77 +602,50 @@ export default function HomeScreen() {
       router,
       searchText,
       setCategory,
-      stats,
-      statsLoading,
+      unreadCount,
+      utilityWidth,
+      appBg,
+      appPrimary,
+      appSecondary,
     ],
   );
 
   return (
     <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right"]}>
-      <FlatList
-        data={locations}
-        numColumns={2}
-        style={{ flex: 1 }}
-        keyExtractor={(item) => String(item.location_id)}
-        columnWrapperStyle={{ justifyContent: "space-between", marginBottom: 12 }}
+      <ScrollView
         contentContainerStyle={{
           paddingTop: 12,
           paddingHorizontal: 20,
-          paddingBottom: Math.max(insets.bottom, 12),
+          paddingBottom: Math.max(insets.bottom, 24),
         }}
-        overScrollMode="never"
-        bounces={false}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        ListHeaderComponent={headerNode}
-        ListEmptyComponent={
-          loading ? (
-            <Text className="py-6 text-center leading-[22px] text-slate-500">
-              Đang tải danh sách địa điểm
-            </Text>
-          ) : (
-            <Text className="py-6 text-center leading-[22px] text-slate-500">
-              Chưa có địa điểm phù hợp. Hãy thử lại với nhóm khác hoặc bỏ từ khóa tìm kiếm.
-            </Text>
-          )
-        }
-        renderItem={({ item }) => <LocationCard item={item} width={cardWidth} />}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
         }
-      />
-    </SafeAreaView>
-  );
-}
+      >
+        {headerNode}
 
-function StatTile({
-  label,
-  value,
-  loading,
-  icon,
-  tint,
-  bordered,
-}: {
-  label: string;
-  value: number;
-  loading: boolean;
-  icon: "location-outline" | "bookmark-outline" | "ticket-outline";
-  tint: string;
-  bordered: boolean;
-}) {
-  return (
-    <View
-      className="flex-1 items-center gap-2 px-2 py-4"
-      style={bordered ? { borderRightWidth: 1, borderRightColor: "#e2e8f0" } : undefined}
-    >
-      <View className="h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: `${tint}18` }}>
-        <Ionicons name={icon} size={18} color={tint} />
-      </View>
-      <Text className="text-2xl font-extrabold" style={{ color: tint }}>
-        {loading ? "..." : String(value)}
-      </Text>
-      <Text className="text-[13px] font-bold text-slate-500">{label}</Text>
-    </View>
+        {loading ? (
+          <Text className="py-6 text-center leading-[22px] text-slate-500">
+            Đang tải danh sách địa điểm...
+          </Text>
+        ) : locations.length === 0 ? (
+          <Text className="py-6 text-center leading-[22px] text-slate-500">
+            Chưa có địa điểm phù hợp. Hãy thử lại với nhóm khác hoặc bỏ từ khóa tìm kiếm.
+          </Text>
+        ) : (
+          <FlatList
+            data={locations}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => String(item.location_id)}
+            contentContainerStyle={{ gap: 14, paddingRight: 8, paddingVertical: 4 }}
+            renderItem={({ item }) => <LocationCard item={item} width={180} />}
+          />
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -601,34 +664,46 @@ function LocationCard({
 
   return (
     <Pressable
-      className="overflow-hidden rounded-2xl border border-line bg-white"
-      style={{ width }}
+      className="overflow-hidden rounded-xl border border-line bg-white"
+      style={{ width, ...travelShadow }}
       hitSlop={{ top: 6, left: 6, right: 6, bottom: 6 }}
       accessibilityRole="button"
       onPress={() => router.push(`/location/${item.location_id}`)}
     >
       <View
         className="w-full bg-slate-200"
-        style={{ height: Math.min(120, Math.round(width * 0.72)) }}
+        style={{ height: Math.min(112, Math.round(width * 0.68)) }}
       >
         {imageUrl ? (
           <Image source={{ uri: imageUrl }} className="h-full w-full" resizeMode="cover" />
         ) : (
           <View className="flex-1 items-center justify-center bg-slate-200">
-            <Text className="font-bold text-slate-500">Chưa có ảnh</Text>
+            <Ionicons name="image-outline" size={24} color="#98a2b3" />
           </View>
         )}
+        
+        <View className="absolute left-2 right-2 top-2 flex-row items-center justify-between gap-2">
+          <View className="rounded-full bg-white/95 px-2 py-1">
+            <Text className="text-[10px] font-bold text-brand-700">{typeLabel}</Text>
+          </View>
+          {typeof item.distance_km === "number" ? (
+            <View className="rounded-full bg-black/60 px-2 py-1">
+              <Text className="text-[10px] font-bold text-white">
+                {formatDistanceKm(item.distance_km)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
-      <View className="gap-1.5 p-3">
-        <Text className="text-[11px] font-bold text-brand-600">{typeLabel}</Text>
-        <Text className="text-sm font-extrabold text-slate-900" numberOfLines={1}>
+      <View className="gap-1.5 p-2.5">
+        <Text className="text-[14px] font-extrabold text-ink" numberOfLines={1}>
           {item.location_name}
         </Text>
-        <Text className="text-xs text-slate-500">
+        <Text className="text-[12px] text-muted">
           {rating > 0 ? rating.toFixed(1) : "0"} điểm | {reviewCount} đánh giá
         </Text>
-        <Text className="text-xs leading-[18px] text-slate-600" numberOfLines={2}>
+        <Text className="text-[12px] leading-[17px] text-slate-600" numberOfLines={2}>
           {shortAddress(item.address)}
         </Text>
       </View>

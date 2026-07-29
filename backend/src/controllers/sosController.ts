@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../config/database";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { notifyAdmins } from "../utils/realtime";
 
 interface AuthenticatedRequest extends Request {
   userId?: number;
@@ -13,6 +14,15 @@ interface SosBody {
   message?: string | null;
   alert_id?: number | null;
 }
+
+const isValidVietnamCoords = (lat: unknown, lng: unknown): boolean => {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude)
+  );
+};
 
 export const createSosAlert = async (
   req: Request,
@@ -34,6 +44,14 @@ export const createSosAlert = async (
       return;
     }
 
+    if (!isValidVietnamCoords(lat, lng)) {
+      res.status(400).json({
+        success: false,
+        message: "Chỉ hỗ trợ SOS trong phạm vi Việt Nam.",
+      });
+      return;
+    }
+
     const pointText = `POINT(${lat} ${lng})`;
 
     const [result] = await pool.query<ResultSetHeader>(
@@ -42,23 +60,14 @@ export const createSosAlert = async (
       [userId, pointText, body.location_text ?? null, body.message ?? null],
     );
 
-    // Notify all admins via SSE
-    try {
-      const { publishToUsers } = require("../utils/realtime");
-      const [adminRows] = await pool.query<RowDataPacket[]>(
-        `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
-      );
-      const adminIds = adminRows.map(r => r.user_id);
-      publishToUsers(adminIds, {
-        type: "sos_alert",
-        alert_id: result.insertId,
-        location: body.location_text || "Không xác định",
-        lat,
-        lng
-      });
-    } catch (e) {
-      console.error("SOS notify admins error:", e);
-    }
+    // Notify all admins via socket/SSE
+    notifyAdmins({
+      type: "sos_alert",
+      alert_id: result.insertId,
+      location: body.location_text || "Không xác định",
+      lat,
+      lng
+    }).catch(e => console.error("SOS notify admins error:", e));
 
     res.status(201).json({
       success: true,
@@ -91,6 +100,14 @@ export const pingSosAlert = async (
       return;
     }
 
+    if (!isValidVietnamCoords(lat, lng)) {
+      res.status(400).json({
+        success: false,
+        message: "Chỉ hỗ trợ SOS trong phạm vi Việt Nam.",
+      });
+      return;
+    }
+
     const pointText = `POINT(${lat} ${lng})`;
     const alertId = Number(body.alert_id);
 
@@ -100,7 +117,7 @@ export const pingSosAlert = async (
          SET location_coordinates = ST_GeomFromText(?, 4326),
              location_text = ?,
              message = ?,
-             status = IF(status = 'resolved', 'processing', status)
+             status = IF(status = 'cancelled', 'processing', status)
          WHERE alert_id = ? AND user_id = ?`,
         [
           pointText,
@@ -154,20 +171,13 @@ export const pingSosAlert = async (
       ],
     );
 
-    try {
-      const { publishToUsers } = require("../utils/realtime");
-      const [adminRows] = await pool.query<RowDataPacket[]>(
-        `SELECT user_id FROM users WHERE role = 'admin' AND status = 'active'`
-      );
-      const adminIds = adminRows.map(r => r.user_id);
-      publishToUsers(adminIds, {
-        type: "sos_alert",
-        alert_id: result.insertId,
-        location: body.location_text || "Không xác định",
-        lat,
-        lng
-      });
-    } catch (e) {}
+    notifyAdmins({
+      type: "sos_alert",
+      alert_id: result.insertId,
+      location: body.location_text || "Không xác định",
+      lat,
+      lng
+    }).catch(e => {});
 
     res.json({ success: true, data: { alert_id: result.insertId } });
   } catch (error) {
@@ -193,7 +203,7 @@ export const stopSosAlert = async (
     if (Number.isFinite(alertId)) {
       await pool.query<ResultSetHeader>(
         `UPDATE sos_alerts
-         SET status = 'resolved', resolved_at = NOW()
+         SET status = 'cancelled', resolved_at = NOW()
          WHERE alert_id = ? AND user_id = ?`,
         [alertId, userId],
       );
@@ -208,7 +218,7 @@ export const stopSosAlert = async (
         publishToUsers(adminIds, {
           type: "sos_status_update",
           alert_id: alertId,
-          status: "resolved",
+          status: "cancelled",
         });
       } catch (sseErr: any) {
         console.error("Lỗi gửi SSE dừng SOS:", sseErr.message);
@@ -220,7 +230,7 @@ export const stopSosAlert = async (
 
     await pool.query<ResultSetHeader>(
       `UPDATE sos_alerts
-       SET status = 'resolved', resolved_at = NOW()
+       SET status = 'cancelled', resolved_at = NOW()
        WHERE user_id = ? AND status IN ('pending','processing')`,
       [userId],
     );
@@ -235,7 +245,7 @@ export const stopSosAlert = async (
       publishToUsers(adminIds, {
         type: "sos_status_update",
         alert_id: null,
-        status: "resolved",
+        status: "cancelled",
       });
     } catch (sseErr: any) {
       console.error("Lỗi gửi SSE dừng SOS:", sseErr.message);
@@ -244,6 +254,37 @@ export const stopSosAlert = async (
     res.json({ success: true });
   } catch (error) {
     console.error("Lỗi dừng SOS:", error);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};
+
+export const getActiveSosAlert = async (
+  req: any,
+  res: any,
+): Promise<void> => {
+  try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ success: false, message: "Chưa đăng nhập" });
+      return;
+    }
+
+    const [rows] = await pool.query<any[]>(
+      `SELECT alert_id, status, created_at, location_text, message
+       FROM sos_alerts
+       WHERE user_id = ? AND status IN ('pending', 'processing')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId],
+    );
+
+    if (rows.length > 0) {
+      res.json({ success: true, data: rows[0] });
+    } else {
+      res.json({ success: true, data: null });
+    }
+  } catch (error) {
+    console.error("Lỗi lấy SOS active:", error);
     res.status(500).json({ success: false, message: "Lỗi server" });
   }
 };

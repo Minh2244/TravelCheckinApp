@@ -18,12 +18,14 @@ import {
   googleCallback,
   facebookMobileRedirect,
   facebookCallback,
+  getPublicSettings,
 } from "../controllers/authController";
 import { authenticateToken } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
 // Public routes
+router.get("/public-settings", getPublicSettings);
 router.post("/register", register);
 router.post("/verify-otp", verifyOTP);
 router.post("/login", login);

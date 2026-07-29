@@ -8,6 +8,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import type { UserTouristTicketItem } from "../../types/user.types";
 import bookingApi from "../../api/bookingApi";
 import { Modal, message } from "antd";
+import { useSocket } from "../../contexts/SocketContext";
 
 const TICKET_ISSUED_STORAGE_KEY = "ticket_issued_blocks_v1";
 
@@ -213,6 +214,7 @@ const getGroupStatus = (groupTickets: UserTouristTicketItem[]) => {
 
 const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
   const navigate = useNavigate();
+  const socket = useSocket();
   const [searchParams] = useSearchParams();
   const [tickets, setTickets] = useState<UserTouristTicketItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -291,15 +293,10 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
   });
 
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-    const url = resolveBackendUrl(`/api/events?token=${encodeURIComponent(token)}`);
-    if (!url) return;
-
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
+    if (!socket) return;
+    
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as { type?: string };
         if (
           data?.type === "booking_checked_in" ||
           data?.type === "ticket_used" ||
@@ -312,8 +309,12 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
         // ignore
       }
     };
-    return () => es.close();
-  }, [loadTickets]);
+    
+    socket.on("realtime_event", handleEvent);
+    return () => {
+      socket.off("realtime_event", handleEvent);
+    };
+  }, [loadTickets, socket]);
 
   useEffect(() => {
     const cached = readCachedTickets();
