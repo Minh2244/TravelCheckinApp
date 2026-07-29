@@ -38,4 +38,8 @@ export const sosApi = {
     });
     return response.data;
   },
+  async getActiveSos() {
+    const response = await api.get<ApiResponse<any>>("/sos/active");
+    return response.data;
+  },
 };

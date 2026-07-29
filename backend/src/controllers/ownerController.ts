@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
-import { getServiceRemainingQuantity } from "../services/bookingService";
+import { getServiceRemainingQuantity, issueBookingTickets } from "../services/bookingService";
 import { verifySecureQrPayload } from "../services/bookingQrService";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -18,7 +18,10 @@ import {
   notifyAdmins,
   type RealtimeEvent,
 } from "../utils/realtime";
+import { messaging } from "../config/firebase";
 import { publishToLocationPublic, emitToUser } from "../utils/socketHub";
+
+const userTopic = (userId: number) => `user_${userId}`;
 
 const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ỹ]+(?:\s+[A-Za-zÀ-ỹ]+)*$/u;
 const PHONE_PATTERN = /^0\d{9}$/;
@@ -1282,7 +1285,12 @@ export const getPosPaymentsHistory = async (
               ? performedRole
               : null),
         },
-        items,
+        items:
+          isFood || isTable
+            ? notes?.invoice_ready === true
+              ? items
+              : [...prepaidItemsVal, ...items]
+            : items,
         prepaid_items:
           isFood || isTable
             ? notes?.invoice_ready === true
@@ -1423,7 +1431,7 @@ export const getPosPaymentsHistory = async (
           const rawName = (br as any).contact_name;
           const rawPhone = (br as any).contact_phone;
           const qty = Number(br.quantity || 1);
-          const finalAmt = Number(br.final_amount || 0);
+          const totalAmt = Number(br.total_amount || 0);
           byBookingId.set(bid, {
             contact_name:
               rawName != null && String(rawName).trim()
@@ -1436,8 +1444,8 @@ export const getPosPaymentsHistory = async (
             service_id: br.service_id ? Number(br.service_id) : null,
             service_name: br.service_name ? String(br.service_name) : null,
             quantity: qty,
-            unit_price: qty > 0 ? finalAmt / qty : 0,
-            line_total: finalAmt
+            unit_price: qty > 0 ? totalAmt / qty : 0,
+            line_total: totalAmt
           });
         }
 
@@ -2888,7 +2896,7 @@ export const getOwnerLocations = async (
       let sql = `
         SELECT l.*, COALESCE(l.commission_rate, 2.5) AS commission_rate
         FROM locations l
-        WHERE l.owner_id = ?
+        WHERE l.owner_id = ? AND l.deleted_at IS NULL
       `;
       if (status) {
         sql += ` AND l.status = ?`;
@@ -2912,7 +2920,7 @@ export const getOwnerLocations = async (
       SELECT l.*, el.permissions, COALESCE(l.commission_rate, 2.5) AS commission_rate
       FROM employee_locations el
       JOIN locations l ON l.location_id = el.location_id
-      WHERE el.employee_id = ? AND el.owner_id = ? AND el.status = 'active'
+      WHERE el.employee_id = ? AND el.owner_id = ? AND el.status = 'active' AND l.deleted_at IS NULL
     `;
 
     if (status) {
@@ -3016,7 +3024,7 @@ export const createOwnerCommissionPaymentRequest = async (
       type: "commission_reconciliation",
       title: "Yêu cầu đối soát",
       body: `Chủ cơ sở vừa gửi yêu cầu đối soát số tiền ${totalDue.toLocaleString()} VND.`,
-      link: "/admin/thanh-toan-hoa-hong",
+      link: "/admin/payments",
     }).catch(console.error);
 
     res.json({
@@ -3190,7 +3198,7 @@ export const createOwnerLocation = async (
       type: "location_approval",
       title: "Địa điểm mới",
       body: `Địa điểm ${location_name} vừa được tạo và đang chờ duyệt.`,
-      link: "/admin/duyet-dia-diem",
+      link: "/admin/locations",
     }).catch(console.error);
 
     res.status(201).json({
@@ -3330,7 +3338,7 @@ export const updateOwnerLocation = async (
     }
 
     const [curRows] = await pool.query<RowDataPacket[]>(
-      `SELECT status FROM locations WHERE location_id = ? AND owner_id = ? LIMIT 1`,
+      `SELECT * FROM locations WHERE location_id = ? AND owner_id = ? LIMIT 1`,
       [locationId, ownerId],
     );
     if (!curRows[0]) {
@@ -3350,6 +3358,8 @@ export const updateOwnerLocation = async (
       updates.push(`previous_status = status`);
       updates.push(`status = 'pending'`);
       updates.push(`rejection_reason = NULL`);
+      updates.push(`backup_data = ?`);
+      params.push(JSON.stringify(curRows[0]));
     }
 
     params.push(locationId, ownerId);
@@ -3370,7 +3380,7 @@ export const updateOwnerLocation = async (
         type: "location_update",
         title: "Cập nhật địa điểm",
         body: `Một địa điểm vừa cập nhật thông tin và đang chờ duyệt lại.`,
-        link: "/admin/duyet-dia-diem",
+        link: "/admin/locations",
       }).catch(console.error);
     }
 
@@ -3969,7 +3979,7 @@ export const createServiceForLocation = async (
       type: "service_approval",
       title: "Dịch vụ mới",
       body: `Một dịch vụ mới vừa được tạo và đang chờ duyệt.`,
-      link: "/admin/duyet-dich-vu",
+      link: "/admin/owner-services",
     }).catch(console.error);
 
     res.status(201).json({
@@ -4000,7 +4010,7 @@ export const updateService = async (
     }
 
     const [svcRows] = await pool.query<RowDataPacket[]>(
-      `SELECT s.location_id, l.owner_id
+      `SELECT s.*, l.owner_id
        FROM services s
        JOIN locations l ON l.location_id = s.location_id
        WHERE s.service_id = ?
@@ -4128,6 +4138,12 @@ export const updateService = async (
     }
 
     if (shouldResetAdminApproval) {
+      const curAdminStatus = svcRows[0].admin_status;
+      if (curAdminStatus === "approved" || curAdminStatus === "rejected") {
+        const oldData = { ...svcRows[0] };
+        delete oldData.owner_id;
+        up("pending_updates", oldData, true);
+      }
       up("admin_status", "pending");
       up("admin_reviewed_by", null);
       up("admin_reviewed_at", null);
@@ -4285,7 +4301,7 @@ export const getOwnerBookings = async (
     let sql = `
       SELECT
         b.*,
-        u.full_name as user_name,
+        IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name,
         u.email as user_email,
         u.phone as user_phone,
         l.location_name,
@@ -4319,7 +4335,7 @@ export const getOwnerBookings = async (
           COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) AS total_completed_paid_amount,
           MAX(
             CASE
-              WHEN status = 'completed' AND (
+              WHEN status = 'completed' AND amount > 0 AND (
                 LOWER(COALESCE(payment_method, '')) LIKE '%transfer%'
                 OR LOWER(COALESCE(payment_method, '')) LIKE '%bank%'
                 OR LOWER(COALESCE(payment_method, '')) LIKE '%chuyen%'
@@ -4504,11 +4520,16 @@ export const getOwnerBookings = async (
         Number(row.has_completed_transfer_payment || 0) === 1;
       const hasVerifiedArrival = Number(row.has_verified_arrival || 0) === 1;
 
+      const canManageTicketBooking = serviceType === "ticket";
       const canConfirm =
-        !isTouristService && statusValue === "pending" && !hasVerifiedArrival;
-      const canComplete = !isTouristService && statusValue === "confirmed";
+        (!isTouristService || canManageTicketBooking) &&
+        statusValue === "pending" &&
+        !hasVerifiedArrival;
+      const canComplete =
+        (!isTouristService || canManageTicketBooking) &&
+        statusValue === "confirmed";
       const canCancel =
-        !isTouristService &&
+        (!isTouristService || canManageTicketBooking) &&
         statusValue !== "cancelled" &&
         statusValue !== "completed" &&
         !hasCompletedTransfer;
@@ -4519,7 +4540,7 @@ export const getOwnerBookings = async (
 
       const actionWarning = hasCompletedTransfer
         ? "Khách đã thanh toán. Không thể tự hủy. Nếu gặp sự cố bất khả kháng, vui lòng gọi Hotline Admin để được hỗ trợ."
-        : isTouristService
+        : isTouristService && !canManageTicketBooking
           ? "Dịch vụ du lịch chỉ tập trung luồng xuất/bán vé, không thao tác trạng thái tại mục Đặt chỗ."
           : null;
 
@@ -4828,7 +4849,7 @@ export const updateBookingStatus = async (
            booking_id,
            MAX(
              CASE
-               WHEN status = 'completed' AND (
+               WHEN status = 'completed' AND amount > 0 AND (
                  LOWER(COALESCE(payment_method, '')) LIKE '%transfer%'
                  OR LOWER(COALESCE(payment_method, '')) LIKE '%bank%'
                  OR LOWER(COALESCE(payment_method, '')) LIKE '%chuyen%'
@@ -4877,7 +4898,7 @@ export const updateBookingStatus = async (
         auth.role === "employee" ? "can_manage_bookings" : undefined,
     });
 
-    if (isTouristService) {
+    if (isTouristService && serviceType !== "ticket") {
       res.status(400).json({
         success: false,
         message:
@@ -4897,6 +4918,14 @@ export const updateBookingStatus = async (
     }
 
     if (status === "cancelled") {
+      await pool.query(
+        `UPDATE vouchers v
+         JOIN bookings b ON v.code = b.voucher_code
+         SET v.used_count = GREATEST(v.used_count - 1, 0)
+         WHERE b.booking_id = ? AND b.status != 'cancelled' AND b.voucher_code IS NOT NULL`,
+        [bookingId]
+      );
+
       await pool.query(
         `UPDATE bookings
          SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = ?, notes = COALESCE(?, notes)
@@ -4946,6 +4975,43 @@ export const updateBookingStatus = async (
         `UPDATE bookings SET status = ?, notes = COALESCE(?, notes) WHERE booking_id = ?`,
         [status, notes ?? null, bookingId],
       );
+
+      if (status === "confirmed" && serviceType === "ticket") {
+        const [existingTicketRows] = await pool.query<RowDataPacket[]>(
+          `SELECT ticket_id FROM booking_tickets WHERE booking_id = ? LIMIT 1`,
+          [bookingId],
+        );
+        if (!existingTicketRows[0]) {
+          const [ticketItemRows] = await pool.query<RowDataPacket[]>(
+            `SELECT service_id, quantity
+             FROM booking_preorder_items
+             WHERE booking_id = ? AND source = 'ticket'
+             ORDER BY preorder_item_id ASC`,
+            [bookingId],
+          );
+          const items = (ticketItemRows as any[])
+            .map((row) => ({
+              serviceId: Number(row.service_id),
+              quantity: Math.max(1, Math.trunc(Number(row.quantity || 1))),
+            }))
+            .filter((item) => Number.isFinite(item.serviceId) && item.serviceId > 0);
+          if (items.length === 0) {
+            const [fallbackRows] = await pool.query<RowDataPacket[]>(
+              `SELECT service_id, quantity FROM bookings WHERE booking_id = ? LIMIT 1`,
+              [bookingId],
+            );
+            if (fallbackRows[0]) {
+              items.push({
+                serviceId: Number(fallbackRows[0].service_id),
+                quantity: Math.max(1, Math.trunc(Number(fallbackRows[0].quantity || 1))),
+              });
+            }
+          }
+          if (items.length > 0) {
+            await issueBookingTickets(pool as any, bookingId, locationId, items);
+          }
+        }
+      }
 
       if (bookingUserId != null && Number.isFinite(bookingUserId)) {
         const uid = Number(bookingUserId);
@@ -5287,7 +5353,7 @@ export const getOwnerCheckins = async (
 
     let sql = `
       SELECT
-        c.*, u.full_name as user_name, u.email as user_email, u.phone as user_phone,
+        c.*, IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name, u.email as user_email, u.phone as user_phone,
         l.location_name, l.location_type
       FROM checkins c
       JOIN users u ON u.user_id = c.user_id
@@ -5636,12 +5702,12 @@ export const checkinSecureQr = async (
         }
 
         // Get location_type
-          const [locRows] = await conn.query<RowDataPacket[]>(
-            `SELECT location_type, owner_id FROM locations WHERE location_id = ? LIMIT 1`,
-            [locationId]
-          );
-          const locationType = String(locRows[0]?.location_type || "");
-          const ownerId = Number(locRows[0]?.owner_id || 0);
+        const [locRows] = await conn.query<RowDataPacket[]>(
+          `SELECT location_type, owner_id FROM locations WHERE location_id = ? LIMIT 1`,
+          [locationId]
+        );
+        const locationType = String(locRows[0]?.location_type || "");
+        const ownerId = Number(locRows[0]?.owner_id || 0);
 
         // Now lookup the reserved stay
         const [stayRows] = await conn.query<RowDataPacket[]>(
@@ -6431,7 +6497,9 @@ export const getOwnerPayments = async (
         s.service_type as booking_service_type,
         b.check_in_date as booking_check_in_date,
         b.check_out_date as booking_check_out_date,
-        b.final_amount as booking_final_amount
+        b.final_amount as booking_final_amount,
+        b.voucher_code as booking_voucher_code,
+        b.discount_amount as booking_discount_amount
       FROM payments p
       JOIN locations l ON l.location_id = p.location_id
       LEFT JOIN bookings b ON b.booking_id = p.booking_id
@@ -7170,7 +7238,7 @@ export const getOwnerReviews = async (
 
     let sql = `
       SELECT
-        r.*, u.full_name as user_name, u.avatar_url as user_avatar,
+        r.*, IF(u.deleted_at IS NOT NULL, CONCAT(u.full_name, ' (Đã xóa)'), u.full_name) as user_name, u.avatar_url as user_avatar,
         l.location_name,
         rr.reply_id, rr.content as reply_content, rr.created_at as reply_created_at,
         rr.created_by as reply_created_by
@@ -7232,7 +7300,7 @@ export const replyToReview = async (
 
     // Validate owner access through location
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT r.location_id
+      `SELECT r.location_id, r.user_id
        FROM reviews r
        JOIN locations l ON l.location_id = r.location_id
        WHERE r.review_id = ?
@@ -7275,6 +7343,48 @@ export const replyToReview = async (
       review_id: reviewId,
       timestamp: new Date(),
     });
+
+    // Notify user who wrote the review (if it's a new reply, not an update)
+    if (existing.length === 0) {
+      try {
+        const reviewAuthorRow = rows[0] as RowDataPacket & { user_id: number; location_id: number };
+        const reviewAuthorId = Number(reviewAuthorRow?.user_id);
+        // Lấy tên địa điểm để hiện trong thông báo
+        const [locRow] = await pool.query<RowDataPacket[]>(
+          `SELECT location_name FROM locations WHERE location_id = ? LIMIT 1`,
+          [reviewAuthorRow?.location_id],
+        );
+        const locationName: string = (locRow[0] as RowDataPacket)?.location_name ?? "địa điểm";
+
+        if (Number.isFinite(reviewAuthorId) && reviewAuthorId > 0) {
+          // Ghi vào push_notifications để hiện trong danh sách thông báo
+          await pool.query(
+            `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by)
+             VALUES (?, ?, 'specific_user', ?, NULL)`,
+            [
+              "Chủ địa điểm đã phản hồi đánh giá của bạn",
+              `Chủ địa điểm ${locationName} đã phản hồi đánh giá của bạn.`,
+              reviewAuthorId,
+            ],
+          );
+          // Gửi FCM push notification
+          try {
+            await messaging.send({
+              topic: userTopic(reviewAuthorId),
+              notification: {
+                title: "Chủ địa điểm đã phản hồi",
+                body: `Chủ địa điểm ${locationName} đã phản hồi đánh giá của bạn.`,
+              },
+              data: {
+                type: "review_reply_from_owner",
+                review_id: String(reviewId),
+                location_id: String(reviewAuthorRow?.location_id ?? ""),
+              },
+            });
+          } catch { /* FCM best-effort */ }
+        }
+      } catch { /* ignore notification errors */ }
+    }
 
     res.status(201).json({ success: true, message: "Đã phản hồi đánh giá" });
   } catch (error: any) {
@@ -8258,7 +8368,7 @@ export const toggleOwnerEmployeeStatus = async (
       `SELECT status FROM users WHERE user_id = ? AND role = 'employee'`,
       [employeeId]
     );
-    
+
     if (!userRows[0]) {
       res.status(404).json({ success: false, message: "Không tìm thấy nhân viên" });
       return;
@@ -8296,9 +8406,9 @@ export const toggleOwnerEmployeeStatus = async (
         timestamp: new Date(),
       });
 
-      res.json({ 
-        success: true, 
-        message: isLocked ? "Đã mở khóa nhân viên" : "Đã khóa nhân viên" 
+      res.json({
+        success: true,
+        message: isLocked ? "Đã mở khóa nhân viên" : "Đã khóa nhân viên"
       });
     } catch (e) {
       try {
@@ -8374,7 +8484,7 @@ export const deleteOwnerEmployee = async (
     } catch (e) {
       try {
         await conn.rollback();
-      } catch {}
+      } catch { }
       throw e;
     } finally {
       conn.release();
@@ -8398,19 +8508,46 @@ export const getOwnerAuditLogs = async (
         ? auth.userId
         : await getOwnerIdForEmployee(auth.userId);
 
-    const { limit = "100" } = req.query as { limit?: string };
+    const { limit = "100", page = "1", action, startDate, endDate, actorId } = req.query as { limit?: string; page?: string; action?: string; startDate?: string; endDate?: string; actorId?: string };
     const lim = Math.min(200, Math.max(1, Number(limit) || 100));
+    const p = Math.max(1, Number(page) || 1);
+    const offset = (p - 1) * lim;
 
-    const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT log_id, user_id, action, details, created_at
-       FROM audit_logs
-       WHERE user_id IN (?, ?)
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [ownerId, auth.userId, lim],
-    );
+    let whereClause = `WHERE a.user_id IN (?, ?)`;
+    const params: any[] = [ownerId, auth.userId];
 
-    res.json({ success: true, data: rows });
+    if (action) {
+      whereClause += ` AND a.action = ?`;
+      params.push(action);
+    }
+    if (startDate) {
+      whereClause += ` AND a.created_at >= ?`;
+      params.push(startDate + " 00:00:00");
+    }
+    if (endDate) {
+      whereClause += ` AND a.created_at <= ?`;
+      params.push(endDate + " 23:59:59");
+    }
+    if (actorId) {
+      whereClause += ` AND a.user_id = ?`;
+      params.push(actorId);
+    }
+
+    const countSql = `SELECT COUNT(*) as total FROM audit_logs a ${whereClause}`;
+    const [countRows] = await pool.query<RowDataPacket[]>(countSql, params);
+    const total = countRows[0]?.total || 0;
+
+    const sql = `
+      SELECT a.log_id, a.user_id, a.action, a.details, a.created_at, u.full_name, u.email
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.user_id
+      ${whereClause}
+      ORDER BY a.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    const [rows] = await pool.query<RowDataPacket[]>(sql, [...params, lim, offset]);
+
+    res.json({ success: true, data: rows, total });
   } catch (error: any) {
     res
       .status(error?.statusCode || 500)
@@ -8456,7 +8593,7 @@ export const getFrontOfficeContext = async (
     await ensureLocationAccess({ auth, locationId });
 
     const [locRows] = await pool.query<RowDataPacket[]>(
-      `SELECT location_id, location_name, location_type, status
+      `SELECT location_id, location_name, location_type, status, previous_status
        FROM locations WHERE location_id = ? LIMIT 1`,
       [locationId],
     );
@@ -8469,7 +8606,12 @@ export const getFrontOfficeContext = async (
 
     const location = locRows[0];
 
-    if (String(location.status) !== "active") {
+    const isAvailable =
+      String(location.status) === "active" ||
+      (String(location.status) === "pending" &&
+        String(location.previous_status) === "active");
+
+    if (!isAvailable) {
       res.status(400).json({ success: false, message: "Địa điểm chưa active" });
       return;
     }
@@ -8501,7 +8643,7 @@ export const getFrontOfficeContext = async (
     if (locationType === "restaurant" || locationType === "cafe") {
       const [areas] = await pool.query<RowDataPacket[]>(
         `SELECT area_id, area_name, sort_order
-         FROM pos_areas
+         FROM pos_areas 
          WHERE location_id = ?
          ORDER BY sort_order ASC, area_id ASC`,
         [locationId],
@@ -9634,6 +9776,22 @@ export const checkinHotelRoom = async (
           });
           return;
         }
+        if (active && String(active.status || "") === "reserved") {
+          const checkinDt = active.expected_checkin ? new Date(String(active.expected_checkin)) : null;
+          if (checkinDt) {
+            const msEarly = checkinDt.getTime() - Date.now();
+            if (msEarly > 4 * 60 * 60 * 1000) {
+              await conn.rollback();
+              const hhmm = String(checkinDt.getHours()).padStart(2, '0') + ':' + String(checkinDt.getMinutes()).padStart(2, '0');
+              const ddmmyyyy = String(checkinDt.getDate()).padStart(2, '0') + '/' + String(checkinDt.getMonth() + 1).padStart(2, '0') + '/' + checkinDt.getFullYear();
+              res.status(400).json({
+                success: false,
+                message: `Phòng ${rid} được khách đặt lúc ${hhmm} ngày ${ddmmyyyy}. Hiện tại là quá sớm để nhận phòng (chỉ cho phép trước tối đa 4 tiếng)!`,
+              });
+              return;
+            }
+          }
+        }
       }
 
       // Preload booking -> user mapping (more reliable than hotel_stays.user_id)
@@ -9702,14 +9860,26 @@ export const checkinHotelRoom = async (
       }
 
       // Create a guest user if user_id still not resolved.
-      // Important: allow duplicate guest phone/name => do NOT reuse by phone.
+      // Implement Find or Create by phone to avoid duplicate entry errors.
       if (userId == null) {
-        const [insertGuest] = await conn.query<ResultSetHeader>(
-          `INSERT INTO users (email, phone, password_hash, full_name, role, status, is_verified)
-           VALUES (NULL, ?, NULL, ?, 'user', 'active', 0)`,
-          [trimmedGuestPhone || null, trimmedGuestName],
-        );
-        userId = insertGuest.insertId;
+        if (trimmedGuestPhone) {
+          const [existingUsers] = await conn.query<RowDataPacket[]>(
+            `SELECT user_id FROM users WHERE phone = ? LIMIT 1`,
+            [trimmedGuestPhone]
+          );
+          if (existingUsers.length > 0) {
+            userId = existingUsers[0].user_id;
+          }
+        }
+
+        if (userId == null) {
+          const [insertGuest] = await conn.query<ResultSetHeader>(
+            `INSERT INTO users (email, phone, password_hash, full_name, role, status, is_verified)
+             VALUES (NULL, ?, NULL, ?, 'user', 'active', 0)`,
+            [trimmedGuestPhone || null, trimmedGuestName],
+          );
+          userId = insertGuest.insertId;
+        }
       }
 
       const now = new Date();
@@ -14610,10 +14780,9 @@ export const payPosOrder = async (
       let prepaidInvoiceAmount = 0;
       if (txSource === "online_booking" && effectiveBookingId != null) {
         const [prepaidPaymentRows] = await conn.query<RowDataPacket[]>(
-          `SELECT payment_id, amount, notes
+          `SELECT payment_id, amount, notes, status
            FROM payments
            WHERE booking_id = ?
-             AND status = 'completed'
              AND transaction_source = 'online_booking'
            ORDER BY payment_id DESC
            LIMIT 10`,
@@ -14650,7 +14819,7 @@ export const payPosOrder = async (
                 Boolean(item.service_name) &&
                 Number.isFinite(item.quantity),
             );
-          prepaidInvoiceAmount = Number(prepaidPayment.amount || 0);
+          prepaidInvoiceAmount = (prepaidPayment.status === 'completed' || prepaidPayment.status === 'pending_deposit') ? Number(prepaidPayment.amount || 0) : 0;
         }
       }
 
@@ -16328,6 +16497,19 @@ export const scanTouristTicket = async (
           [bookingId]
         );
 
+        const checkinUserId = btRows[0]?.user_id ? Number(btRows[0].user_id) : null;
+        if (checkinUserId) {
+          try {
+            await conn.query(
+              `INSERT INTO checkins (user_id, location_id, booking_id, status, verified_by, notes)
+               VALUES (?, ?, ?, 'verified', ?, ?)`,
+              [checkinUserId, locationId, bookingId, auth.userId, `Cập nhật check-in bảo mật cho nhóm vé #${bookingId}`]
+            );
+          } catch (err) {
+            console.error("Insert group tourist checkin error:", err);
+          }
+        }
+
         await conn.commit();
         await publishTouristUpdated(conn, locationId, ownerId, {
           action: "ticket_used",
@@ -16448,6 +16630,18 @@ export const scanTouristTicket = async (
 
         const serviceName = String(btRows[0].service_name || "");
 
+        const checkinUserId = btRows[0]?.user_id ? Number(btRows[0].user_id) : null;
+        if (checkinUserId) {
+          try {
+            await conn.query(
+              `INSERT INTO checkins (user_id, location_id, booking_id, status, verified_by, notes)
+               VALUES (?, ?, ?, 'verified', ?, ?)`,
+              [checkinUserId, locationId, btRows[0].booking_id, auth.userId, `Cập nhật check-in bảo mật cho vé #${code}`]
+            );
+          } catch (err) {
+            console.error("Insert single tourist checkin error:", err);
+          }
+        }
         await conn.commit();
         await publishTouristUpdated(conn, locationId, ownerId, {
           action: "ticket_used",
@@ -18047,3 +18241,42 @@ export const deleteOwnerReply = async (
 
 
 
+
+
+export const tempCloseOwnerLocations = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    const { locationIds } = req.body;
+    if (!locationIds || !Array.isArray(locationIds) || locationIds.length === 0) {
+      res.status(400).json({ success: false, message: "Invalid locationIds" });
+      return;
+    }
+    const ownerId = auth.role === "owner" ? auth.userId : await getOwnerIdForEmployee(auth.userId);
+    await pool.query(
+      `UPDATE locations SET status = 0 WHERE location_id IN (?) AND owner_id = ?`,
+      [locationIds, ownerId]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message });
+  }
+};
+
+export const tempOpenOwnerLocations = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const auth = await getAuth(req);
+    const { locationIds } = req.body;
+    if (!locationIds || !Array.isArray(locationIds) || locationIds.length === 0) {
+      res.status(400).json({ success: false, message: "Invalid locationIds" });
+      return;
+    }
+    const ownerId = auth.role === "owner" ? auth.userId : await getOwnerIdForEmployee(auth.userId);
+    await pool.query(
+      `UPDATE locations SET status = 1 WHERE location_id IN (?) AND owner_id = ?`,
+      [locationIds, ownerId]
+    );
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err?.message });
+  }
+};

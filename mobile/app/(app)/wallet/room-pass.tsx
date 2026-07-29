@@ -1,4 +1,4 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +17,7 @@ export default function RoomPassScreen() {
           <Ionicons name="chevron-back" size={24} color="#0f172a" />
         </Pressable>
         <Text className="ml-3 text-[20px] font-extrabold text-slate-900 flex-1">
-          Vỏ vé khách sạn
+          Vé về khách sạn
         </Text>
       </View>
       <RoomPassTab />

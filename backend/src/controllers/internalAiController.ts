@@ -4,10 +4,11 @@ import type { RowDataPacket } from "mysql2/promise";
 
 export const getDashboardStatsForAi = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { role, userId } = req.body;
+    const role = req.userRole;
+    const userId = req.userId;
 
     if (!role || !userId) {
-      res.status(400).json({ success: false, message: "Missing role or userId" });
+      res.status(401).json({ success: false, message: "Chưa xác thực" });
       return;
     }
 
@@ -62,6 +63,7 @@ export const getDashboardStatsForAi = async (req: Request, res: Response): Promi
 
     res.status(403).json({ success: false, message: "Invalid role" });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error("[internal-ai] context error:", err);
+    res.status(500).json({ success: false, message: "Lỗi server" });
   }
 };

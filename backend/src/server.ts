@@ -34,9 +34,25 @@ const PORT = process.env.PORT || 3000;
 
 const userTopic = (userId: number) => `user_${userId}`;
 
-app.use(cors());
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ limit: "100mb", extended: true }));
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGIN ||
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const allowAllOrigins = allowedOrigins.has("*");
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowAllOrigins || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: process.env.CORS_CREDENTIALS === "true",
+  }),
+);
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/locations", locationRoutes);
@@ -152,9 +168,7 @@ const startServer = async () => {
     } catch (e) {
       console.warn("⚠️ Không thể cập nhật auto_cancel_hotel_minutes mặc định cho locations:", e);
     }
-
-    let lastAutoCancelAndExpireAt = new Date(0);
-
+    let lastAutoCancelAndExpireAt = new Date();
     const autoCancelAndExpireBookings = async () => {
       const rangeStart = lastAutoCancelAndExpireAt;
       try {
@@ -174,6 +188,16 @@ const startServer = async () => {
         );
 
         // B) Tự động hủy đơn đặt bàn trễ hạn check-in (auto_cancel_food_minutes)
+        await pool.query(
+          `UPDATE vouchers v
+           JOIN bookings b ON v.code = b.voucher_code
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           SET v.used_count = GREATEST(v.used_count - 1, 0)
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'table'
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_food_minutes, 60)`
+        );
         await pool.query(
           `UPDATE bookings b
            JOIN services s ON s.service_id = b.service_id
@@ -226,6 +250,22 @@ const startServer = async () => {
 
         // C) Tự động hủy phòng khách sạn trễ hạn check-in (auto_cancel_hotel_minutes)
         await pool.query(
+          `UPDATE vouchers v
+           JOIN bookings b ON v.code = b.voucher_code
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           SET v.used_count = GREATEST(v.used_count - 1, 0)
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'room'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM hotel_stays hs
+               WHERE hs.booking_id = b.booking_id
+                 AND hs.status IN ('inhouse','checked_out')
+             )
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_hotel_minutes, 60)`
+        );
+        await pool.query(
           `UPDATE bookings b
            JOIN services s ON s.service_id = b.service_id
            JOIN locations l ON l.location_id = b.location_id
@@ -250,6 +290,16 @@ const startServer = async () => {
 
         // D) Tự động hết hạn vé du lịch trễ hạn sử dụng (auto_cancel_ticket_minutes)
         await pool.query(
+          `UPDATE vouchers v
+           JOIN bookings b ON v.code = b.voucher_code
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           SET v.used_count = GREATEST(v.used_count - 1, 0)
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'ticket'
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_ticket_minutes, 1440)`
+        );
+        await pool.query(
           `UPDATE bookings b
            JOIN services s ON s.service_id = b.service_id
            JOIN locations l ON l.location_id = b.location_id
@@ -264,6 +314,32 @@ const startServer = async () => {
            WHERE b.status IN ('pending','confirmed')
              AND s.service_type = 'ticket'
              AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_ticket_minutes, 1440)`,
+        );
+
+        // E) Tự động hủy các đơn CHƯA THANH TOÁN (pending) sau 60 phút
+        await pool.query(
+          `UPDATE vouchers v
+           JOIN bookings b ON v.code = b.voucher_code
+           JOIN payments p ON p.booking_id = b.booking_id
+           SET v.used_count = GREATEST(v.used_count - 1, 0)
+           WHERE b.status = 'pending'
+             AND p.status = 'pending'
+             AND TIMESTAMPDIFF(MINUTE, b.created_at, NOW()) >= 60`
+        );
+        await pool.query(
+          `UPDATE bookings b
+           JOIN payments p ON p.booking_id = b.booking_id
+           SET b.status = 'cancelled',
+               b.cancelled_at = NOW(),
+               b.cancelled_by = NULL,
+               b.notes = CONCAT(
+                 COALESCE(b.notes, ''),
+                 CASE WHEN b.notes IS NULL OR b.notes = '' THEN '' ELSE '\n' END,
+                 '[SYSTEM] Tự động hủy: Đơn chưa thanh toán quá 60 phút'
+               )
+           WHERE b.status = 'pending'
+             AND p.status = 'pending'
+             AND TIMESTAMPDIFF(MINUTE, b.created_at, NOW()) >= 60`
         );
 
         // Đồng bộ giải phóng các tài nguyên bàn, phòng
@@ -596,7 +672,7 @@ const startServer = async () => {
       cors: {
         origin: "*",
       },
-      maxHttpBufferSize: 1e8, // 100MB to support large base64 image data transfers
+      maxHttpBufferSize: 1e7, // 10MB to support large base64 image data transfers
     });
     app.set("socketio", io);
     initSocketHub(io);

@@ -14,29 +14,43 @@ const SavedLocations = () => {
   const [error, setError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
+  const loadFavorites = async () => {
       try {
         setLoading(true);
         setError(null);
         const response = await userApi.getFavorites();
-        if (!cancelled) {
-          setLocations(response.success ? response.data || [] : []);
-        }
+        setLocations(response.success ? response.data || [] : []);
       } catch (loadError) {
-        if (!cancelled) {
-          setError(getErrorMessage(loadError, "Không thể tải địa điểm đã lưu"));
-        }
+        setError(getErrorMessage(loadError, "Không thể tải địa điểm đã lưu"));
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     };
 
-    void load();
+  useEffect(() => {
+    void loadFavorites();
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void loadFavorites();
+    };
+    const handleRename = (event: Event) => {
+      const detail = (event as CustomEvent<{ locationId?: number; locationName?: string }>).detail;
+      if (!detail?.locationId || !detail.locationName) return;
+      setLocations((prev) =>
+        prev.map((item) =>
+          Number(item.location_id) === Number(detail.locationId)
+            ? { ...item, location_name: detail.locationName || item.location_name }
+            : item,
+        ),
+      );
+    };
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("private-location-renamed", handleRename);
     return () => {
-      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("private-location-renamed", handleRename);
     };
   }, []);
 

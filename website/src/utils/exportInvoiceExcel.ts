@@ -27,6 +27,11 @@ export interface InvoiceDetail {
   contact_name?: string;
   contact_phone?: string;
   food_items?: Array<{ name: string; quantity: number; price: number }>;
+  notes?: any;
+  voucher_code?: string | null;
+  discount_amount?: number | string | null;
+  booking_voucher_code?: string | null;
+  booking_discount_amount?: number | string | null;
 }
 
 
@@ -217,9 +222,47 @@ export const exportInvoiceExcel = async (
     row++;
   }
 
+  // Voucher & Discount
+  let notesObj: any = d || null;
+  const invAny = invoice as any;
+  if (!notesObj && invAny.notes) {
+    if (typeof invAny.notes === "object") notesObj = invAny.notes;
+    else if (typeof invAny.notes === "string" && invAny.notes.trim().startsWith("{")) {
+      try { notesObj = JSON.parse(invAny.notes.trim()); } catch (e) {}
+    }
+  }
+
+  let vCode =
+    (invoice as any).voucher_code ||
+    (invoice as any).booking_voucher_code ||
+    (invoice as any).voucherCode ||
+    notesObj?.voucher_code ||
+    notesObj?.voucherCode ||
+    null;
+
+  let discount = Number(
+    (invoice as any).discount_amount ??
+    (invoice as any).booking_discount_amount ??
+    (invoice as any).discountAmount ??
+    notesObj?.discount_amount ??
+    notesObj?.discountAmount ??
+    0
+  );
+  
+  if (vCode || discount > 0) {
+    const voucherRow = sheet.addRow(["", "", "", `Voucher ${vCode || ""}:`, -discount]);
+    voucherRow.getCell(4).font = { italic: true };
+    voucherRow.getCell(5).font = { italic: true };
+    voucherRow.getCell(5).numFmt = "#,##0";
+    voucherRow.getCell(5).alignment = { horizontal: "right" };
+    row++;
+  }
+
   // Summary
-  const summaryRow = sheet.addRow(["", "", "", "", d?.amount || Number(invoice.amount || 0)]);
-  summaryRow.getCell(5).font = { bold: true, size: 14 };
+  const summaryRow = sheet.addRow(["", "", "", "TỔNG CỘNG:", d?.amount != null ? d.amount : Number(invoice.amount || 0)]);
+  summaryRow.getCell(4).font = { bold: true, size: 12 };
+  summaryRow.getCell(4).alignment = { horizontal: "right" };
+  summaryRow.getCell(5).font = { bold: true, size: 14, color: { argb: "FFFF0000" } };
   summaryRow.getCell(5).numFmt = "#,##0";
   summaryRow.getCell(5).alignment = { horizontal: "right" };
   row++;

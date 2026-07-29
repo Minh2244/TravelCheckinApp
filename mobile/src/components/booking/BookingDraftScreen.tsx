@@ -15,6 +15,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getErrorMessage } from "../../lib/error";
@@ -91,7 +92,27 @@ export function BookingDraftScreen({ mode }: { mode: BookingDraftMode }) {
   const [bookingResult, setBookingResult] = useState<CreateBookingResult | null>(null);
 
   const [quantity, setQuantity] = useState(1);
-  const [checkInDate, setCheckInDate] = useState(() => toInputDateTime(new Date()));
+  const [checkInDate, setCheckInDate] = useState(() => toInputDateTime(new Date(Date.now() + 3600000)));
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const onChangeDate = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      const old = parseInputDate(checkInDate) || new Date();
+      selectedDate.setHours(old.getHours(), old.getMinutes());
+      setCheckInDate(toInputDateTime(selectedDate));
+    }
+  };
+
+  const onChangeTime = (event: DateTimePickerEvent, selectedTime?: Date) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (selectedTime) {
+      const old = parseInputDate(checkInDate) || new Date();
+      old.setHours(selectedTime.getHours(), selectedTime.getMinutes());
+      setCheckInDate(toInputDateTime(old));
+    }
+  };
   const [checkOutDate, setCheckOutDate] = useState(() => toInputDateTime(addDays(new Date(), 1)));
   const [contactName, setContactName] = useState(user?.full_name ?? "");
   const [contactPhone, setContactPhone] = useState(user?.phone ?? "");
@@ -369,13 +390,31 @@ export function BookingDraftScreen({ mode }: { mode: BookingDraftMode }) {
             <Text style={styles.label}>
               {mode === "ticket" ? "Ngày dùng vé" : "Thời gian tới (nhận dịch vụ)"}
             </Text>
-            <TextInput
-              value={checkInDate}
-              onChangeText={setCheckInDate}
-              placeholder="DD/MM/YYYY HH:mm"
-              style={styles.input}
-              autoCapitalize="none"
-            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable style={[styles.input, { flex: 1, justifyContent: 'center' }]} onPress={() => setShowDatePicker(true)}>
+                <Text style={{ color: "#000" }}>{checkInDate.split(' ')[0]}</Text>
+              </Pressable>
+              <Pressable style={[styles.input, { flex: 1, justifyContent: 'center' }]} onPress={() => setShowTimePicker(true)}>
+                <Text style={{ color: "#000" }}>{checkInDate.split(' ')[1] || "00:00"}</Text>
+              </Pressable>
+            </View>
+            {showDatePicker && (
+              <DateTimePicker
+                value={parseInputDate(checkInDate) || new Date()}
+                mode="date"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                minimumDate={new Date()}
+                onChange={onChangeDate}
+              />
+            )}
+            {showTimePicker && (
+              <DateTimePicker
+                value={parseInputDate(checkInDate) || new Date()}
+                mode="time"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={onChangeTime}
+              />
+            )}
           </View>
 
           {mode === "room" ? (
@@ -412,11 +451,26 @@ export function BookingDraftScreen({ mode }: { mode: BookingDraftMode }) {
                   <ScrollView nestedScrollEnabled contentContainerStyle={styles.tableList}>
                     {tables.map((t) => {
                       const isSelected = selectedTableIds.includes(t.table_id);
+                      const isUnavailable = t.status === "reserved" || t.status === "occupied" || t.status === "maintenance";
+                      
+                      let statusText = "Trống";
+                      if (t.status === "reserved") statusText = "Đã đặt";
+                      if (t.status === "occupied") statusText = "Có khách";
+                      if (t.status === "maintenance") statusText = "Bảo trì";
+
                       return (
                         <Pressable
                           key={t.table_id}
-                          style={[styles.tableItem, isSelected && styles.tableItemSelected]}
+                          style={[
+                            styles.tableItem, 
+                            isSelected && styles.tableItemSelected,
+                            isUnavailable && { backgroundColor: "#e2e8f0", borderColor: "#cbd5e1", opacity: 0.7 }
+                          ]}
                           onPress={() => {
+                            if (isUnavailable) {
+                              showToast(`Bàn này ${statusText.toLowerCase()}, không thể chọn.`);
+                              return;
+                            }
                             setSelectedTableIds((prev) => {
                               if (prev.includes(t.table_id)) {
                                 return prev.filter((id) => id !== t.table_id);
@@ -428,9 +482,17 @@ export function BookingDraftScreen({ mode }: { mode: BookingDraftMode }) {
                             });
                           }}
                         >
-                          <Text style={[styles.tableName, isSelected && styles.tableNameSelected]}>{t.table_name}</Text>
-                          <Text style={[styles.tableStatus, isSelected && styles.tableStatusSelected]}>
-                            {t.status === "active" ? "Trống" : "Bảo trì"}
+                          <Text style={[
+                            styles.tableName, 
+                            isSelected && styles.tableNameSelected,
+                            isUnavailable && { color: "#64748b" }
+                          ]}>{t.table_name}</Text>
+                          <Text style={[
+                            styles.tableStatus, 
+                            isSelected && styles.tableStatusSelected,
+                            isUnavailable && { color: "#94a3b8" }
+                          ]}>
+                            {statusText}
                           </Text>
                         </Pressable>
                       );

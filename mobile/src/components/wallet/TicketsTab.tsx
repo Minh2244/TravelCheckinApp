@@ -69,7 +69,11 @@ export function TicketsTab() {
 
   useEffect(() => {
     fetchTickets();
-    const sub = DeviceEventEmitter.addListener("booking_updated", fetchTickets);
+    const sub = DeviceEventEmitter.addListener("realtime_event", (event: any) => {
+      if (event?.type?.startsWith("booking_")) {
+        fetchTickets();
+      }
+    });
     return () => sub.remove();
   }, [fetchTickets]);
 

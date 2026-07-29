@@ -1,5 +1,11 @@
-import type { PoolConnection, RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import crypto from "crypto";
+const isServiceApproved = (svc: any) => {
+  if (String(svc.admin_status || '') === 'approved') return true;
+  if (String(svc.admin_status || '') === 'pending' && svc.pending_updates != null) return true;
+  return false;
+};
+
 import { pool } from "../config/database";
 import { extractOpenClose, isWithinOpeningHours } from "../utils/openingHours";
 import type { OpeningHoursRaw } from "../utils/openingHours";
@@ -47,8 +53,8 @@ export const getServiceRemainingQuantity = async (
     `SELECT COUNT(*) AS cnt
      FROM booking_tickets bt
      JOIN bookings b ON b.booking_id = bt.booking_id
-     WHERE bt.service_id = ? AND DATE(b.check_in_date) = ? AND bt.status <> 'void'`,
-    [serviceId, targetDate]
+     WHERE bt.service_id = ? AND b.check_in_date >= ? AND b.check_in_date < DATE_ADD(?, INTERVAL 1 DAY) AND bt.status <> 'void'`,
+    [serviceId, targetDate, targetDate]
   );
   const onlineSold = Number(onlineRows?.[0]?.cnt || 0);
 
@@ -123,6 +129,46 @@ const withPrepayUnconfirmedMarker = (raw: string | null | undefined) => {
   return base
     ? `${base}\n${PREPAY_UNCONFIRMED_MARKER}`
     : PREPAY_UNCONFIRMED_MARKER;
+};
+
+const removePrepayUnconfirmedMarkerForBookings = async (
+  connection: PoolConnection,
+  bookingIds: number[],
+) => {
+  const ids = Array.from(
+    new Set(
+      bookingIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  );
+  if (ids.length === 0) return;
+
+  const placeholders = ids.map(() => "?").join(",");
+  await connection.query(
+    `UPDATE bookings
+        SET notes = NULLIF(
+          TRIM(
+            REPLACE(
+              REPLACE(
+                REPLACE(COALESCE(notes, ''), ?, ''),
+                ?,
+                ''
+              ),
+              ?,
+              ''
+            )
+          ),
+          ''
+        )
+      WHERE booking_id IN (${placeholders})`,
+    [
+      `\r\n${PREPAY_UNCONFIRMED_MARKER}`,
+      `\n${PREPAY_UNCONFIRMED_MARKER}`,
+      PREPAY_UNCONFIRMED_MARKER,
+      ...ids,
+    ],
+  );
 };
 
 export const reserveHotelStaysForBookingsIfMissing = async (params: {
@@ -231,6 +277,7 @@ const publishPosUpdatedForLocation = async (params: {
     }
 
     publishToUsers(Array.from(ids), event);
+    publishToLocationPublic(locationId, event);
   } catch {
     // ignore realtime failures
   }
@@ -599,9 +646,9 @@ const normalizeServiceTypeForVoucher = (
   serviceType: ServiceType,
 ): VoucherServiceScope => {
   // Vì sao: DB services.service_type có thêm 'combo'/'table' nhưng voucher chỉ hỗ trợ room/food/ticket/other.
-  // Quy ước: 'combo' và 'table' được xem là 'other'.
+  // Quy ước: 'combo' được xem là 'other'. 'table' được xem là 'food' vì voucher áp dụng cho phần đặt món (preorder).
   if (serviceType === "room") return "room";
-  if (serviceType === "food") return "food";
+  if (serviceType === "food" || serviceType === "table") return "food";
   if (serviceType === "ticket") return "ticket";
   return "other";
 };
@@ -856,6 +903,213 @@ const randomTransactionCode = (bookingId: number): string => {
   return `BK-${bookingId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
 };
 
+const createCompletedZeroOnlinePayment = async (params: {
+  connection: PoolConnection;
+  userId: number;
+  locationId: number;
+  bookingId: number | null;
+  amount: number;
+  serviceType: "room" | "table" | "ticket";
+  bookingIds?: number[];
+  tableNames?: string | null;
+  ticketItems?: Array<{ service_id: number; quantity: number }>;
+  useDate?: string | null;
+}) => {
+  const {
+    connection,
+    userId,
+    locationId,
+    bookingId,
+    amount,
+    serviceType,
+    bookingIds,
+    tableNames = null,
+    ticketItems = [],
+    useDate = null,
+  } = params;
+  const batchNote =
+    bookingIds && bookingIds.length > 0
+      ? `BATCH_BOOKINGS:${bookingIds.slice().sort((a, b) => a - b).join(",")}`
+      : null;
+
+  const [existingRows] = bookingId
+    ? await connection.query<RowDataPacket[]>(
+        `SELECT payment_id
+         FROM payments
+         WHERE booking_id = ?
+           AND transaction_source = 'online_booking'
+           AND status NOT IN ('failed','refunded')
+         LIMIT 1
+         FOR UPDATE`,
+        [bookingId],
+      )
+    : await connection.query<RowDataPacket[]>(
+        `SELECT payment_id
+         FROM payments
+         WHERE user_id = ?
+           AND transaction_source = 'online_booking'
+           AND notes = ?
+           AND status NOT IN ('failed','refunded')
+         LIMIT 1
+         FOR UPDATE`,
+        [userId, batchNote],
+      );
+
+  if (Array.isArray(existingRows) && existingRows.length > 0) {
+    await removePrepayUnconfirmedMarkerForBookings(
+      connection,
+      bookingIds && bookingIds.length > 0
+        ? bookingIds
+        : bookingId
+          ? [bookingId]
+          : [],
+    );
+    return;
+  }
+
+  const [settingsRows] = await connection.query<RowDataPacket[]>(
+    `SELECT setting_key, setting_value
+     FROM system_settings
+     WHERE setting_key IN ('default_commission_rate','vat_rate')`,
+  );
+  const settings: Record<string, string | null> = {};
+  for (const row of settingsRows) {
+    settings[String(row.setting_key)] = row.setting_value;
+  }
+
+  const [locRows] = await connection.query<RowDataPacket[]>(
+    `SELECT commission_rate, location_name
+     FROM locations
+     WHERE location_id = ?
+     LIMIT 1`,
+    [locationId],
+  );
+
+  const safeAmount = Math.max(0, Number(amount || 0));
+  const commissionRate = Number(
+    locRows[0]?.commission_rate ??
+      settings.default_commission_rate ??
+      2.5,
+  );
+  const vatRate = Number(settings.vat_rate ?? 0);
+  const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 2.5;
+  const safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
+  const commissionAmount = +((safeAmount * safeCommissionRate) / 100).toFixed(2);
+  const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
+  const ownerReceivable = +(safeAmount - commissionAmount - vatAmount).toFixed(2);
+  const effectiveBookingId = bookingId ?? bookingIds?.[0] ?? Date.now();
+  const tx = randomTransactionCode(Number(effectiveBookingId));
+  const locationName = String(locRows[0]?.location_name || "").trim();
+
+  const qrData = {
+    amount: safeAmount,
+    transaction_code: tx,
+    location_id: locationId,
+    booking_id: bookingId,
+    booking_ids: bookingIds || (bookingId ? [bookingId] : []),
+    booking_scope: bookingIds && bookingIds.length > 0 ? "room_batch" : serviceType,
+    ticket_items: ticketItems,
+    use_date: useDate,
+  };
+
+  const notes =
+    batchNote ||
+    JSON.stringify({
+      transaction_source: "online_booking",
+      service_type: serviceType,
+      booking_id: bookingId,
+      location_id: locationId,
+      table_names: tableNames,
+      ticket_items: ticketItems,
+      location_name: locationName || null,
+      invoice_ready: serviceType === "table" ? false : true,
+      created_at: new Date().toISOString(),
+      zero_amount: true,
+    });
+
+  await connection.query<ResultSetHeader>(
+    `INSERT INTO payments (
+       user_id,
+       location_id,
+       booking_id,
+       amount,
+       transaction_source,
+       commission_rate,
+       commission_amount,
+       vat_rate,
+       vat_amount,
+       owner_receivable,
+       payment_method,
+       transaction_code,
+       qr_data,
+       status,
+       notes,
+       performed_by_user_id,
+       performed_by_role,
+       payment_time
+     ) VALUES (?, ?, ?, ?, 'online_booking', ?, ?, ?, ?, ?, 'VietQR', ?, ?, 'completed', ?, ?, 'user', CURRENT_TIMESTAMP)`,
+    [
+      userId,
+      locationId,
+      bookingId,
+      safeAmount,
+      safeCommissionRate,
+      commissionAmount,
+      safeVatRate,
+      vatAmount,
+      ownerReceivable,
+      tx,
+      JSON.stringify(qrData),
+      notes,
+      userId,
+    ],
+  );
+
+  await removePrepayUnconfirmedMarkerForBookings(
+    connection,
+    bookingIds && bookingIds.length > 0
+      ? bookingIds
+      : bookingId
+        ? [bookingId]
+        : [],
+  );
+};
+
+const generateTicketCodeHash = (length = 6): string => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.randomBytes(length);
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+};
+
+export const issueBookingTickets = async (
+  connection: PoolConnection,
+  bookingId: number,
+  locationId: number,
+  items: Array<{ serviceId: number; quantity: number }>,
+): Promise<void> => {
+  let ticketIndex = 0;
+  for (const it of items) {
+    const serviceId = Number(it.serviceId);
+    const quantity = Math.trunc(Number(it.quantity));
+    if (!Number.isFinite(serviceId) || serviceId <= 0) continue;
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+    for (let i = 0; i < quantity; i++) {
+      ticketIndex++;
+      const code = `DL-${bookingId}-${ticketIndex}-${generateTicketCodeHash(6)}`;
+      await connection.query(
+        `INSERT INTO booking_tickets (booking_id, location_id, service_id, ticket_code, status)
+         VALUES (?, ?, ?, ?, 'unused')`,
+        [bookingId, locationId, serviceId, code],
+      );
+    }
+  }
+};
+
 const validateVoucherForBooking = async (params: {
   connection: PoolConnection;
   userId: number;
@@ -1034,7 +1288,8 @@ const validateVoucherForBooking = async (params: {
     );
   }
 
-  // Vì sao: Ràng buộc max_uses_per_user giúp tránh 1 user lạm dụng voucher.
+  // Giữ lượt ngay cả khi đơn còn pending để user không thể spam cùng một voucher.
+  // Nếu đơn bị hủy, các luồng cancel sẽ nhả lại used_count.
   const [usedCountRows] = await connection.query<RowDataPacket[]>(
     `SELECT COUNT(*) as cnt
      FROM bookings
@@ -1057,13 +1312,13 @@ const validateVoucherForBooking = async (params: {
       const [spendRows] = await connection.query<RowDataPacket[]>(
         `SELECT COALESCE(SUM(final_amount), 0) AS total_spent
          FROM bookings
-         WHERE user_id = ? AND location_id = ? AND status = 'completed'`,
-        [userId, locationId],
+         WHERE user_id = ? AND status = 'completed'`,
+        [userId],
       );
       const totalSpent = Number(spendRows[0]?.total_spent || 0);
       if (totalSpent < minSpend) {
         throw new BookingError(
-          "Mã giảm giá này chỉ dành riêng cho khách hàng thân thiết của chi nhánh.",
+          "Mã giảm giá này chỉ dành riêng cho khách hàng thân thiết (chưa đủ tổng chi tiêu).",
           400,
         );
       }
@@ -1093,10 +1348,16 @@ const validateVoucherForBooking = async (params: {
   const finalAmount = roundMoney(totalAmount - discountAmount);
 
   if (consumeUsage) {
-    await connection.query(
-      `UPDATE vouchers SET used_count = used_count + 1 WHERE voucher_id = ?`,
+    const [usageUpdate] = await connection.query<ResultSetHeader>(
+      `UPDATE vouchers
+       SET used_count = used_count + 1
+       WHERE voucher_id = ?
+         AND (usage_limit IS NULL OR usage_limit <= 0 OR used_count < usage_limit)`,
       [voucher.voucher_id],
     );
+    if (usageUpdate.affectedRows !== 1) {
+      throw new BookingError("Voucher đã hết lượt sử dụng", 400);
+    }
   }
 
   return { discountAmount, finalAmount, voucherId: voucher.voucher_id, campaignName: voucher.campaign_name };
@@ -1174,9 +1435,13 @@ export const createBooking = async (
            s.price,
            s.status as service_status,
            s.admin_status,
+         s.pending_updates,
+         s.pending_updates,
            l.location_type,
            l.status as location_status,
            l.opening_hours,
+           l.temp_close_type,
+           l.temp_close_type,
            l.owner_id,
            c.sort_order as category_sort_order
          FROM services s
@@ -1208,8 +1473,10 @@ export const createBooking = async (
          s.admin_status,
          l.location_type,
          l.status as location_status,
-         l.opening_hours,
-         l.owner_id,
+           l.opening_hours,
+           l.temp_close_type,
+           l.temp_close_type,
+           l.owner_id,
          c.sort_order as category_sort_order
        FROM services s
        LEFT JOIN service_categories c
@@ -1233,12 +1500,16 @@ export const createBooking = async (
       (r) =>
         String(r.location_status || "") !== "active" ||
         String(r.service_status || "") !== "available" ||
-        String(r.admin_status || "") !== "approved" ||
+        !isServiceApproved(r) ||
         String(r.service_type || "") !== "ticket",
     );
     if (bad) {
       throw new BookingError("Có loại vé không khả dụng để mua", 400);
     }
+  }
+
+  if (svc.temp_close_type) {
+    throw new BookingError("Địa điểm đang tạm thời đóng cửa", 400);
   }
 
   if (svc.location_status !== "active") {
@@ -1249,7 +1520,7 @@ export const createBooking = async (
     throw new BookingError("Dịch vụ hiện không khả dụng", 400);
   }
 
-  if (String(svc.admin_status || "") !== "approved") {
+  if (!isServiceApproved(svc)) {
     throw new BookingError("Dịch vụ chưa được duyệt", 400);
   }
 
@@ -1421,6 +1692,12 @@ export const createBooking = async (
         }, 0),
       )
       : roundMoney(unitPrice * quantity * roomStayHours);
+  const ticketIssuanceItems =
+    svc.service_type === "ticket"
+      ? ticketItems.length > 0
+        ? ticketItems
+        : [{ serviceId: effectiveServiceId, quantity }]
+      : [];
 
   const connection = await pool.getConnection();
   try {
@@ -1557,7 +1834,7 @@ export const createBooking = async (
       const menuIds = preorderItems.map((x) => x.serviceId);
       const placeholders = menuIds.map(() => "?").join(",");
       const [mRows] = await connection.query<RowDataPacket[]>(
-        `SELECT service_id, price, status, admin_status, service_type
+        `SELECT service_id, price, status, admin_status, service_type, pending_updates
          FROM services
          WHERE location_id = ?
            AND service_id IN (${placeholders})
@@ -1575,7 +1852,7 @@ export const createBooking = async (
         if (!["food", "combo", "other"].includes(t)) {
           throw new BookingError("Món đặt trước không hợp lệ", 400);
         }
-        if (admin !== "approved" || !["available", "reserved"].includes(st)) {
+        if (!isServiceApproved(r) || !["available", "reserved"].includes(st)) {
           throw new BookingError("Món đặt trước hiện không khả dụng", 409);
         }
         priceMap.set(sid, toNumber(r.price));
@@ -1654,12 +1931,8 @@ export const createBooking = async (
 
     if (svc.service_type === "ticket") {
       const targetDate = normalizedCheckIn.slice(0, 10);
-      const issuance =
-        ticketItems.length > 0
-          ? ticketItems
-          : [{ serviceId: effectiveServiceId, quantity }];
 
-      for (const it of issuance) {
+      for (const it of ticketIssuanceItems) {
         if (it.quantity > 50) {
           throw new BookingError(
             "Mỗi giao dịch đặt vé online chỉ được mua tối đa 50 vé!",
@@ -1728,6 +2001,7 @@ export const createBooking = async (
 
     let storedNotes =
       reserveOnConfirm &&
+        finalAmount > 0 &&
         (svc.service_type === "room" || svc.service_type === "table")
         ? withPrepayUnconfirmedMarker(effectiveNotes)
         : effectiveNotes;
@@ -1768,7 +2042,11 @@ export const createBooking = async (
         discountAmount,
         finalAmount,
         normalizedVoucherCode,
-        "pending" as BookingStatus,
+          (svc.service_type === "table" || source === "mobile" || source === "web"
+            ? "pending"
+            : finalAmount === 0 && source === "admin"
+              ? "confirmed"
+              : "pending") as BookingStatus,
         source,
         normalizedContactName,
         normalizedContactPhone,
@@ -1777,6 +2055,28 @@ export const createBooking = async (
     );
 
     const insertId = (result as unknown as { insertId: number }).insertId;
+
+    try {
+      const [locRows] = await connection.query<RowDataPacket[]>(
+        `SELECT owner_id, location_name FROM locations WHERE location_id = ? LIMIT 1`,
+        [locationId]
+      );
+      if (locRows?.[0]?.owner_id) {
+        const ownerId = Number(locRows[0].owner_id);
+        const locName = String(locRows[0].location_name || "");
+        await connection.query(
+          `INSERT INTO notifications (user_id, title, content, type, is_read, created_at)
+           VALUES (?, ?, ?, 'booking', 0, NOW())`,
+          [
+            ownerId,
+            "Đơn đặt chỗ mới cần duyệt",
+            `Khách vừa đặt dịch vụ tại ${locName} (Mã đơn #${insertId}). Vui lòng kiểm tra và duyệt đơn.`,
+          ]
+        );
+      }
+    } catch {
+      // ignore notification errors
+    }
 
     if (svc.service_type === "table" && tableIds.length > 0) {
       const reservationEnd = computeTableReservationEnd(checkInLocal);
@@ -1908,6 +2208,60 @@ export const createBooking = async (
       }
     }
 
+    if (svc.service_type === "ticket" && ticketIssuanceItems.length > 0) {
+      await connection.query(
+        `DELETE FROM booking_preorder_items
+         WHERE booking_id = ?
+           AND source = 'ticket'`,
+        [insertId],
+      );
+
+      const ticketServiceIds = ticketIssuanceItems.map((item) => Number(item.serviceId));
+      const placeholders = ticketServiceIds.map(() => "?").join(",");
+      const [ticketServiceRows] = await connection.query<RowDataPacket[]>(
+        `SELECT service_id, service_name, price
+         FROM services
+         WHERE location_id = ? AND service_id IN (${placeholders})
+           AND deleted_at IS NULL`,
+        [locationId, ...ticketServiceIds],
+      );
+      const ticketServiceMap = new Map<number, { name: string | null; price: number }>();
+      for (const row of ticketServiceRows as any[]) {
+        ticketServiceMap.set(Number(row.service_id), {
+          name: row.service_name ? String(row.service_name) : null,
+          price: roundMoney(toNumber(row.price)),
+        });
+      }
+
+      for (const item of ticketIssuanceItems) {
+        const serviceId = Number(item.serviceId);
+        const quantity = Math.max(1, Math.trunc(Number(item.quantity)));
+        const snapshot = ticketServiceMap.get(serviceId);
+        const unit = snapshot?.price ?? 0;
+        await connection.query(
+          `INSERT INTO booking_preorder_items (
+             booking_id,
+             location_id,
+             service_id,
+             service_name_snapshot,
+             quantity,
+             unit_price,
+             line_total,
+             source
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ticket')`,
+          [
+            insertId,
+            locationId,
+            serviceId,
+            snapshot?.name || null,
+            quantity,
+            unit,
+            roundMoney(unit * quantity),
+          ],
+        );
+      }
+    }
+
     // PMS sync for hotel/resort room bookings: create reserved stay + mark room reserved
     if (
       svc.service_type === "room" &&
@@ -1969,8 +2323,8 @@ export const createBooking = async (
       );
     }
 
-    // Ticket issuance moved to explicit user confirmation step.
-    // Vì sao: user phải bấm “Xác nhận đã chuyển khoản” thì mới coi là mua vé và trừ số lượng.
+    // Ticket issuance is deferred until transfer confirmation or owner approval.
+    // This keeps 0đ voucher bookings in the same pending-owner-review flow as other prebookings.
 
     // Ticket payments: bắt buộc chuyển khoản (VietQR). Tạo payment pending ngay khi đặt vé.
     let createdPayment: {
@@ -1981,7 +2335,7 @@ export const createBooking = async (
       qrData: unknown;
     } | null = null;
 
-    if (svc.service_type === "ticket") {
+    if (svc.service_type === "ticket" && finalAmount > 0) {
       const [settingsRows] = await connection.query<RowDataPacket[]>(
         `SELECT setting_key, setting_value FROM system_settings
          WHERE setting_key IN ('default_commission_rate','vat_rate')`,
@@ -2051,11 +2405,6 @@ export const createBooking = async (
       const locationName = String(locRateRows[0]?.location_name ?? "").trim();
       const qrContent = locationName ? `Mua vé - ${locationName}` : "Mua vé";
 
-      const issuance =
-        ticketItems.length > 0
-          ? ticketItems
-          : [{ serviceId: effectiveServiceId, quantity }];
-
       const qrData = {
         bank_name: bankName,
         bank_account: bankAccount,
@@ -2064,7 +2413,7 @@ export const createBooking = async (
         content: qrContent,
         transaction_code: tx,
         // For verification on confirm step
-        ticket_items: issuance.map((it) => ({
+        ticket_items: ticketIssuanceItems.map((it) => ({
           service_id: Number(it.serviceId),
           quantity: Number(it.quantity),
         })),
@@ -2126,17 +2475,85 @@ export const createBooking = async (
       };
     }
 
+    if (
+      finalAmount <= 0 &&
+      (svc.service_type === "ticket" ||
+        svc.service_type === "room" ||
+        svc.service_type === "table")
+    ) {
+      let tableNames: string | null = null;
+      if (svc.service_type === "table" && tableIds.length > 0) {
+        try {
+          const [tableNameRows] = await connection.query<RowDataPacket[]>(
+            `SELECT table_name
+             FROM pos_tables
+             WHERE table_id IN (${tableIds.map(() => "?").join(",")})
+             ORDER BY table_name ASC`,
+            tableIds,
+          );
+          const names = (Array.isArray(tableNameRows) ? tableNameRows : [])
+            .map((row: any) => String(row.table_name || "").trim())
+            .filter(Boolean);
+          tableNames = names.length > 0 ? names.join(", ") : null;
+        } catch {
+          tableNames = null;
+        }
+      }
+
+      await createCompletedZeroOnlinePayment({
+        connection,
+        userId,
+        locationId,
+        bookingId: insertId,
+        amount: finalAmount,
+        serviceType: svc.service_type as "room" | "table" | "ticket",
+        tableNames,
+        ticketItems:
+          svc.service_type === "ticket"
+            ? ticketIssuanceItems.map((item) => ({
+                service_id: Number(item.serviceId),
+                quantity: Number(item.quantity),
+              }))
+            : [],
+        useDate: svc.service_type === "ticket" ? normalizedCheckIn : null,
+      });
+      if (svc.service_type === "ticket") {
+        await issueBookingTickets(
+          connection,
+          insertId,
+          locationId,
+          ticketIssuanceItems.map((item) => ({
+            serviceId: Number(item.serviceId),
+            quantity: Number(item.quantity),
+          })),
+        );
+        await connection.query(
+          `UPDATE bookings
+           SET status = 'confirmed'
+           WHERE booking_id = ?`,
+          [insertId],
+        );
+      }
+      createdPayment = {
+        paymentId: 0,
+        status: "completed",
+        amount: finalAmount,
+        transactionCode: null,
+        qrData: null,
+      };
+    }
+
     await connection.commit();
 
     // Realtime: notify owner/employee POS screens to refresh table status.
-    if ((svc.service_type === "table" && tableIds.length > 0) || svc.service_type === "ticket") {
+    if (svc.service_type === "table" || svc.service_type === "ticket") {
       const ownerId = Number(svc.owner_id);
       if (Number.isFinite(ownerId)) {
         void publishPosUpdatedForLocation({
           locationId,
           ownerId,
           event: {
-            type: "pos_updated",
+            type: svc.service_type === "ticket" ? "tourist_updated" : "pos_updated",
             location_id: locationId,
             action: svc.service_type === "table" ? "table_booking_created" : "ticket_booking_created",
             booking_id: insertId,
@@ -2250,7 +2667,8 @@ export const createBookingBatch = async (
        s.admin_status,
        l.location_type,
        l.status as location_status,
-       l.opening_hours,
+           l.opening_hours,
+           l.temp_close_type,
        c.sort_order as category_sort_order
      FROM services s
      LEFT JOIN service_categories c
@@ -2272,7 +2690,7 @@ export const createBookingBatch = async (
     (s) =>
       String(s.location_status || "") !== "active" ||
       String(s.service_status || "") !== "available" ||
-      String(s.admin_status || "") !== "approved" ||
+      !isServiceApproved(s) ||
       s.service_type !== "room",
   );
   if (bad) {
@@ -2403,7 +2821,7 @@ export const createBookingBatch = async (
       }
       const perFinal = roundMoney(perTotal - perDiscount);
 
-      let storedNotes = reserveOnConfirm
+      let storedNotes = reserveOnConfirm && batchFinalAmount > 0
         ? withPrepayUnconfirmedMarker(notes)
         : notes;
       if (voucherNotePrefix) {
@@ -2462,6 +2880,18 @@ export const createBookingBatch = async (
           finalAmount: perFinal,
         });
       }
+    }
+
+    if (batchFinalAmount <= 0) {
+      await createCompletedZeroOnlinePayment({
+        connection,
+        userId,
+        locationId,
+        bookingId: null,
+        amount: batchFinalAmount,
+        serviceType: "room",
+        bookingIds,
+      });
     }
 
     await connection.commit();
@@ -2745,7 +3175,7 @@ export const confirmTicketBankTransfer = async (params: {
 
       await connection.query(
         `UPDATE bookings
-         SET status = 'pending'
+         SET status = 'confirmed'
          WHERE booking_id = ?`,
         [bookingId],
       );
@@ -2902,7 +3332,7 @@ export const confirmTicketBankTransfer = async (params: {
 
     await connection.query(
       `UPDATE bookings
-       SET status = 'pending'
+       SET status = 'confirmed'
        WHERE booking_id = ?`,
       [bookingId],
     );
@@ -3680,6 +4110,14 @@ export const cancelMyTableBooking = async (params: {
     );
 
     await conn.query(
+      `UPDATE vouchers v
+       JOIN bookings b ON v.code = b.voucher_code
+       SET v.used_count = GREATEST(v.used_count - 1, 0)
+       WHERE b.booking_id = ? AND b.status != 'cancelled' AND b.voucher_code IS NOT NULL`,
+      [bookingId],
+    );
+
+    await conn.query(
       `UPDATE bookings
        SET status = 'cancelled',
            cancelled_at = NOW(),
@@ -3827,7 +4265,7 @@ export const attachPreorderToMyTableBooking = async (params: {
     const menuIds = normalizedItems.map((item) => item.serviceId);
     const placeholders = menuIds.map(() => "?").join(",");
     const [menuRows] = await conn.query<RowDataPacket[]>(
-      `SELECT service_id, service_name, price, status, admin_status, service_type
+      `SELECT service_id, service_name, price, status, admin_status, service_type, pending_updates
        FROM services
        WHERE location_id = ?
          AND service_id IN (${placeholders})
@@ -3847,7 +4285,7 @@ export const attachPreorderToMyTableBooking = async (params: {
         throw new BookingError("Món đặt trước không hợp lệ", 400);
       }
       if (
-        adminStatus !== "approved" ||
+        !isServiceApproved(row) ||
         !["available", "reserved"].includes(status)
       ) {
         throw new BookingError("Món đặt trước hiện không khả dụng", 409);
@@ -4065,6 +4503,14 @@ export const cancelMyBooking = async (params: {
 
     // 2) Cập nhật trạng thái đơn sang 'cancelled'
     await conn.query(
+      `UPDATE vouchers v
+       JOIN bookings b ON v.code = b.voucher_code
+       SET v.used_count = GREATEST(v.used_count - 1, 0)
+       WHERE b.booking_id = ? AND b.status != 'cancelled' AND b.voucher_code IS NOT NULL`,
+      [bookingId]
+    );
+
+    await conn.query(
       `UPDATE bookings
        SET status = 'cancelled',
            cancelled_at = NOW(),
@@ -4178,7 +4624,7 @@ export const cancelMyBooking = async (params: {
           locationId,
           ownerId,
           event: {
-            type: "pos_updated",
+            type: serviceType === "ticket" ? "tourist_updated" : "pos_updated",
             location_id: locationId,
             action: "booking_cancelled_by_user",
             booking_id: bookingId,

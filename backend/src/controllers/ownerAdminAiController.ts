@@ -153,12 +153,15 @@ export function createOwnerAdminAiController(role: ManagerAiRole) {
         }
 
         const actionPlan = data.action_plan as any;
+        console.log("[AI Controller DEBUG] actionPlan:", actionPlan);
         if (actionPlan && actionPlan.requires_confirmation) {
           actionPlan.command_id = require("crypto").randomUUID();
+          console.log("[AI Controller DEBUG] Generated commandId:", actionPlan.command_id);
         }
 
         res.json({ success: true, ...data });
       } catch (error) {
+        console.error("[AI Controller ERROR] error:", error);
         handleBotError(res, error);
       }
     },

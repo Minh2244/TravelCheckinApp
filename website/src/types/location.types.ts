@@ -17,6 +17,7 @@ export type OpeningHours =
 export interface Location {
   location_id: number;
   owner_id: number;
+  category?: string;
   location_name: string;
   location_type: LocationType;
   description: string | null;
@@ -32,6 +33,9 @@ export interface Location {
   website: string | null;
   is_eco_friendly: 0 | 1 | boolean;
   is_user_created?: 0 | 1 | boolean;
+  is_private_location?: 0 | 1 | boolean;
+  private_user_id?: number | string | null;
+  created_by_user_id?: number | string | null;
   source?: string | null;
   osm_type?: string | null;
   osm_id?: number | string | null;
@@ -44,6 +48,9 @@ export interface Location {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  temp_close_type?: string | null;
+  temp_close_until?: string | null;
+  distance_km?: number | null;
 }
 
 export const isOwnerCreatedLocation = (location: {
@@ -51,6 +58,26 @@ export const isOwnerCreatedLocation = (location: {
   is_user_created?: 0 | 1 | boolean;
 }): boolean => {
   return location.source === "owner" || Boolean(location.is_user_created);
+};
+
+export const isPrivateUserLocation = (
+  location: {
+    source?: string | null;
+    is_private_location?: 0 | 1 | boolean;
+    private_user_id?: number | string | null;
+    created_by_user_id?: number | string | null;
+  } | null | undefined,
+  currentUserId?: number | null,
+): boolean => {
+  if (!location) return false;
+  if (Boolean(location.is_private_location)) return true;
+  const createdBy = Number(location.created_by_user_id ?? location.private_user_id);
+  return (
+    location.source === "user" &&
+    Number.isFinite(createdBy) &&
+    currentUserId != null &&
+    createdBy === Number(currentUserId)
+  );
 };
 
 export interface LocationListResponse {

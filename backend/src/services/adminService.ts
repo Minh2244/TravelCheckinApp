@@ -60,6 +60,20 @@ export const sendPushNotification = async (
 
   const notificationId = insertResult.insertId;
 
+  // Realtime notification broadcast (SSE)
+  try {
+    const { publishToAll } = require("../utils/realtime");
+    publishToAll({
+      type: "new_notification",
+      target_audience: targetAudience,
+      target_user_id: targetUserId ?? null,
+      title,
+      body,
+    });
+  } catch (err) {
+    console.error("[SSE] Error broadcasting notification:", err);
+  }
+
   // DB không có push_device_tokens => chuẩn hoá gửi FCM bằng topic.
   // - all_users/all_owners: gửi theo topic cùng tên
   // - specific_user: gửi theo topic user_{id} (client cần subscribe)

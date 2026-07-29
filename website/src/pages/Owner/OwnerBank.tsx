@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card, Form, Input, Button, message, Row, Col, AutoComplete, Image } from "antd";
+import { Card, Form, Input, Button, message, Row, Col, AutoComplete } from "antd";
 import {
   BankOutlined,
   CreditCardOutlined,
   UserOutlined,
   SaveOutlined,
-  QrcodeOutlined,
 } from "@ant-design/icons";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import VirtualBankCard from "../../components/VirtualBankCard";
 
 type OwnerBankDto = {
   bank_name: string | null;
@@ -109,7 +109,7 @@ const OwnerBank = () => {
       >
         <Row gutter={[32, 24]}>
           {/* Cột trái: Form */}
-          <Col xs={24} lg={14}>
+          <Col xs={24} lg={12}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <span style={{ fontWeight: 700, fontSize: 16, color: "#1e293b" }}>Thiết lập tài khoản</span>
               <Button type="primary" icon={<SaveOutlined />} onClick={onSave} loading={saving} style={{ borderRadius: 8 }}>
@@ -208,7 +208,7 @@ const OwnerBank = () => {
           </Col>
 
           {/* Cột phải: Preview QR */}
-          <Col xs={24} lg={10}>
+          <Col xs={24} lg={12}>
             <div style={{
               background: "#fff",
               borderRadius: 12,
@@ -220,58 +220,13 @@ const OwnerBank = () => {
               minHeight: "360px",
               justifyContent: "center",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                <QrcodeOutlined style={{ fontSize: 20, color: "#6366f1" }} />
-                <span style={{ fontWeight: 700, fontSize: 14, color: "#1e293b", letterSpacing: 0.5 }}>MÃ QR VIETQR CỦA BẠN</span>
-              </div>
-
-              {bank?.qr_code ? (
-                <>
-                  <div style={{
-                    background: "#fff",
-                    borderRadius: 12,
-                    padding: 8,
-                    border: "1px solid #e2e8f0",
-                    marginBottom: 20,
-                  }}>
-                    <Image
-                      src={String(bank.qr_code)}
-                      alt="VietQR"
-                      width={260}
-                      height={260}
-                      style={{ objectFit: "contain" }}
-                      preview={{ mask: "Phóng to" }}
-                    />
-                  </div>
-
-                  <div style={{ width: "100%", borderTop: "1px solid #f1f5f9", paddingTop: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                      <span style={{ color: "#64748b", fontSize: 14 }}>Ngân hàng</span>
-                      <span style={{ fontWeight: 600, fontSize: 16, color: "#1e293b" }}>{bank.bank_name || "—"}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                      <span style={{ color: "#64748b", fontSize: 14 }}>Số tài khoản</span>
-                      <span style={{ fontWeight: 700, fontSize: 18, fontFamily: "monospace", color: "#1e293b" }}>{bank.bank_account || "—"}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "#64748b", fontSize: 14 }}>Chủ tài khoản</span>
-                      <span style={{ fontWeight: 700, fontSize: 16, textTransform: "uppercase", color: "#1e293b" }}>{bank.account_holder || "—"}</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div style={{
-                  height: 240,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#64748b",
-                  textAlign: "center",
-                  padding: 16,
-                }}>
-                  Chưa có mã QR.<br />Điền thông tin tài khoản và bấm "Lưu cài đặt" để tạo QR tự động.
-                </div>
-              )}
+              <VirtualBankCard
+                bankName={bank?.bank_name || ""}
+                accountNumber={bank?.bank_account || ""}
+                accountName={bank?.account_holder || ""}
+                qrUrl={String(bank?.qr_code || "")}
+                title="NGÂN HÀNG CỦA BẠN"
+              />
             </div>
           </Col>
         </Row>

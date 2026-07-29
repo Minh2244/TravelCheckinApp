@@ -50,122 +50,12 @@ const LocationChatBubble = ({
   initialOpen,
 }: LocationChatBubbleProps) => {
   const [isOpen, setIsOpen] = useState(initialOpen || false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Vị trí kéo thả
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-
-  // Xử lý kéo thả cho bong bóng chat tròn (khi đóng)
-  const handleBubbleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-
-    const parentEl = e.currentTarget.parentElement as HTMLElement;
-    if (!parentEl) return;
-
-    const rect = parentEl.getBoundingClientRect();
-    parentEl.style.transition = "none";
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const posX = rect.left;
-    const posY = rect.top;
-
-    let hasMoved = false;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        hasMoved = true;
-      }
-
-      let newX = posX + dx;
-      let newY = posY + dy;
-
-      const maxX = window.innerWidth - rect.width;
-      const maxY = window.innerHeight - rect.height;
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-
-      parentEl.style.left = `${newX}px`;
-      parentEl.style.top = `${newY}px`;
-      parentEl.style.bottom = "auto";
-      parentEl.style.right = "auto";
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      parentEl.style.transition = "";
-
-      if (hasMoved) {
-        const finalRect = parentEl.getBoundingClientRect();
-        setPosition({ x: finalRect.left, y: finalRect.top });
-      } else {
-        setIsOpen((prev) => !prev);
-      }
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  };
-
-  // Xử lý kéo thả cho thanh header của khung chat (khi mở)
-  const handleHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("input") || target.closest("a")) {
-      return;
-    }
-    e.preventDefault();
-
-    const parentEl = e.currentTarget.closest(".fixed") as HTMLElement;
-    if (!parentEl) return;
-
-    const rect = parentEl.getBoundingClientRect();
-    parentEl.style.transition = "none";
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const posX = rect.left;
-    const posY = rect.top;
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-
-      let newX = posX + dx;
-      let newY = posY + dy;
-
-      const maxX = window.innerWidth - rect.width;
-      const maxY = window.innerHeight - rect.height;
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-
-      parentEl.style.left = `${newX}px`;
-      parentEl.style.top = `${newY}px`;
-      parentEl.style.bottom = "auto";
-      parentEl.style.right = "auto";
-    };
-
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      parentEl.style.transition = "";
-
-      const finalRect = parentEl.getBoundingClientRect();
-      setPosition({ x: finalRect.left, y: finalRect.top });
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  };
+  const activeLocationId = Number(locationId);
 
   // Số tin nhắn chưa đọc
   const [unreadCount, setUnreadCount] = useState(0);
@@ -176,13 +66,47 @@ const LocationChatBubble = ({
 
   const socketRef = useRef<Socket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const activeLocationId = Number(locationId);
+  const imageLoadingIdsRef = useRef<Set<number>>(new Set());
 
   // Vị trí định vị bong bóng
   const positionClass = userRole === "user" ? "bottom-24 right-6" : "bottom-6 right-24";
 
   const socketUrl = useMemo(() => resolveSocketUrl(), []);
+
+  const getCurrentUserId = useCallback(() => {
+    try {
+      return sessionStorage.getItem("user")
+        ? Number(JSON.parse(sessionStorage.getItem("user") || "{}").user_id)
+        : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  const getHiddenKey = useCallback(() => {
+    const currentUserId = getCurrentUserId();
+    if (!activeLocationId || !Number.isFinite(activeLocationId)) return null;
+    return `chat_hidden_after_${activeLocationId}_${userRole}_${currentUserId || "guest"}`;
+  }, [activeLocationId, getCurrentUserId, userRole]);
+
+  const readHiddenMessageId = useCallback(() => {
+    const key = getHiddenKey();
+    if (!key) return 0;
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) ? value : 0;
+  }, [getHiddenKey]);
+
+  const hideChat = useCallback(() => {
+    if (messages.length === 0) return;
+    const maxId = Math.max(...messages.map((m) => Number(m.message_id) || 0));
+    const key = getHiddenKey();
+    if (key) localStorage.setItem(key, String(maxId));
+    setMessages([]);
+    setHasMore(false);
+  }, [messages, getHiddenKey]);
 
   // Sync isOpen to ref to avoid stale closures in socket listener
   const isOpenRef = useRef(isOpen);
@@ -193,51 +117,160 @@ const LocationChatBubble = ({
     }
   }, [isOpen]);
 
-  // Đồng bộ prop initialOpen
+  // Đồng bộ prop initialOpen và lắng nghe event đóng chat
   useEffect(() => {
     if (initialOpen) {
       setIsOpen(true);
     }
+    
+    const closeLocationChat = () => setIsOpen(false);
+    window.addEventListener("tc-close-location-chat", closeLocationChat);
+    return () => {
+      window.removeEventListener("tc-close-location-chat", closeLocationChat);
+    };
   }, [initialOpen, activeLocationId]);
 
-  // Cuộn tin nhắn xuống cuối cùng
+  // Cuộn tin nhắn xuống dưới cùng
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current && !isFetchingMore) {
+      setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 50);
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isFetchingMore]);
 
-  // Helper: lấy lịch sử tin nhắn (dùng chung cho cả load đầu và refresh khi có ảnh)
-  const fetchHistory = useCallback(async (showLoading = false) => {
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    if (e.currentTarget.scrollTop === 0 && hasMore && !isFetchingMore && !loading) {
+      const currentScrollHeight = e.currentTarget.scrollHeight;
+      void fetchHistoryRef.current("older").then(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight - currentScrollHeight;
+        }
+      });
+    }
+  };
+
+  const loadMessageImage = useCallback(async (messageId: number) => {
+    if (!activeLocationId || !Number.isFinite(activeLocationId)) return;
+    if (!Number.isFinite(messageId) || imageLoadingIdsRef.current.has(messageId)) return;
+    imageLoadingIdsRef.current.add(messageId);
+    try {
+      const res = await locationChatApi.getMessageImage(activeLocationId, messageId);
+      if (res.success && res.data?.image_data) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            Number(m.message_id) === Number(messageId)
+              ? { ...m, image_data: res.data.image_data, has_image: true }
+              : m
+          )
+        );
+      }
+    } catch (err) {
+      console.error("[LocationChatBubble] Không thể tải ảnh chat:", err);
+    } finally {
+      imageLoadingIdsRef.current.delete(messageId);
+    }
+  }, [activeLocationId]);
+
+  useEffect(() => {
+    messages.forEach((item) => {
+      if (item.has_image && !item.image_data) {
+        void loadMessageImage(item.message_id);
+      }
+    });
+  }, [loadMessageImage, messages]);
+
+  // Lấy lịch sử chat hỗ trợ Infinite Scroll
+  const fetchHistory = useCallback(async (direction?: "older" | "newer") => {
     if (!activeLocationId || !Number.isFinite(activeLocationId)) return;
     try {
-      if (showLoading) {
+      const isInitial = !direction;
+      if (isInitial) {
         setLoading(true);
         setError(null);
+        setHasMore(true);
+      } else if (direction === "older") {
+        setIsFetchingMore(true);
       }
-      const currentUserId = sessionStorage.getItem("user")
-        ? JSON.parse(sessionStorage.getItem("user") || "{}").user_id
-        : null;
+
+      const currentUserId = getCurrentUserId();
       const targetCustomerId = userRole === "user" ? currentUserId : undefined;
-      const res = await locationChatApi.getHistory(activeLocationId, targetCustomerId);
+      const hiddenId = readHiddenMessageId();
+
+      let afterId: number | undefined = undefined;
+      let beforeId: number | undefined = undefined;
+
+      if (direction === "newer") {
+        if (messagesRef.current.length > 0) {
+          afterId = Math.max(...messagesRef.current.map((m) => Number(m.message_id)));
+        } else {
+          afterId = hiddenId; // Only fetch new messages after hidden point
+        }
+      } else if (direction === "older") {
+        if (messagesRef.current.length > 0) {
+          beforeId = Math.min(...messagesRef.current.map((m) => Number(m.message_id)));
+        }
+      }
+
+      const res = await locationChatApi.getHistory(
+        activeLocationId,
+        targetCustomerId || undefined,
+        afterId,
+        beforeId,
+        50, // limit
+        false,
+        false
+      );
+
       if (res.success) {
-        setMessages(res.data || []);
+        let list = res.data || [];
+        // Filter out hidden messages
+        if (hiddenId > 0) {
+          list = list.filter((m) => Number(m.message_id) > hiddenId);
+        }
+
+        if (isInitial) {
+          setMessages(list);
+          if (list.length < 50) setHasMore(false);
+        } else if (direction === "older") {
+          if (list.length > 0) {
+            setMessages((prev) => {
+              const newMsgs = list.filter((m: any) => !prev.some((p) => p.message_id === m.message_id));
+              return [...newMsgs, ...prev];
+            });
+          }
+          if (list.length < 50) setHasMore(false);
+        } else if (direction === "newer") {
+          if (list.length > 0) {
+            setMessages((prev) => {
+              const newMsgs = list.filter((m: any) => !prev.some((p) => p.message_id === m.message_id));
+              return [...prev, ...newMsgs];
+            });
+          }
+        }
       }
     } catch {
-      if (showLoading) setError("Không thể tải lịch sử cuộc trò chuyện.");
+      if (!direction) setError("Không thể tải lịch sử cuộc trò chuyện.");
     } finally {
-      if (showLoading) setLoading(false);
+      setLoading(false);
+      setIsFetchingMore(false);
     }
-  }, [activeLocationId, userRole]);
+  }, [activeLocationId, getCurrentUserId, userRole, readHiddenMessageId]);
 
   // Ref để tránh stale closure trong socket event listener
   const fetchHistoryRef = useRef(fetchHistory);
   useEffect(() => { fetchHistoryRef.current = fetchHistory; }, [fetchHistory]);
 
-  // 1. Tải lịch sử tin nhắn khi mở khung chat
+  // messagesRef để tránh stale closure khi cần biết ID tin nhắn cuối
+  const messagesRef = useRef(messages);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  // 1. Tải/đồng bộ lịch sử khi mở khung chat
   useEffect(() => {
     if (!isOpen) return;
-    void fetchHistory(true);
+    void fetchHistory();
     locationChatApi.markRead(activeLocationId).catch(console.error);
   }, [isOpen, fetchHistory, activeLocationId]);
 
@@ -257,14 +290,13 @@ const LocationChatBubble = ({
     console.log(`[LocationChatBubble] Đang kết nối socket tới: ${socketUrl}`);
     const socket = io(socketUrl, {
       auth: { token },
+      transports: ["websocket"],
     });
 
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      const currentUserId = sessionStorage.getItem("user")
-        ? JSON.parse(sessionStorage.getItem("user") || "{}").user_id
-        : null;
+      const currentUserId = getCurrentUserId();
       const targetCustomerId = userRole === "user" ? currentUserId : undefined;
 
       const roomName = `location_${activeLocationId}_customer_${targetCustomerId || "fallback"}`;
@@ -274,6 +306,8 @@ const LocationChatBubble = ({
         locationId: activeLocationId,
         customerId: targetCustomerId,
       });
+
+      void fetchHistoryRef.current("newer");
     });
 
     socket.on("connect_error", (err) => {
@@ -295,26 +329,21 @@ const LocationChatBubble = ({
       if (Number(msg.location_id) !== activeLocationId) return;
 
       // Tăng badge NGAY LẬP TỨC dựa vào metadata (không cần chờ ảnh)
-      const currentUserId = sessionStorage.getItem("user")
-        ? JSON.parse(sessionStorage.getItem("user") || "{}").user_id
-        : null;
+      const currentUserId = getCurrentUserId();
 
       if (!isOpenRef.current && Number(msg.sender_id) !== Number(currentUserId)) {
         setUnreadCount((prev) => prev + 1);
       }
 
-      // Luôn append message người khác gửi ngay lập tức
-      // (kể cả khi có ảnh — placeholder trước, sau sẽ có image_data khi user mở chat)
+      // Luôn append message người khác gửi ngay lập tức.
+      // Nếu có ảnh, realtime dùng has_image để hiện placeholder nhẹ.
       setMessages((prev) => {
         if (prev.some((m) => m.message_id === msg.message_id)) return prev;
         return [...prev, msg];
       });
 
-      if (msg.has_image) {
-        // Có ảnh → fetch lại history để lấy image_data đầy đủ (dùng ref để tránh stale closure)
-        console.log("[LocationChatBubble] has_image=true, đang refetch history...");
-        void fetchHistoryRef.current(false);
-      }
+      // Không refetch toàn bộ history khi có ảnh. Base64 ảnh rất nặng; socket đã
+      // append placeholder bằng has_image để chat realtime không bị đứng.
     });
 
     return () => {
@@ -324,7 +353,7 @@ const LocationChatBubble = ({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [activeLocationId, socketUrl, userRole]);
+  }, [activeLocationId, getCurrentUserId, socketUrl, userRole]);
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -388,27 +417,20 @@ const LocationChatBubble = ({
   return (
     <div
       className={`fixed z-50 ${positionClass} font-sans`}
-      style={
-        position
-          ? {
-              left: `${position.x}px`,
-              top: `${position.y}px`,
-              bottom: "auto",
-              right: "auto",
-            }
-          : {}
-      }
     >
-      {/* Nút bong bóng chat hình tròn */}
+      {/* Nút bong bóng chat (chỉ hiện khi chưa mở khung) */}
       <button
         type="button"
-        className={`relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-300 hover:scale-110 active:scale-95 cursor-grab active:cursor-grabbing ${
+        className={`relative flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg transition-transform duration-300 hover:scale-110 active:scale-95 cursor-pointer ${
           userRole === "user"
-            ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/30"
-            : "bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 shadow-teal-500/30"
-        }`}
-        onMouseDown={handleBubbleMouseDown}
-        aria-label="Kênh chat địa điểm"
+            ? "bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/30"
+            : "bg-gradient-to-tr from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-emerald-500/30"
+        } ${isOpen ? "opacity-0 pointer-events-none scale-0" : "opacity-100 scale-100"}`}
+        onClick={() => {
+          window.dispatchEvent(new Event("tc-close-ai-chat"));
+          setIsOpen(true);
+        }}
+        aria-label="Mở chat"
       >
         {isOpen ? (
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -430,11 +452,10 @@ const LocationChatBubble = ({
 
       {/* Cửa sổ hội thoại nổi */}
       {isOpen && (
-        <div className={`absolute bottom-16 right-0 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col z-40 overflow-hidden transition-all duration-300 origin-bottom-right rounded-2xl border border-slate-100 ${isExpanded ? 'w-[92vw] sm:w-[80vw] md:w-[65vw] lg:w-[50vw] h-[85vh] fixed bottom-24 right-6' : 'w-[360px] sm:w-[400px] h-[520px] max-h-[80vh]'}`}>
+        <div className={`absolute bottom-16 right-0 bg-white/95 backdrop-blur-md shadow-2xl flex flex-col z-40 overflow-hidden transition-all duration-300 origin-bottom-right rounded-2xl border border-slate-100 w-[360px] sm:w-[400px] h-[520px] max-h-[80vh]`}>
           {/* Header */}
           <div
-            onMouseDown={handleHeaderMouseDown}
-            className={`p-4 text-white flex items-center justify-between cursor-move select-none ${
+            className={`p-4 text-white flex items-center justify-between select-none ${
               userRole === "user"
                 ? "bg-gradient-to-r from-blue-600 to-indigo-600"
                 : "bg-gradient-to-r from-teal-600 to-emerald-600"
@@ -458,22 +479,19 @@ const LocationChatBubble = ({
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="text-white/80 hover:text-white p-1.5 rounded-full transition-colors active:scale-95"
-                onClick={() => setIsExpanded(p => !p)}
-                title={isExpanded ? "Thu nhỏ" : "Phóng to"}
-              >
-                {isExpanded ? (
+              {userRole === "user" && (
+                <button
+                  type="button"
+                  className="text-white/80 hover:text-rose-200 p-1.5 rounded-full transition-colors active:scale-95 mr-1"
+                  onClick={(e) => { e.stopPropagation(); hideChat(); }}
+                  title="Xóa/Ẩn chat"
+                >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 9L5 5m4 4v-4m0 4H5m10 0l4-4m-4 4v-4m0 4h4M9 15l-4 4m4-4v4m0-4H5m10 0l4 4m-4-4v4m0-4h4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                ) : (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                )}
-              </button>
+                </button>
+              )}
+
               <button
                 type="button"
                 className="text-white/80 hover:text-white p-1.5 rounded-full transition-colors active:scale-95"
@@ -489,6 +507,7 @@ const LocationChatBubble = ({
           {/* Message List */}
           <div
             ref={scrollRef}
+            onScroll={handleScroll}
             className="flex-1 overflow-y-auto p-4 space-y-3 relative"
           >
             {/* Background Image */}
@@ -504,8 +523,8 @@ const LocationChatBubble = ({
             )}
             
             <div className="relative z-10 space-y-3 min-h-full">
-            {loading && (
-              <div className="text-center text-xs text-slate-400 py-8 font-medium">
+            {(loading || isFetchingMore) && (
+              <div className="text-center text-xs text-slate-400 py-4 font-medium">
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent mb-1" />
                 <p>Đang tải lịch sử...</p>
               </div>
@@ -552,7 +571,7 @@ const LocationChatBubble = ({
                     )}
                     
                     {/* Render Image if exists */}
-                    {item.image_data && (
+                    {item.image_data ? (
                       <div className="mb-1">
                         <img
                           src={item.image_data}
@@ -566,12 +585,24 @@ const LocationChatBubble = ({
                           }}
                         />
                       </div>
-                    )}
+                    ) : item.has_image ? (
+                      <div
+                        className={`mb-1 rounded-xl border px-3 py-2 text-xs font-semibold shadow-sm ${
+                          isMe
+                            ? userRole === "user"
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                              : "border-teal-200 bg-teal-50 text-teal-700"
+                            : "border-slate-200 bg-white text-slate-500"
+                        }`}
+                      >
+                        Ảnh đã gửi
+                      </div>
+                    ) : null}
 
                     {/* Render Content Text if exists */}
                     {item.content && (
                       <div
-                        className={`rounded-2xl px-3.5 py-2 ${isExpanded ? 'text-base' : 'text-sm'} leading-relaxed break-words font-medium shadow-sm ${
+                        className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed break-words font-medium shadow-sm ${
                           isMe
                             ? userRole === "user"
                               ? "bg-blue-600 text-white rounded-br-none"

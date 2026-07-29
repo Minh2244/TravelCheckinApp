@@ -93,6 +93,8 @@ import {
   updateOwnerEmployeeAssignments,
   updateOwnerLocation,
   updateOwnerLocationStatus,
+  tempCloseOwnerLocations,
+  tempOpenOwnerLocations,
   updateOwnerProfile,
   updateOwnerVoucher,
   updateServiceCategory,
@@ -104,10 +106,14 @@ import {
   setLocationCoverImage,
   setServiceCoverImage,
   reconcileOwnerCommissionsManually,
+  changeOwnerPassword,
 } from "../controllers/ownerController";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 20 },
+});
 
 router.use(authenticateToken);
 router.use(requireRole("owner", "employee"));
@@ -120,6 +126,7 @@ router.get("/me", getOwnerMe);
 // Profile (owner-only for mutations)
 router.get("/profile", getOwnerProfile);
 router.put("/profile", updateOwnerProfile);
+router.put("/profile/password", changeOwnerPassword);
 router.post("/profile/avatar", upload.single("avatar"), uploadOwnerAvatar);
 router.post(
   "/profile/background",
@@ -149,7 +156,7 @@ router.post(
   "/locations",
   upload.fields([
     { name: "image", maxCount: 1 },
-    { name: "images", maxCount: 12 },
+    { name: "images", maxCount: 10 },
   ]),
   createOwnerLocation,
 );
@@ -157,11 +164,13 @@ router.put(
   "/locations/:id",
   upload.fields([
     { name: "image", maxCount: 1 },
-    { name: "images", maxCount: 12 },
+    { name: "images", maxCount: 10 },
   ]),
   updateOwnerLocation,
 );
 router.put("/locations/:id/status", updateOwnerLocationStatus);
+router.post("/locations/temp-close", tempCloseOwnerLocations);
+router.post("/locations/temp-open", tempOpenOwnerLocations);
 router.put("/locations/:locationId/cover-image", upload.none(), setLocationCoverImage);
 
 // Services

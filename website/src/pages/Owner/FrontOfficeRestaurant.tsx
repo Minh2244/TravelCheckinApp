@@ -31,6 +31,7 @@ import { formatMoney } from "../../utils/formatMoney";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import { useSocket } from "../../contexts/SocketContext";
 
 type AreaRow = { area_id: number; area_name: string };
 
@@ -300,6 +301,7 @@ export default function FrontOfficeRestaurant(props: {
 }) {
   const { locationId } = props;
   const navigate = useNavigate();
+  const socket = useSocket();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"tables" | "pending" | "qr">("tables");
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
@@ -661,7 +663,7 @@ export default function FrontOfficeRestaurant(props: {
 
   const startingRef = useRef(false);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (signal?: AbortSignal) => {
     if (startingRef.current) return;
     const video = videoRef.current;
     if (!video) return;
@@ -685,6 +687,10 @@ export default function FrontOfficeRestaurant(props: {
           }
         },
       );
+      if (signal?.aborted) {
+        controls.stop();
+        return;
+      }
       scanControlsRef.current = controls;
       setCameraReady(true);
     } catch (error) {
@@ -698,6 +704,7 @@ export default function FrontOfficeRestaurant(props: {
   }, [scanReader, stopCamera]);
 
   useEffect(() => {
+    const controller = new AbortController();
     if (!scanModalOpen) {
       stopCamera();
       return;
@@ -705,7 +712,7 @@ export default function FrontOfficeRestaurant(props: {
     let rafId: number;
     const tryStart = () => {
       if (videoRef.current) {
-        void startCamera();
+        void startCamera(controller.signal);
       } else {
         rafId = requestAnimationFrame(tryStart);
       }
@@ -713,6 +720,7 @@ export default function FrontOfficeRestaurant(props: {
     rafId = requestAnimationFrame(tryStart);
     return () => {
       cancelAnimationFrame(rafId);
+      controller.abort();
       stopCamera();
     };
   }, [scanModalOpen, startCamera, stopCamera]);
@@ -1022,7 +1030,7 @@ export default function FrontOfficeRestaurant(props: {
     const id = window.setInterval(() => {
       if (document.hidden) return;
       tick();
-    }, 5000);
+    }, 30000);
 
     const onVisibility = () => {
       if (!document.hidden) tick();
@@ -1037,21 +1045,10 @@ export default function FrontOfficeRestaurant(props: {
 
   // Realtime: auto-sync POS giữa nhiều màn hình vận hành
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    const url = resolveBackendUrl(
-      `/api/events?token=${encodeURIComponent(token)}`,
-    );
-    if (!url) return;
-
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
+    if (!socket) return;
+    
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          location_id?: number;
-        };
         if (data?.type !== "pos_updated") return;
         if (Number(data.location_id) !== Number(locationId)) return;
 
@@ -1063,10 +1060,12 @@ export default function FrontOfficeRestaurant(props: {
       }
     };
 
+    socket.on("realtime_event", handleEvent);
+
     return () => {
-      es.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, [load, loadOrder, locationId]);
+  }, [load, loadOrder, locationId, socket]);
 
   const openTable = async (t: TableRow) => {
     setActiveTable(t);
@@ -1968,10 +1967,9 @@ export default function FrontOfficeRestaurant(props: {
               </div>
             </div>
 
-            <div className="mt-1 flex items-center justify-end">
+            <div className="mt-4 flex flex-col gap-2">
               <Button
-                type="link"
-                size="small"
+                className="w-full h-10 border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 font-medium !rounded-full"
                 onClick={() => {
                   const base =
                     props.role === "employee"
@@ -1983,6 +1981,14 @@ export default function FrontOfficeRestaurant(props: {
                 }}
               >
                 Lịch sử thanh toán
+              </Button>
+              <Button
+                className="w-full h-10 border-teal-500 text-teal-600 hover:bg-teal-50 font-medium !rounded-full"
+                onClick={() => {
+                  window.dispatchEvent(new Event("tc-open-owner-chat-history"));
+                }}
+              >
+                💬 Lịch sử Chat
               </Button>
             </div>
           </div>
@@ -2217,31 +2223,13 @@ export default function FrontOfficeRestaurant(props: {
                     </div>
                   )}
                 </div>
-                <div className="mt-3 text-center text-sm text-gray-700">
-                  Quét để thanh toán đúng số tiền
-                </div>
-                <div className="text-center text-xs text-gray-500">
-                  Sử dụng app ngân hàng hoặc Ví điện tử
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-3xl border p-4 text-sm">
-                <div className="font-semibold text-blue-800">
-                  {transferInit.qr.bank_name}
-                </div>
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-gray-500">STK:</span>
-                    <span className="font-semibold">
-                      {transferInit.qr.bank_account}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-gray-500">Chủ TK:</span>
-                    <span className="font-semibold">
-                      {transferInit.qr.account_holder}
-                    </span>
-                  </div>
+                <div className="mt-3 text-center">
+                  <p className="text-lg font-bold text-red-600">
+                    {formatMoney(transferInit.qr.amount)}
+                  </p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">
+                    Nội dung: <span className="text-blue-600 font-semibold">{transferInit.qr.note}</span>
+                  </p>
                 </div>
               </div>
 
@@ -2720,7 +2708,10 @@ export default function FrontOfficeRestaurant(props: {
       <Modal
         title="Quét mã QR Check-in"
         open={scanModalOpen}
-        onCancel={() => setScanModalOpen(false)}
+        onCancel={() => {
+          stopCamera();
+          setScanModalOpen(false);
+        }}
         footer={null}
         destroyOnHidden
         centered

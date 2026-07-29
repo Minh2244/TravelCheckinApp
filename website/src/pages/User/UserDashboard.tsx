@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import { useLocations } from "../../hooks/useLocations";
@@ -7,6 +7,11 @@ import geoApi from "../../api/geoApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import userApi from "../../api/userApi";
 import { getErrorMessage } from "../../utils/safe";
+import {
+  calculateDistanceKm,
+  formatDistanceKm,
+  type Coordinates,
+} from "../../utils/locationDistance";
 
 // Dịch location_type sang tiếng Việt
 const locationTypeVi: Record<LocationType, string> = {
@@ -18,23 +23,18 @@ const locationTypeVi: Record<LocationType, string> = {
   other: "Khác",
 };
 
-// Rút gọn địa chỉ: chỉ lấy tên đường + phường/xã
-const shortAddress = (addr: string): string => {
-  const parts = addr.split(",").map((s) => s.trim());
-  if (parts.length <= 2) return addr;
-  return `${parts[0]}, ${parts[1]}`;
-};
+
 
 type WeatherState =
   | { status: "idle" | "loading" }
   | {
-      status: "ready";
-      placeLabel: string;
-      temperatureC: number;
-      description: string;
-      weatherCode: number;
-      isDay: boolean;
-    }
+    status: "ready";
+    placeLabel: string;
+    temperatureC: number;
+    description: string;
+    weatherCode: number;
+    isDay: boolean;
+  }
   | { status: "error"; message: string };
 
 type StoredUser = {
@@ -89,10 +89,42 @@ const getFormattedDate = (): string => {
 
 const UserDashboard = () => {
   const navigate = useNavigate();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [dragged, setDragged] = useState(false);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    setIsDragging(true);
+    setDragged(false);
+    setStartX(e.pageX - scrollRef.current.offsetLeft);
+    setScrollLeft(scrollRef.current.scrollLeft);
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    if (Math.abs(walk) > 5) setDragged(true);
+    scrollRef.current.scrollLeft = scrollLeft - walk;
+  };
 
   const [user, setUser] = useState<StoredUser | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [weather, setWeather] = useState<WeatherState>({ status: "idle" });
+  const [currentCoordinates, setCurrentCoordinates] =
+    useState<Coordinates | null>(null);
 
   const [stats, setStats] = useState({
     checkins: 0,
@@ -102,6 +134,26 @@ const UserDashboard = () => {
 
   const { locations, loading, error, category, setCategory, setKeyword } =
     useLocations();
+
+  const nearbyLocations = useMemo(() => {
+    if (!currentCoordinates) return locations;
+
+    return locations
+      .map((location) => ({
+        ...location,
+        distance_km: calculateDistanceKm(
+          currentCoordinates,
+          location.latitude,
+          location.longitude,
+        ),
+      }))
+      .sort((first, second) => {
+        if (first.distance_km === null && second.distance_km === null) return 0;
+        if (first.distance_km === null) return 1;
+        if (second.distance_km === null) return -1;
+        return first.distance_km - second.distance_km;
+      });
+  }, [currentCoordinates, locations]);
 
   // Kiểm tra đăng nhập
   useEffect(() => {
@@ -235,6 +287,10 @@ const UserDashboard = () => {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
+            setCurrentCoordinates({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            });
             const data = await fetchWeather(
               pos.coords.latitude,
               pos.coords.longitude,
@@ -476,17 +532,7 @@ const UserDashboard = () => {
                 Khám phá các địa điểm nổi bật
               </p>
             </div>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 transition-all duration-200 hover:bg-teal-100 self-start sm:self-auto"
-              onClick={() => setCategory("Tất cả")}
-            >
-              Xem tất cả
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14" />
-                <path d="m13 6 6 6-6 6" />
-              </svg>
-            </button>
+
           </div>
 
           {/* Search */}
@@ -512,9 +558,8 @@ const UserDashboard = () => {
                 key={item}
                 type="button"
                 onClick={() => setCategory(item)}
-                className={`whitespace-nowrap user-chip ${
-                  category === item ? "user-chip-active" : "user-chip-idle"
-                }`}
+                className={`whitespace-nowrap user-chip ${category === item ? "user-chip-active" : "user-chip-idle"
+                  }`}
               >
                 {item}
               </button>
@@ -523,13 +568,13 @@ const UserDashboard = () => {
 
           {/* Loading skeleton */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {[1, 2, 3].map((i) => (
+            <div className="flex overflow-x-auto gap-6 pb-4">
+              {[1, 2, 3, 4, 5].map((i) => (
                 <div
                   key={i}
-                  className="user-sub-card overflow-hidden"
+                  className="user-sub-card overflow-hidden w-[280px] shrink-0"
                 >
-                  <div className="aspect-square skeleton-box" />
+                  <div className="h-48 skeleton-box" />
                   <div className="p-4 space-y-3">
                     <div className="h-4 w-3/4 skeleton-box" />
                     <div className="h-3 w-full skeleton-box" />
@@ -548,7 +593,7 @@ const UserDashboard = () => {
           ) : null}
 
           {/* Empty state */}
-          {!loading && locations.length === 0 ? (
+          {!loading && nearbyLocations.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white py-14 text-center">
               <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.2" className="mx-auto text-slate-300">
                 <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
@@ -574,81 +619,108 @@ const UserDashboard = () => {
           ) : null}
 
           {/* Location cards — thon, comment trái + rating phải */}
-          {!loading && locations.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
-              {locations.map((loc, idx) => {
+          {!loading && nearbyLocations.length > 0 ? (
+            <div
+              ref={scrollRef}
+              onMouseDown={handleMouseDown}
+              onMouseLeave={handleMouseLeave}
+              onMouseUp={handleMouseUp}
+              onMouseMove={handleMouseMove}
+              className="flex overflow-x-auto gap-6 pb-4 select-none cursor-grab active:cursor-grabbing"
+            >
+              {nearbyLocations.slice(0, 10).map((loc, idx) => {
                 const imageUrl = resolveBackendUrl(loc.first_image);
                 const ratingVal = Number(loc.rating || 0);
                 const reviewCount = Number(loc.total_reviews || 0);
                 const typeLabel = locationTypeVi[loc.location_type] ?? loc.location_type;
                 return (
-                  <button
+                  <div
                     key={loc.location_id}
-                    type="button"
-                    className="user-sub-card card-lift flex flex-col overflow-hidden text-left animate-fade-in"
+                    role="button"
+                    tabIndex={0}
+                    className="group relative w-[240px] shrink-0 cursor-pointer overflow-hidden rounded-3xl border border-slate-100 bg-white p-3 shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1.5 flex flex-col h-full justify-between text-left animate-fade-in"
                     style={{
                       animationDelay: `${Math.min(idx * 0.06, 0.3)}s`,
                       animationFillMode: "both",
                     }}
-                    onClick={() =>
-                      navigate(`/user/location/${loc.location_id}`)
-                    }
+                    onClick={(e) => {
+                      if (dragged) {
+                        e.preventDefault();
+                        return;
+                      }
+                      navigate(`/user/location/${loc.location_id}`);
+                    }}
                   >
-                    {/* Ảnh — 3:2 thon */}
-                    <div className="relative w-full aspect-[5/3] overflow-hidden">
+                    {/* Ảnh */}
+                    <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-slate-50 shadow-inner shrink-0">
                       {imageUrl ? (
                         <img
                           src={imageUrl}
                           alt={loc.location_name}
-                          className="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                       ) : (
-                        <div className="h-full w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex items-center justify-center">
-                          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
+                        <div className="h-full w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex flex-col items-center justify-center text-slate-500">
+                          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-400 mb-2">
                             <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
                             <circle cx="12" cy="10" r="2.5" />
                           </svg>
+                          <span className="text-xs">Chưa có ảnh</span>
                         </div>
                       )}
-                      <span className="absolute top-1.5 left-1.5 rounded bg-black/50 backdrop-blur-sm px-1.5 py-0.5 text-[9px] font-bold text-white">
-                        {typeLabel}
-                      </span>
+
+                      {/* Gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-85" />
+
+                      <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center rounded-full border border-emerald-100/50 bg-emerald-50/95 px-2.5 py-1 text-[11px] font-bold text-emerald-700 shadow-sm backdrop-blur-md whitespace-nowrap">
+                          {typeLabel}
+                        </span>
+                        {typeof loc.distance_km === "number" ? (
+                          <span className="inline-flex items-center rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur-md whitespace-nowrap">
+                            {formatDistanceKm(loc.distance_km)}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
 
                     {/* Nội dung */}
-                    <div className="flex flex-1 flex-col px-3 py-4">
+                    <div className="pt-4 flex-1 flex flex-col justify-start">
                       {/* Tên */}
-                      <h4 className="text-xs font-bold text-slate-800 line-clamp-1 font-heading">
+                      <h3 className="text-base font-extrabold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors duration-200 mb-3">
                         {loc.location_name}
-                      </h4>
-
-                      {/* Đánh giá (trái) + Rating (phải) — cùng hàng */}
-                      <div className="mt-3 flex items-center justify-between gap-1.5">
-                        <p className="flex-1 min-w-0 text-[10px] text-slate-400 line-clamp-1">
-                          {reviewCount > 0 ? reviewCount + " đánh giá" : "Chưa có đánh giá"}
-                        </p>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <svg viewBox="0 0 24 24" width="10" height="10" fill={ratingVal > 0 ? "#f59e0b" : "#cbd5e1"}>
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                          </svg>
-                          <span className="text-[10px] font-bold text-slate-600">
-                            {ratingVal > 0 ? ratingVal.toFixed(1) : "0"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Đường kẻ phân cách */}
-                      <div className="mt-3 border-t border-slate-100" />
+                      </h3>
 
                       {/* Địa chỉ */}
-                      <p className="mt-3 flex items-center gap-1 text-[10px] text-slate-400 line-clamp-1">
-                        <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                      <div className="flex items-start gap-2 text-slate-400 text-xs mb-3 group-hover:text-slate-600 transition-colors duration-200">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 text-slate-400 flex-shrink-0 group-hover:text-blue-500 transition-colors duration-200">
                           <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
+                          <circle cx="12" cy="10" r="2.5" />
                         </svg>
-                        <span className="truncate">{shortAddress(loc.address)}</span>
-                      </p>
+                        <span className="line-clamp-2 min-h-[32px]">{loc.address || "Chưa cập nhật địa chỉ"}</span>
+                      </div>
+
+                      {/* Phone */}
+                      <div className="flex items-center gap-2 text-slate-400 text-xs mb-3 group-hover:text-slate-600 transition-colors duration-200">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 flex-shrink-0 group-hover:text-blue-500 transition-colors duration-200">
+                          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                        </svg>
+                        <span>{loc.phone || "Chưa có số điện thoại"}</span>
+                      </div>
+
+                      {/* Rating */}
+                      <div className="flex items-center gap-2 text-xs mt-auto pt-2">
+                        <span className="text-yellow-500 flex items-center gap-1 group-hover:scale-110 transition-transform origin-left">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                          </svg>
+                          <span className="font-bold text-slate-700 group-hover:text-yellow-600 transition-colors">{ratingVal > 0 ? ratingVal.toFixed(1) : "0.0"}</span>
+                        </span>
+                        <span className="text-slate-400 group-hover:text-blue-300 transition-colors">•</span>
+                        <span className="text-slate-400 font-medium group-hover:text-blue-600 transition-colors">{reviewCount} lượt đánh giá</span>
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

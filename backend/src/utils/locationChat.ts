@@ -16,7 +16,7 @@ export const ensureLocationChatSchema = async (): Promise<void> => {
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `);
 
-    // Thêm cột customer_id nếu chưa tồn tại (để phân biệt phòng chat riêng tư của từng khách hàng với địa điểm)
+    // Thêm cột customer_id nếu chưa tồn tại
     try {
       const [columns]: any = await pool.query(`
         SHOW COLUMNS FROM location_chat_messages LIKE 'customer_id'
@@ -26,12 +26,10 @@ export const ensureLocationChatSchema = async (): Promise<void> => {
           ALTER TABLE location_chat_messages 
           ADD COLUMN customer_id INT NULL
         `);
-        // Điền dữ liệu cho các dòng cũ
         await pool.query(`
           UPDATE location_chat_messages 
           SET customer_id = sender_id
         `);
-        // Chuyển sang NOT NULL
         await pool.query(`
           ALTER TABLE location_chat_messages 
           MODIFY COLUMN customer_id INT NOT NULL
@@ -42,7 +40,7 @@ export const ensureLocationChatSchema = async (): Promise<void> => {
       console.error("⚠️ Lỗi khi nâng cấp cột customer_id:", colError);
     }
 
-    // Thêm cột image_data nếu chưa tồn tại (lưu dữ liệu ảnh base64 trực tiếp vào database)
+    // Thêm cột image_data nếu chưa tồn tại
     try {
       const [columns]: any = await pool.query(`
         SHOW COLUMNS FROM location_chat_messages LIKE 'image_data'
@@ -58,8 +56,42 @@ export const ensureLocationChatSchema = async (): Promise<void> => {
       console.error("⚠️ Lỗi khi nâng cấp cột image_data:", colError);
     }
 
+    // ✅ Thêm index composite (location_id, customer_id, message_id) để tăng tốc query afterId
+    try {
+      const [indexes]: any = await pool.query(`
+        SHOW INDEX FROM location_chat_messages WHERE Key_name = 'idx_loc_cust_msgid'
+      `);
+      if (indexes.length === 0) {
+        await pool.query(`
+          ALTER TABLE location_chat_messages
+          ADD INDEX idx_loc_cust_msgid (location_id, customer_id, message_id)
+        `);
+        console.log("✅ Đã thêm index idx_loc_cust_msgid vào bảng location_chat_messages!");
+      }
+    } catch (idxError) {
+      console.error("⚠️ Lỗi khi thêm index idx_loc_cust_msgid:", idxError);
+    }
+
+    // Thêm cột is_deleted_for_customer nếu chưa tồn tại
+    try {
+      const [columns]: any = await pool.query(`
+        SHOW COLUMNS FROM location_chat_messages LIKE 'is_deleted_for_customer'
+      `);
+      if (columns.length === 0) {
+        await pool.query(`
+          ALTER TABLE location_chat_messages 
+          ADD COLUMN is_deleted_for_customer BOOLEAN DEFAULT FALSE,
+          ADD COLUMN is_deleted_for_owner BOOLEAN DEFAULT FALSE
+        `);
+        console.log("✅ Đã bổ sung cột is_deleted_for_customer và is_deleted_for_owner vào bảng location_chat_messages!");
+      }
+    } catch (colError) {
+      console.error("⚠️ Lỗi khi nâng cấp cột soft delete:", colError);
+    }
+
     console.log("✅ Khởi tạo cấu trúc bảng location_chat_messages thành công!");
   } catch (error) {
     console.error("❌ Lỗi khi khởi tạo schema location_chat_messages:", error);
   }
 };
+

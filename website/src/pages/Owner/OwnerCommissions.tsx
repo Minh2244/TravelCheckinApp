@@ -102,42 +102,7 @@ const OwnerCommissions = () => {
     void loadAdminBank();
   }, [loadAdminBank]);
 
-  const columns: ColumnsType<CommissionRow> = useMemo(
-    () => [
-      {
-        title: "STT",
-        key: "stt",
-        width: 80,
-        align: "center" as const,
-        render: (_1: unknown, _2: CommissionRow, idx: number) => idx + 1,
-      },
-      { title: "Kỳ đối soát", dataIndex: "billing_period" },
-      {
-        title: "Số tiền hoa hồng",
-        dataIndex: "commission_amount",
-        render: (v: unknown) => formatMoney(Number(v || 0)),
-      },
-      {
-        title: "Trạng thái",
-        dataIndex: "status",
-        render: (s: string) => (
-          <Tag
-            color={
-              s === "paid" ? "green"
-              : s === "payment_submitted" ? "blue"
-              : s === "pending" ? "orange"
-              : "red"
-            }
-          >
-            {s === "payment_submitted" ? "Chờ admin duyệt" 
-             : s === "pending" ? "Chờ thanh toán" 
-             : statusToVi(s)}
-          </Tag>
-        ),
-      },
-    ],
-    [],
-  );
+
 
   // Only pending/overdue items need payment (NOT payment_submitted - those are waiting admin)
   const unpaidItems = useMemo(
@@ -154,7 +119,7 @@ const OwnerCommissions = () => {
       const totalAmount = submittedItems.reduce((sum, x) => sum + Number(x.commission_amount || 0), 0);
       result.push({
         ...submittedItems[0],
-        commission_id: -999, // Virtual ID for grouped row
+        commission_id: Number.MAX_SAFE_INTEGER, // Keep grouped item at the top
         billing_period: `Yêu cầu thanh toán gộp (${submittedItems.length} kỳ)`,
         commission_amount: totalAmount,
       });
@@ -162,9 +127,10 @@ const OwnerCommissions = () => {
       result.push(submittedItems[0]);
     }
 
+    // Sort other items from largest to smallest by date (newest first)
+    otherItems.sort((a, b) => b.commission_id - a.commission_id);
     result.push(...otherItems);
     
-    // Sort logic to keep consistent order: group submitted first or follow original date
     return result;
   }, [items]);
 
@@ -346,6 +312,43 @@ const OwnerCommissions = () => {
       return d.isValid() && d.year() === Number(exportYear);
     });
   }, [groupedItems, exportYear]);
+
+  const columns: ColumnsType<CommissionRow> = useMemo(
+    () => [
+      {
+        title: "STT",
+        key: "stt",
+        width: 80,
+        align: "center" as const,
+        render: (_1: unknown, _2: CommissionRow, idx: number) => displayedGroupedItems.length - idx,
+      },
+      { title: "Kỳ đối soát", dataIndex: "billing_period" },
+      {
+        title: "Số tiền hoa hồng",
+        dataIndex: "commission_amount",
+        render: (v: unknown) => formatMoney(Number(v || 0)),
+      },
+      {
+        title: "Trạng thái",
+        dataIndex: "status",
+        render: (s: string) => (
+          <Tag
+            color={
+              s === "paid" ? "green"
+              : s === "payment_submitted" ? "blue"
+              : s === "pending" ? "orange"
+              : "red"
+            }
+          >
+            {s === "payment_submitted" ? "Chờ admin duyệt" 
+             : s === "pending" ? "Chờ thanh toán" 
+             : statusToVi(s)}
+          </Tag>
+        ),
+      },
+    ],
+    [displayedGroupedItems.length],
+  );
 
   return (
     <MainLayout>

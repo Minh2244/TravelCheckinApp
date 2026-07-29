@@ -340,27 +340,28 @@ const Commissions = () => {
               Tất cả
             </Button>
             <div style={{ width: 1, height: 16, background: '#cbd5e1', margin: '0 8px' }} />
-            <DatePicker.RangePicker
-              value={
-                dateRange[0] && dateRange[1]
-                  ? [dayjs(dateRange[0]), dayjs(dateRange[1])]
-                  : null
-              }
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setDateRange([
-                    dates[0].format("YYYY-MM-DD"),
-                    dates[1].format("YYYY-MM-DD"),
-                  ]);
-                } else {
-                  setDateRange([undefined, undefined]);
-                }
-              }}
+            <DatePicker
+              value={dateRange[0] ? dayjs(dateRange[0]) : null}
+              onChange={(date) => setDateRange([date ? date.format("YYYY-MM-DD") : undefined, dateRange[1]])}
               disabledDate={disabledDate}
               format="DD/MM/YYYY"
-              placeholder={["Từ ngày", "Đến ngày"]}
+              placeholder="Từ ngày"
               bordered={false}
-              style={{ padding: '4px 0' }}
+              style={{ padding: '4px 0', width: 110 }}
+            />
+            <span style={{ color: '#cbd5e1', margin: '0 4px' }}>-</span>
+            <DatePicker
+              value={dateRange[1] ? dayjs(dateRange[1]) : null}
+              onChange={(date) => setDateRange([dateRange[0], date ? date.format("YYYY-MM-DD") : undefined])}
+              disabledDate={(current) => {
+                if (disabledDate(current)) return true;
+                if (dateRange[0] && current.isBefore(dayjs(dateRange[0]), 'day')) return true;
+                return false;
+              }}
+              format="DD/MM/YYYY"
+              placeholder="Đến ngày"
+              bordered={false}
+              style={{ padding: '4px 0', width: 110 }}
             />
           </Space>
 

@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getErrorMessage } from "../../lib/error";
 import { locationApi } from "../../services/location.api";
 import type { LocationItem } from "../../types/location";
+import {
+  calculateDistanceKm,
+  type Coordinates,
+} from "../../utils/location-distance";
 import { useLocationCacheStore } from "./store";
 
 type Category = "Tất cả" | "Ẩm thực" | "Lưu trú" | "Du lịch";
@@ -11,7 +15,7 @@ const foodTypes = new Set(["restaurant", "cafe"]);
 const stayTypes = new Set(["hotel", "resort"]);
 const exploreTypes = new Set(["tourist"]);
 
-export function useLocations() {
+export function useLocations(currentCoordinates: Coordinates | null = null) {
   const cacheItems = useLocationCacheStore((state) => state.items);
   const setCacheItems = useLocationCacheStore((state) => state.setItems);
   const isCacheFresh = useLocationCacheStore((state) => state.isFresh);
@@ -62,35 +66,52 @@ export function useLocations() {
     void runFetch();
   }, [cacheItems, isCacheFresh, runFetch]);
 
-  const locations = useMemo(() => {
+  const locations = useMemo<LocationItem[]>(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
 
-    return rawItems.filter((item) => {
-      const locationType = String(item.location_type || "").toLowerCase();
-      const matchesKeyword =
-        normalizedKeyword.length === 0 ||
-        item.location_name.toLowerCase().includes(normalizedKeyword) ||
-        item.address.toLowerCase().includes(normalizedKeyword);
+    return rawItems
+      .filter((item) => {
+        const locationType = String(item.location_type || "").toLowerCase();
+        const matchesKeyword =
+          normalizedKeyword.length === 0 ||
+          item.location_name.toLowerCase().includes(normalizedKeyword) ||
+          item.address.toLowerCase().includes(normalizedKeyword);
 
-      if (!matchesKeyword) {
-        return false;
-      }
+        if (!matchesKeyword) {
+          return false;
+        }
 
-      if (category === "Tất cả") {
-        return true;
-      }
+        if (category === "Tất cả") {
+          return true;
+        }
 
-      if (category === "Ẩm thực") {
-        return foodTypes.has(locationType);
-      }
+        if (category === "Ẩm thực") {
+          return foodTypes.has(locationType);
+        }
 
-      if (category === "Lưu trú") {
-        return stayTypes.has(locationType);
-      }
+        if (category === "Lưu trú") {
+          return stayTypes.has(locationType);
+        }
 
-      return exploreTypes.has(locationType);
-    });
-  }, [category, keyword, rawItems]);
+        return exploreTypes.has(locationType);
+      })
+      .map((item) => ({
+        ...item,
+        distance_km: currentCoordinates
+          ? calculateDistanceKm(
+              currentCoordinates,
+              item.latitude,
+              item.longitude,
+            )
+          : null,
+      }))
+      .sort((first, second) => {
+        if (first.distance_km === null && second.distance_km === null) return 0;
+        if (first.distance_km === null) return 1;
+        if (second.distance_km === null) return -1;
+        return first.distance_km - second.distance_km;
+      });
+  }, [category, currentCoordinates, keyword, rawItems]);
 
   return {
     locations,

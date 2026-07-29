@@ -54,7 +54,7 @@ const Login = () => {
       message.success(response.message);
       if (response.warning) message.warning(response.warning, 5);
 
-      navigate(response.data.redirectUrl, { replace: true });
+      window.location.href = response.data.redirectUrl;
     } catch (err: unknown) {
       const e = err as {
         response?: { data?: { message?: string } };
@@ -79,7 +79,7 @@ const Login = () => {
       return;
     }
 
-    const redirectUri = "http://localhost:5173/auth/google/callback";
+    const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || "http://localhost:5173/auth/google/callback";
     const scope = encodeURIComponent("openid email profile");
     const state = Math.random().toString(36).slice(2);
 
@@ -87,8 +87,9 @@ const Login = () => {
       `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${encodeURIComponent(clientId)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=token` +
+      `&response_type=code` +
       `&scope=${scope}` +
+      `&access_type=offline` +
       `&prompt=select_account` +
       `&state=${state}`;
 
@@ -125,13 +126,11 @@ const Login = () => {
 
       if (event.data?.type === "GOOGLE_AUTH_SUCCESS") {
         cleanUp();
-        const profile = event.data.profile;
+        const code = event.data.code;
 
-        console.log("✅ Received Google profile:", profile);
-
-        if (!profile.sub || !profile.email || !profile.name) {
-          console.error("❌ Profile thiếu dữ liệu:", profile);
-          message.error("Không nhận được đầy đủ thông tin từ Google");
+        if (!code) {
+          console.error("❌ Không nhận được code từ popup.");
+          message.error("Đăng nhập thất bại do không có authorization code");
           setGoogleLoading(false);
           return;
         }
@@ -139,15 +138,13 @@ const Login = () => {
         try {
           const loginData = {
             provider: "google" as const,
-            socialId: profile.sub,
-            email: profile.email,
-            fullName: profile.name,
-            avatarUrl: profile.picture || null,
+            code,
+            redirectUri,
           };
 
           console.log("📤 Sending to backend:", loginData);
 
-          const response = await authApi.socialLogin(loginData);
+          const response = await authApi.socialLogin(loginData as any);
 
           console.log("✅ Backend response:", response);
 
@@ -271,7 +268,7 @@ const Login = () => {
           message.success("Đăng nhập Facebook thành công! 🎉");
 
           setTimeout(() => {
-            navigate(response.data.redirectUrl, { replace: true });
+            window.location.href = response.data.redirectUrl;
           }, 500);
         } catch (err: unknown) {
           message.error(

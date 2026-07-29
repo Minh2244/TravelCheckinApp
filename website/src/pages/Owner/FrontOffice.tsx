@@ -64,6 +64,8 @@ const FrontOffice = () => {
       sessionStorage.removeItem("refreshToken");
       sessionStorage.removeItem("user");
       localStorage.removeItem(STORAGE_KEY);
+      // Xóa baseline để lần đăng nhập sau đặt mốc mới và ẩn lịch sử cũ.
+      import("../../utils/chatSession").then(({ clearOwnerChatBaselines }) => clearOwnerChatBaselines());
     } finally {
       navigate("/login", { replace: true });
     }
@@ -111,7 +113,7 @@ const FrontOffice = () => {
     const id = window.setInterval(() => {
       if (document.hidden) return;
       tick();
-    }, 5000);
+    }, 30000);
 
     const onVisibility = () => {
       if (!document.hidden) tick();

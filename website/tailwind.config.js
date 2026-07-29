@@ -4,8 +4,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['"Outfit"', '"Plus Jakarta Sans"', 'sans-serif'],
-        body: ['"Nunito Sans"', '"DM Sans"', 'sans-serif'],
+        sans: ['"Inter"', 'sans-serif'],
+        heading: ['"Inter"', 'sans-serif'],
+        body: ['"Inter"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       animation: {

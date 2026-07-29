@@ -133,7 +133,7 @@ export default function RemindersScreen() {
                         {r.location_name}
                       </Text>
                       <Text className="text-xs text-slate-400 mt-0.5" numberOfLines={1}>
-                        📍 {r.address}
+                        Địa chỉ: {r.address}
                       </Text>
                     </View>
                     <View className={`px-2 py-0.5 rounded border ${statusInfo.bg}`}>

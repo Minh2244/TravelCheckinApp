@@ -1,22 +1,33 @@
-import { useEffect, useState } from "react";
-import { useRouter } from "expo-router";
-import {
-  Pressable,
-  Text,
-  View,
-  ScrollView,
-  Image,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuthStore } from "../../../src/modules/auth/store";
-import { userApi } from "../../../src/services/user.api";
-import { resolveBackendUrl } from "../../../src/lib/url";
 import AvatarCropper from "../../../src/components/ui/AvatarCropper";
+import { resolveBackendUrl } from "../../../src/lib/url";
+import { useAuthStore } from "../../../src/modules/auth/store";
+import { AppAlert as Alert } from "../../../src/modules/ui/app-alert";
+import { userApi } from "../../../src/services/user.api";
+import { travelColors, travelShadow } from "../../../src/theme/travel";
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -27,21 +38,62 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  // Avatar states
   const [cropperVisible, setCropperVisible] = useState(false);
+  const [avatarPreviewVisible, setAvatarPreviewVisible] = useState(false);
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
+  const [avatarVersion, setAvatarVersion] = useState(Date.now());
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
 
   const fetchProfile = async () => {
     try {
       const resp = await userApi.getProfile();
       if (resp?.success) {
         setProfile(resp.data);
+        setFullName(resp.data?.full_name || user?.full_name || "");
+        setPhone(resp.data?.phone || "");
+        setAddress(resp.data?.address || "");
       }
-    } catch (e) {
-      console.error("Lỗi lấy thông tin cá nhân:", e);
+    } catch (error) {
+      console.error("Lỗi lấy thông tin cá nhân:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.user_id) {
+      void fetchProfile();
+    }
+  }, [user?.user_id]);
+
+  const handleSaveProfile = async () => {
+    const normalizedName = fullName.trim();
+    if (!normalizedName) {
+      Alert.alert("Thiếu thông tin", "Vui lòng nhập họ và tên.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const resp = await userApi.updateProfile({
+        full_name: normalizedName,
+        phone: phone.trim() || null,
+        address: address.trim() || null,
+        skip_avatar: true,
+      });
+      if (!resp?.success) {
+        Alert.alert("Lỗi", resp?.message || "Không thể lưu thông tin cá nhân.");
+        return;
+      }
+      await fetchProfile();
+      Alert.alert("Thành công", "Đã cập nhật thông tin cá nhân.");
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Lỗi", "Không thể lưu thông tin cá nhân.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -52,12 +104,15 @@ export default function ProfileScreen() {
   const handlePickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Quyền truy cập", "Bạn cần cấp quyền truy cập thư viện để đổi ảnh đại diện.");
+      Alert.alert(
+        "Quyền truy cập",
+        "Bạn cần cấp quyền truy cập thư viện để đổi ảnh đại diện.",
+      );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: false,
       quality: 1,
     });
@@ -71,283 +126,342 @@ export default function ProfileScreen() {
   const handleCropConfirm = async (croppedUri: string) => {
     setCropperVisible(false);
     setSaving(true);
+
     try {
       const uploadResp = await userApi.uploadAvatar(croppedUri);
-      if (uploadResp?.success) {
-        const newAvatarUrl = uploadResp.data.avatar_url;
-        // Cập nhật thông tin profile trong state và authStore
-        await userApi.updateProfile({
-          full_name: profile?.full_name || user?.full_name || "Lữ khách",
-          avatar_url: newAvatarUrl,
-        });
-        await fetchProfile();
-        Alert.alert("Thành công", "Đã cập nhật ảnh đại diện mới.");
-      } else {
+      if (!uploadResp?.success) {
         Alert.alert("Lỗi", uploadResp?.message || "Tải ảnh đại diện thất bại.");
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
+      await userApi.updateProfile({
+        full_name: fullName.trim() || profile?.full_name || user?.full_name || "Lữ khách",
+        phone: phone.trim() || null,
+        address: address.trim() || null,
+        skip_avatar: true,
+      });
+      setSelectedImageUri(null);
+      setAvatarVersion(Date.now());
+      await fetchProfile();
+      Alert.alert("Thành công", "Đã cập nhật ảnh đại diện mới.");
+    } catch (error) {
+      console.error(error);
       Alert.alert("Lỗi", "Không thể cập nhật ảnh đại diện.");
     } finally {
       setSaving(false);
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
-    }).format(amount);
-  };
+  const stats = profile?.stats;
+  const rawAvatarUrl = resolveBackendUrl(profile?.avatar_url) || null;
+  const avatarUrl = rawAvatarUrl
+    ? `${rawAvatarUrl}${rawAvatarUrl.includes("?") ? "&" : "?"}v=${avatarVersion}`
+    : null;
+  const favoriteLocation = stats?.favorite_location;
+  const initials = (fullName || profile?.full_name || user?.full_name || "U").trim().charAt(0).toUpperCase();
+  const checkins = Number(stats?.checkin_count || 0);
+  const progress = Math.min(100, (checkins / 50) * 100);
+
+  const metrics = useMemo(
+    () => [
+      {
+        label: "Đơn đặt",
+        value: String(stats?.total_orders || 0),
+        icon: "bag-check-outline" as const,
+        tint: travelColors.ink,
+      },
+      {
+        label: "Check-in",
+        value: String(checkins),
+        icon: "location-outline" as const,
+        tint: travelColors.teal,
+      },
+      {
+        label: "Chi tiêu",
+        value: formatCurrency(Number(stats?.total_spending || 0)),
+        icon: "wallet-outline" as const,
+        tint: travelColors.teal,
+      },
+    ],
+    [checkins, stats?.total_orders, stats?.total_spending],
+  );
 
   if (loading) {
     return (
-      <View className="flex-1 bg-surface justify-center items-center">
-        <ActivityIndicator size="large" color="#a855f7" />
+      <View className="flex-1 items-center justify-center bg-surface">
+        <ActivityIndicator size="large" color={travelColors.purple} />
       </View>
     );
   }
-
-  const stats = profile?.stats;
-  const avatarUrl = resolveBackendUrl(profile?.avatar_url) || null;
-  const favoriteLocation = stats?.favorite_location;
-  const initials = (profile?.full_name || user?.full_name || "U")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
 
   return (
     <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right"]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingBottom: Math.max(insets.bottom, 16) + 70,
+          paddingHorizontal: 16,
+          paddingTop: 10,
+          paddingBottom: Math.max(insets.bottom, 16) + 78,
+          gap: 14,
         }}
       >
-        {/* Banner Gradient Card */}
-        <View className="m-4 rounded-3xl border border-line bg-white overflow-hidden shadow-sm">
-          {/* Cover Art */}
-          <View className="h-32 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 relative">
-            <View className="absolute -top-10 -left-10 w-28 h-28 rounded-full bg-white/10 blur-2xl opacity-70" />
-            <View className="absolute -bottom-16 -right-16 w-36 h-36 rounded-full bg-pink-400/20 blur-2xl opacity-70" />
-          </View>
-
-          {/* Avatar Container */}
-          <View className="items-center -mt-14 pb-5 px-5">
-            <View className="relative inline-block">
-              {saving ? (
-                <View className="h-24 w-24 rounded-full bg-slate-100 items-center justify-center border-4 border-white shadow">
-                  <ActivityIndicator size="small" color="#a855f7" />
-                </View>
-              ) : avatarUrl ? (
-                <Image
-                  source={{ uri: avatarUrl }}
-                  className="h-24 w-24 rounded-full border-4 border-white bg-slate-100 shadow"
-                  resizeMode="cover"
-                />
-              ) : (
-                <View className="h-24 w-24 rounded-full bg-indigo-50 items-center justify-center border-4 border-white shadow">
-                  <Text className="text-3xl font-black text-indigo-600">{initials}</Text>
-                </View>
-              )}
-              <Pressable
-                onPress={handlePickAvatar}
-                className="absolute bottom-0 right-0 p-1.5 bg-indigo-600 rounded-full shadow border-2 border-white"
-              >
-                <Ionicons name="camera" size={14} color="white" />
-              </Pressable>
+        <View className="overflow-hidden rounded-2xl border border-line bg-white" style={travelShadow}>
+          <View className="relative overflow-hidden bg-brand-600 px-4 pb-12 pt-4">
+            <View className="absolute inset-0 bg-black/25" />
+            <View className="flex-row items-center justify-between">
+              <Text className="text-[18px] font-extrabold text-white">Hồ sơ du lịch</Text>
             </View>
-
-            <Text className="text-xl font-extrabold text-slate-800 mt-3">
-              {profile?.full_name || user?.full_name || "Lữ khách"}
-            </Text>
-            <Text className="text-xs text-slate-400 font-medium">
-              {profile?.email || user?.email}
-            </Text>
-
-            {/* Badges */}
-            <View className="flex-row gap-2 mt-4 flex-wrap justify-center">
-              <View className="bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100/50">
-                <Text className="text-[11px] font-semibold text-indigo-600">
-                  Huy hiệu: {stats?.member_tier || "Newbie 🌟"}
-                </Text>
-              </View>
-              <View className="bg-slate-100/70 px-3 py-1 rounded-full border border-slate-200/50">
-                <Text className="text-[11px] font-semibold text-slate-600">
-                  {stats?.checkin_count || 0} Dấu chân check-in
-                </Text>
-              </View>
-            </View>
-
-            {/* Rank progress */}
-            <View className="w-full bg-slate-50 border border-slate-200/50 rounded-2xl p-3.5 mt-5">
-              <View className="flex-row justify-between items-center mb-1.5">
-                <Text className="text-[11px] font-bold text-indigo-900">Tiến trình thăng hạng</Text>
-                <Text className="text-[11px] font-bold text-indigo-900">{stats?.checkin_count || 0}/50 check-ins</Text>
-              </View>
-              <View className="w-full bg-slate-200/60 h-2 rounded-full overflow-hidden mb-1">
-                <View
-                  style={{ width: `${Math.min(100, ((stats?.checkin_count || 0) / 50) * 100)}%` }}
-                  className="bg-indigo-500 h-full rounded-full"
-                />
-              </View>
-              <Text className="text-[9px] text-slate-400 font-medium">
-                Tích lũy thêm check-in để nâng cấp huy hiệu cao hơn nhé!
+            <View className="mt-3 self-start rounded-full bg-white/20 px-3 py-1">
+              <Text className="text-[12px] font-extrabold text-white">
+                {stats?.member_tier || "Traveler"}
               </Text>
             </View>
           </View>
+
+          <View className="-mt-9 px-4 pb-4">
+            <View className="flex-row items-end gap-3">
+              <View className="relative">
+                <Pressable
+                  disabled={!avatarUrl || saving}
+                  onPress={() => setAvatarPreviewVisible(true)}
+                >
+                  {saving ? (
+                    <View className="h-[78px] w-[78px] items-center justify-center rounded-full border-4 border-white bg-slate-100">
+                      <ActivityIndicator size="small" color={travelColors.purple} />
+                    </View>
+                  ) : avatarUrl ? (
+                    <Image
+                      source={{ uri: avatarUrl }}
+                      className="h-[78px] w-[78px] rounded-full border-4 border-white bg-slate-100"
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View className="h-[78px] w-[78px] items-center justify-center rounded-full border-4 border-white bg-ai-50">
+                      <Text className="text-2xl font-black text-ai-600">{initials}</Text>
+                    </View>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={handlePickAvatar}
+                  className="absolute bottom-0 right-0 h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-ai-500"
+                >
+                  <Ionicons name="camera" size={14} color="#ffffff" />
+                </Pressable>
+              </View>
+
+              <View className="flex-1 pb-1">
+                <Text className="text-[22px] font-extrabold leading-7 text-ink" numberOfLines={1}>
+                  {fullName || profile?.full_name || user?.full_name || "Lữ khách"}
+                </Text>
+                <Text className="mt-0.5 text-[13px] font-semibold text-muted" numberOfLines={1}>
+                  {profile?.email || user?.email}
+                </Text>
+              </View>
+            </View>
+
+            <View className="mt-4 rounded-xl border border-line bg-surfaceSoft p-3">
+              <View className="mb-2 flex-row items-center justify-between">
+                <Text className="text-[12px] font-extrabold uppercase text-ink">
+                  Tiến trình hạng
+                </Text>
+                <Text className="text-[12px] font-extrabold text-ai-600">
+                  {checkins}/50 check-ins
+                </Text>
+              </View>
+              <View className="h-2 overflow-hidden rounded-full bg-slate-200">
+                <View
+                  className="h-full rounded-full bg-ai-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </View>
+            </View>
+          </View>
         </View>
 
-        {/* Dashboard Stats */}
-        <View className="px-4 flex-row gap-3">
-          <View className="flex-1 bg-white rounded-2xl border border-line p-4 shadow-sm">
-            <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng Đơn Đặt</Text>
-            <Text className="text-2xl font-extrabold text-slate-800 mt-1">{stats?.total_orders || 0}</Text>
+        <View className="flex-row gap-2">
+          {metrics.map((item) => (
+            <View
+              key={item.label}
+              className="flex-1 rounded-xl border border-line bg-white px-2.5 py-2.5"
+              style={travelShadow}
+            >
+              <View className="mb-1.5 h-7 w-7 items-center justify-center rounded-full bg-brand-50">
+                <Ionicons name={item.icon} size={14} color={item.tint} />
+              </View>
+              <Text className="text-[10px] font-extrabold uppercase text-muted" numberOfLines={1}>
+                {item.label}
+              </Text>
+              <Text className="mt-0.5 text-[14px] font-black text-ink" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                {item.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View className="rounded-2xl border border-line bg-white p-4" style={travelShadow}>
+          <View className="mb-3 flex-row items-center justify-between">
+            <Text className="text-[17px] font-extrabold text-ink">Thông tin liên hệ</Text>
+            <Ionicons name="create-outline" size={19} color={travelColors.teal} />
           </View>
-          <View className="flex-1 bg-white rounded-2xl border border-line p-4 shadow-sm">
-            <Text className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tổng Chi Tiêu</Text>
-            <Text className="text-base font-extrabold text-teal-600 mt-1" numberOfLines={1}>
-              {formatCurrency(stats?.total_spending || 0)}
-            </Text>
+
+          <View className="gap-3">
+            <View className="gap-1.5">
+              <Text className="text-[12px] font-extrabold uppercase text-muted">Họ và tên</Text>
+              <TextInput
+                value={fullName}
+                onChangeText={setFullName}
+                maxLength={100}
+                placeholder="Nhập họ và tên"
+                placeholderTextColor="#98a2b3"
+                className="min-h-[46px] rounded-xl border border-line bg-surfaceSoft px-3 text-[14px] font-semibold text-ink"
+              />
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] font-extrabold uppercase text-muted">Email</Text>
+              <View className="min-h-[46px] flex-row items-center rounded-xl border border-line bg-surfaceSoft px-3">
+                <Text className="flex-1 text-[14px] font-semibold text-muted" numberOfLines={1}>
+                  {profile?.email || user?.email || "Chưa cập nhật"}
+                </Text>
+                <Ionicons name="lock-closed-outline" size={15} color="#98a2b3" />
+              </View>
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] font-extrabold uppercase text-muted">Số điện thoại</Text>
+              <TextInput
+                value={phone}
+                onChangeText={(value) => setPhone(value.replace(/[^0-9]/g, "").slice(0, 10))}
+                keyboardType="phone-pad"
+                maxLength={10}
+                placeholder="Nhập số điện thoại"
+                placeholderTextColor="#98a2b3"
+                className="min-h-[46px] rounded-xl border border-line bg-surfaceSoft px-3 text-[14px] font-semibold text-ink"
+              />
+            </View>
+
+            <View className="gap-1.5">
+              <Text className="text-[12px] font-extrabold uppercase text-muted">Địa chỉ thường trú</Text>
+              <TextInput
+                value={address}
+                onChangeText={setAddress}
+                maxLength={255}
+                placeholder="Nhập địa chỉ của bạn"
+                placeholderTextColor="#98a2b3"
+                className="min-h-[46px] rounded-xl border border-line bg-surfaceSoft px-3 text-[14px] font-semibold text-ink"
+              />
+            </View>
+          </View>
+
+          <View className="mt-4 flex-row items-center justify-between gap-3 border-t border-line pt-3">
+            <View className="flex-1 flex-row gap-4">
+              <View className="flex-1">
+                <Text className="text-[11px] font-bold text-muted">Đồng hành từ</Text>
+                <Text className="mt-0.5 text-[12px] font-extrabold text-ink">
+                  {profile?.created_at ? new Date(profile.created_at).toLocaleDateString("vi-VN") : "Chưa có"}
+                </Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-[11px] font-bold text-muted">Cập nhật</Text>
+                <Text className="mt-0.5 text-[12px] font-extrabold text-ink">
+                  {profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString("vi-VN") : "Chưa có"}
+                </Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={handleSaveProfile}
+              disabled={saving}
+              className="min-h-[42px] min-w-[116px] flex-row items-center justify-center gap-2 rounded-full bg-brand-600 px-4"
+            >
+              {saving ? <ActivityIndicator size="small" color="#ffffff" /> : null}
+              <Text className="text-[13px] font-extrabold text-white">
+                {saving ? "Đang lưu" : "Lưu thay đổi"}
+              </Text>
+            </Pressable>
           </View>
         </View>
 
-        {/* Favorite Location Card */}
         {favoriteLocation ? (
-          <View className="m-4 bg-white rounded-2xl border border-line p-4 shadow-sm">
-            <Text className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2.5">
+          <View className="rounded-2xl border border-line bg-white p-3.5" style={travelShadow}>
+            <Text className="mb-3 text-[12px] font-extrabold uppercase text-muted">
               Địa điểm yêu thích nhất
             </Text>
             <View className="flex-row items-center gap-3">
               {favoriteLocation.first_image ? (
                 <Image
                   source={{ uri: resolveBackendUrl(favoriteLocation.first_image) || "" }}
-                  className="h-14 w-14 rounded-xl"
+                  className="h-14 w-14 rounded-xl bg-slate-100"
                   resizeMode="cover"
                 />
               ) : (
-                <View className="h-14 w-14 rounded-xl bg-teal-50 justify-center items-center border border-teal-100">
-                  <Ionicons name="trophy" size={24} color="#0f766e" />
+                <View className="h-14 w-14 items-center justify-center rounded-xl bg-brand-50">
+                  <Ionicons name="trophy-outline" size={24} color={travelColors.teal} />
                 </View>
               )}
-              <View className="flex-1 justify-center">
-                <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
+              <View className="flex-1">
+                <Text className="text-[15px] font-extrabold text-ink" numberOfLines={1}>
                   {favoriteLocation.location_name}
                 </Text>
-                <Text className="text-xs text-slate-500 mt-0.5">
-                  Đã ghé thăm: {favoriteLocation.visit_count || 0} lần • Chi tiêu: {formatCurrency(favoriteLocation.total_amount || 0)}
+                <Text className="mt-1 text-[12px] font-semibold text-muted" numberOfLines={1}>
+                  Đã ghé: {favoriteLocation.visit_count || 0} lần · Chi tiêu:{" "}
+                  {formatCurrency(Number(favoriteLocation.total_spent || 0))}
                 </Text>
               </View>
             </View>
           </View>
         ) : null}
 
-        {/* Submenu List */}
-        <View className="mx-4 bg-white rounded-2xl border border-line overflow-hidden shadow-sm">
-          {/* Saved locations */}
-          <Pressable
-            onPress={() => router.push("/saved")}
-            className="flex-row items-center justify-between p-4 border-b border-line active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-amber-50 justify-center items-center">
-                <Ionicons name="bookmark" size={16} color="#d97706" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Địa điểm đã lưu</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-
-          {/* Diaries */}
-          <Pressable
-            onPress={() => router.push("/profile/diary")}
-            className="flex-row items-center justify-between p-4 border-b border-line active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-purple-50 justify-center items-center">
-                <Ionicons name="journal" size={16} color="#7c3aed" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Nhật ký hành trình</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-
-          {/* Vouchers */}
-          <Pressable
-            onPress={() => router.push("/profile/vouchers")}
-            className="flex-row items-center justify-between p-4 border-b border-line active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-rose-50 justify-center items-center">
-                <Ionicons name="ticket" size={16} color="#e11d48" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Ví Voucher của tôi</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-
-          {/* Reminders */}
-          <Pressable
-            onPress={() => router.push("/profile/reminders")}
-            className="flex-row items-center justify-between p-4 border-b border-line active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-sky-50 justify-center items-center">
-                <Ionicons name="alarm" size={16} color="#0284c7" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Nhắc lịch booking</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-
-          {/* History */}
-          <Pressable
-            onPress={() => router.push("/profile/history")}
-            className="flex-row items-center justify-between p-4 border-b border-line active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-emerald-50 justify-center items-center">
-                <Ionicons name="time" size={16} color="#059669" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Lịch sử giao dịch</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-
-          {/* SOS emergency */}
-          <Pressable
-            onPress={() => router.push("/profile/sos")}
-            className="flex-row items-center justify-between p-4 active:bg-slate-50"
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded-full bg-red-50 justify-center items-center">
-                <Ionicons name="alert-circle" size={16} color="#dc2626" />
-              </View>
-              <Text className="text-[15px] font-bold text-slate-800">Cứu hộ SOS khẩn cấp</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
-          </Pressable>
-        </View>
-
-        {/* Log out Button */}
         <Pressable
-          className="mx-4 mt-6 min-h-[50px] items-center justify-center rounded-2xl bg-red-600 shadow-sm active:bg-red-700"
+          onPress={() => router.push("/support")}
+          className="flex-row items-center gap-3 rounded-2xl border border-line bg-white p-4 active:bg-slate-50"
+          style={travelShadow}
+        >
+          <View className="h-12 w-12 items-center justify-center rounded-2xl bg-brand-50">
+            <Ionicons name="headset-outline" size={25} color={travelColors.teal} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-[15px] font-extrabold text-ink">Trung tâm hỗ trợ</Text>
+            <Text className="mt-1 text-[12px] font-semibold text-muted">
+              Câu hỏi thường gặp, hotline và email
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+        </Pressable>
+
+        <Pressable
+          className="min-h-[48px] items-center justify-center rounded-xl bg-red-600 mb-10"
           onPress={async () => {
             await signOut();
             router.replace("/sign-in");
           }}
         >
-          <Text className="text-base font-extrabold text-white">Đăng xuất</Text>
+          <Text className="text-[15px] font-extrabold text-white">Đăng xuất</Text>
         </Pressable>
+
+
       </ScrollView>
 
-      {/* Avatar Cropper Modal */}
       <AvatarCropper
         visible={cropperVisible}
         imageUri={selectedImageUri}
         onConfirm={handleCropConfirm}
         onCancel={() => setCropperVisible(false)}
       />
+      <Modal visible={avatarPreviewVisible} transparent animationType="fade">
+        <Pressable
+          className="flex-1 items-center justify-center bg-black/90 px-6"
+          onPress={() => setAvatarPreviewVisible(false)}
+        >
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              className="h-[320px] w-[320px] rounded-3xl bg-black"
+              resizeMode="contain"
+            />
+          ) : null}
+          <Text className="mt-5 text-[13px] font-bold text-white/70">Chạm để đóng</Text>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

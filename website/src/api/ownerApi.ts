@@ -53,6 +53,14 @@ const ownerApi = {
     return res.data;
   },
 
+  changePassword: async (payload: {
+    old_password: string;
+    new_password: string;
+  }) => {
+    const res = await axiosClient.put("/owner/profile/password", payload);
+    return res.data;
+  },
+
   uploadAvatar: async (file: File) => {
     const fd = new FormData();
     fd.append("avatar", file);
@@ -81,10 +89,13 @@ const ownerApi = {
     return res.data;
   },
 
-  getAuditLogs: async (limit = 100) => {
-    const res = await axiosClient.get("/owner/profile/audit-logs", {
-      params: { limit },
-    });
+  getAuditLogs: async (page = 1, limit = 100, action?: string, startDate?: string, endDate?: string, actorId?: string) => {
+    const params: any = { page, limit };
+    if (action) params.action = action;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (actorId) params.actorId = actorId;
+    const res = await axiosClient.get("/owner/profile/audit-logs", { params });
     return res.data;
   },
 
@@ -241,7 +252,7 @@ const ownerApi = {
   },
 
   getPayments: async (params?: { status?: string; limit?: number | "all" }) => {
-    const res = await axiosClient.get("/owner/payments", { params });
+    const res = await axiosClient.get("/owner/payments", { params: { ...params, _t: Date.now() } });
     return res.data;
   },
 
@@ -581,10 +592,11 @@ const ownerApi = {
     date?: string;
     from?: string;
     to?: string;
+    limit?: number | "all";
   }) => {
     const res = await axiosClient.get(
       "/owner/front-office/pos/payments-history",
-      { params },
+      { params: { ...params, _t: Date.now() } },
     );
     return res.data;
   },

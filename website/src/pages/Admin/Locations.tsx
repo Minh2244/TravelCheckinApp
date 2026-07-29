@@ -30,6 +30,7 @@ import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
+import { useSocket } from "../../contexts/SocketContext";
 import { getPinIconByKind } from "../../utils/leafletPinIcons";
 import { isLatLngValid, parseLatLngMaybeSwap } from "../../utils/latLng";
 
@@ -211,6 +212,21 @@ const Locations = () => {
     void fetchLocations();
   }, [fetchLocations]);
 
+  const socket = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+    const handleEvent = (event: any) => {
+      const type = String(event.type || "");
+      if (type.startsWith("location_")) {
+        void fetchLocations();
+      }
+    };
+    socket.on("realtime_event", handleEvent);
+    return () => {
+      socket.off("realtime_event", handleEvent);
+    };
+  }, [socket, fetchLocations]);
+
   const onApprove = async (locationId: number) => {
     try {
       const resp = await adminApi.approveLocation(locationId);
@@ -229,13 +245,13 @@ const Locations = () => {
     try {
       const resp = await adminApi.hideLocation(locationId);
       if (resp?.success) {
-        message.success("Đã tạm ẩn địa điểm");
+        message.success("Đã ẩn địa điểm khỏi hệ thống");
         await fetchLocations();
       } else {
-        message.error(resp?.message || "Tạm ẩn thất bại");
+        message.error(resp?.message || "Ẩn thất bại");
       }
     } catch (err: unknown) {
-      message.error(getApiErrorMessage(err, "Lỗi tạm ẩn địa điểm"));
+      message.error(getApiErrorMessage(err, "Lỗi ẩn địa điểm"));
     }
   };
 
@@ -520,14 +536,15 @@ const Locations = () => {
 
           {r.status === "active" ? (
             <Popconfirm
-              title="Tạm ẩn địa điểm"
-              description="Địa điểm sẽ bị tạm ẩn khỏi hệ thống cho đến khi bạn mở lại."
-              okText="Tạm ẩn"
+              placement="topRight"
+              title="Ẩn khỏi hệ thống"
+              description="Địa điểm sẽ bị ẩn khỏi hệ thống cho đến khi bạn mở lại."
+              okText="Ẩn"
               cancelText="Hủy"
               onConfirm={() => onHide(r.location_id)}
             >
               <Button size="small" icon={<EyeInvisibleOutlined />}>
-                Tạm ẩn
+                Ẩn khỏi hệ thống
               </Button>
             </Popconfirm>
           ) : null}

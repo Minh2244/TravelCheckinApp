@@ -503,12 +503,27 @@ const SystemVouchers = () => {
       >
         <Form form={form} layout="vertical">
           {!editing && (
-            <Form.Item
-              label="Mã Code"
-              name="code"
-              rules={[{ required: true, message: "Vui lòng nhập code" }]}
-            >
-              <Input placeholder="VD: TET2026" />
+            <Form.Item label="Mã Code" required>
+              <Space.Compact style={{ width: '100%' }}>
+                <Form.Item
+                  name="code"
+                  noStyle
+                  rules={[{ required: true, message: "Vui lòng nhập code" }]}
+                >
+                  <Input placeholder="VD: TET2026" />
+                </Form.Item>
+                <Button
+                  type="default"
+                  onClick={() => {
+                    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                    let randomCode = "VC-";
+                    for (let i = 0; i < 6; i++) randomCode += chars.charAt(Math.floor(Math.random() * chars.length));
+                    form.setFieldsValue({ code: randomCode });
+                  }}
+                >
+                  Ngẫu nhiên
+                </Button>
+              </Space.Compact>
             </Form.Item>
           )}
 
@@ -540,9 +555,12 @@ const SystemVouchers = () => {
             <Form.Item
               label="Giá trị giảm"
               name="discount_value"
-              rules={[{ required: true, message: "Nhập giá trị giảm" }]}
+              rules={[
+                { required: true, message: "Nhập giá trị giảm" },
+                { transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Giá trị phải >= 0' }
+              ]}
             >
-              <InputNumber className="w-full" min={0} />
+              <InputNumber className="w-full" />
             </Form.Item>
             <Form.Item label="Phạm vi áp dụng" name="apply_to_service_type">
               <Select>
@@ -577,11 +595,19 @@ const SystemVouchers = () => {
                 <Select.Option value="expired">Hết hạn</Select.Option>
               </Select>
             </Form.Item>
-            <Form.Item label="Giá trị đơn tối thiểu" name="min_order_value">
-              <InputNumber className="w-full" min={0} />
+            <Form.Item 
+              label="Giá trị đơn tối thiểu" 
+              name="min_order_value"
+              rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
+            >
+              <InputNumber className="w-full" />
             </Form.Item>
-            <Form.Item label="Giảm tối đa (nếu %) " name="max_discount_amount">
-              <InputNumber className="w-full" min={0} />
+            <Form.Item 
+              label="Giảm tối đa (nếu %) " 
+              name="max_discount_amount"
+              rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
+            >
+              <InputNumber className="w-full" />
             </Form.Item>
             <Form.Item
               label="Ngày bắt đầu (DD/MM/YYYY)"
@@ -597,12 +623,20 @@ const SystemVouchers = () => {
             >
               <Input placeholder="05/02/2026" />
             </Form.Item>
-            <Form.Item label="Giới hạn lượt dùng" name="usage_limit">
-              <InputNumber className="w-full" min={1} />
+            <Form.Item 
+              label="Giới hạn lượt dùng" 
+              name="usage_limit"
+              rules={[{ type: 'number', min: 1, message: 'Phải >= 1' }]}
+            >
+              <InputNumber className="w-full" />
             </Form.Item>
 
-            <Form.Item label="Tối đa mỗi user" name="max_uses_per_user">
-              <InputNumber className="w-full" min={1} />
+            <Form.Item 
+              label="Tối đa mỗi user" 
+              name="max_uses_per_user"
+              rules={[{ type: 'number', min: 1, message: 'Phải >= 1' }]}
+            >
+              <InputNumber className="w-full" />
             </Form.Item>
           </div>
         </Form>

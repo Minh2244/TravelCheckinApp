@@ -13,7 +13,8 @@ import {
   Typography,
   Radio,
   DatePicker,
-  Space
+  Space,
+  message
 } from "antd";
 import {
   FileExcelOutlined,
@@ -28,13 +29,18 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
 import dayjs from "dayjs";
 import MainLayout from "../../layouts/MainLayout";
 import ManagerAiBubble from "../../components/ManagerAiBubble";
 import adminApi from "../../api/adminApi";
 import { formatMoney } from "../../utils/formatMoney";
+import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import InvoiceExportModal from "../../components/InvoiceExportModal";
+import { handleExportBatchExcel } from "../../utils/exportExcel";
 import type { InvoiceData } from "../../utils/exportExcel";
 
 const { Title, Text } = Typography;
@@ -137,6 +143,75 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (user) fetchInvoiceData();
   }, [user, fetchInvoiceData]);
+
+  useEffect(() => {
+    const handleOpenModal = () => setIsInvoiceModalOpen(true);
+    const handleTriggerExport = async (e: any) => {
+      try {
+        let targetPayments = [...invoices];
+        let excelStart = dayjs("2000-01-01");
+        let excelEnd = dayjs();
+
+        if (e && e.detail) {
+          if (e.detail.start_date || e.detail.end_date) {
+            excelStart = e.detail.start_date ? dayjs(e.detail.start_date).startOf('day') : dayjs("2000-01-01");
+            excelEnd = e.detail.end_date ? dayjs(e.detail.end_date).endOf('day') : dayjs().endOf('day');
+            targetPayments = targetPayments.filter(inv => {
+               const p = dayjs(inv.payment_time);
+               return (p.isAfter(excelStart) || p.isSame(excelStart)) && (p.isBefore(excelEnd) || p.isSame(excelEnd));
+            });
+          } else {
+            const targetMonths: number[] = [];
+            if (e.detail.compare_months && Array.isArray(e.detail.compare_months)) {
+              targetMonths.push(...e.detail.compare_months.map(Number));
+            } else if (e.detail.target_month) {
+              targetMonths.push(Number(e.detail.target_month));
+            }
+
+            if (targetMonths.length > 0) {
+              targetPayments = targetPayments.filter(inv => {
+                const m = dayjs(inv.payment_time).month() + 1;
+                return targetMonths.includes(m);
+              });
+            } else if (e.detail.time_range) {
+              const tr = e.detail.time_range;
+              excelEnd = dayjs().endOf('day');
+              if (tr === "today") {
+                 excelStart = dayjs().startOf('day');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'day'));
+              } else if (tr === "this_week") {
+                 excelStart = dayjs().subtract(7, 'day').startOf('day');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isAfter(excelStart));
+              } else if (tr === "this_month") {
+                 excelStart = dayjs().startOf('month');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+              } else if (tr === "last_month") {
+                 excelStart = dayjs().subtract(1, 'month').startOf('month');
+                 excelEnd = dayjs().subtract(1, 'month').endOf('month');
+                 targetPayments = targetPayments.filter(inv => dayjs(inv.payment_time).isSame(excelStart, 'month'));
+              }
+            }
+          }
+        }
+
+        await handleExportBatchExcel(
+          targetPayments as any,
+          ["restaurant", "hotel", "tourist"],
+          [excelStart, excelEnd],
+          "Hệ thống"
+        );
+        message.success({ content: "Tải báo cáo thành công!", key: "exporting" });
+      } catch (err: any) {
+        message.error({ content: "Lỗi tải báo cáo: " + err.message, key: "exporting" });
+      }
+    };
+    window.addEventListener("open_export_modal", handleOpenModal);
+    window.addEventListener("trigger_export_report", handleTriggerExport as any);
+    return () => {
+      window.removeEventListener("open_export_modal", handleOpenModal);
+      window.removeEventListener("trigger_export_report", handleTriggerExport as any);
+    };
+  }, [invoices]);
 
   const fetchDashboardStats = async () => {
     try {
@@ -398,7 +473,7 @@ class DashboardErrorBoundary extends React.Component<{children: React.ReactNode}
                         return (
                           <div className="flex items-center gap-3">
                             <div className="text-2xl drop-shadow-sm w-8 text-center">{medals[index] || ''}</div>
-                            <Avatar size="large" src={record.avatar_url || undefined} icon={<UserOutlined />} className="border-2 border-indigo-100" />
+                            <Avatar size="large" src={record.avatar_url ? resolveBackendUrl(record.avatar_url) : undefined} icon={<UserOutlined />} className="border-2 border-indigo-100" />
                             <div>
                               <div className="font-bold text-slate-700">{record.full_name}</div>
                               <div className="text-xs text-slate-400">{record.email}</div>
@@ -441,7 +516,7 @@ class DashboardErrorBoundary extends React.Component<{children: React.ReactNode}
                         return (
                           <div className="flex items-center gap-3">
                             <div className="text-2xl drop-shadow-sm w-8 text-center">{medals[index] || ''}</div>
-                            <Avatar size="large" src={record.avatar_url || undefined} icon={<ShopOutlined />} className="border-2 border-blue-100" />
+                            <Avatar size="large" src={record.avatar_url ? resolveBackendUrl(record.avatar_url) : undefined} icon={<ShopOutlined />} className="border-2 border-blue-100" />
                             <div>
                               <div className="font-bold text-slate-700">{record.full_name}</div>
                               <div className="text-xs text-slate-400">{record.email}</div>
@@ -477,19 +552,30 @@ class DashboardErrorBoundary extends React.Component<{children: React.ReactNode}
                 <Title level={4} className="!mt-0 !mb-1 text-slate-800 relative z-10">Xu hướng dịch vụ</Title>
                 <Text type="secondary" className="mb-8 block relative z-10">Phân bổ doanh thu theo từng mảng kinh doanh</Text>
                 
-                {/* Custom Stacked Horizontal Bar */}
-                <div className="mb-10 mt-2 relative z-10">
-                  <div className="flex h-8 w-full overflow-hidden rounded-full bg-slate-100 shadow-inner">
-                    <div className="bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000 flex items-center justify-center text-xs font-bold text-white shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)]" style={{ width: `${stats.serviceTrends?.restaurant || 0}%` }}>
-                      {(stats.serviceTrends?.restaurant || 0) > 10 && `${stats.serviceTrends?.restaurant}%`}
-                    </div>
-                    <div className="bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-1000 flex items-center justify-center text-xs font-bold text-white shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)]" style={{ width: `${stats.serviceTrends?.hotel || 0}%` }}>
-                      {(stats.serviceTrends?.hotel || 0) > 10 && `${stats.serviceTrends?.hotel}%`}
-                    </div>
-                    <div className="bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000 flex items-center justify-center text-xs font-bold text-white shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1)]" style={{ width: `${stats.serviceTrends?.tourist || 0}%` }}>
-                      {(stats.serviceTrends?.tourist || 0) > 10 && `${stats.serviceTrends?.tourist}%`}
-                    </div>
-                  </div>
+                {/* Pie Chart */}
+                <div className="mb-10 mt-2 relative z-10 h-[220px] w-full flex justify-center items-center">
+                  {stats.serviceTrends && (stats.serviceTrends.restaurant > 0 || stats.serviceTrends.hotel > 0 || stats.serviceTrends.tourist > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={serviceData.filter(d => d.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {serviceData.filter(d => d.value > 0).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => `${value}%`} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có dữ liệu" />
+                  )}
                 </div>
 
                 {/* Legend */}

@@ -124,6 +124,7 @@ type TicketInvoiceRow = {
   total_amount: number;
   voucher_code?: string | null;
   discount_amount?: number;
+  final_amount?: number;
   items: TicketInvoiceItem[];
 };
 
@@ -226,12 +227,19 @@ export default function OwnerPayments() {
     const storedId =
       stored && Number.isFinite(Number(stored)) ? Number(stored) : null;
 
+    const ownedIds = new Set(locs.map((l) => Number(l.location_id)));
     const fallbackId = locs.length > 0 ? Number(locs[0].location_id) : null;
-    const nextId =
-      Number.isFinite(qLocationId) && qLocationId > 0
-        ? qLocationId
-        : storedId || fallbackId;
+
+    // Chỉ dùng location_id từ URL/localStorage nếu owner thực sự sở hữu location đó
+    const validFromUrl = Number.isFinite(qLocationId) && qLocationId > 0 && ownedIds.has(qLocationId) ? qLocationId : null;
+    const validFromStorage = storedId && ownedIds.has(storedId) ? storedId : null;
+    const nextId = validFromUrl ?? validFromStorage ?? fallbackId;
+
     if (nextId) setLocationId(nextId);
+    // Xóa location_id khỏi URL để tránh lần sau vẫn dùng id sai
+    if (sp.get("location_id") && !validFromUrl) {
+      setSp((prev) => { prev.delete("location_id"); return prev; }, { replace: true });
+    }
   }, [navigate, sp]);
 
   // selectDateFromChart removed
@@ -247,10 +255,10 @@ export default function OwnerPayments() {
       });
       const invoiceResP = isTouristLocation
         ? ownerApi.getTouristTicketInvoices({
-            location_id: locationId,
-            range,
-            date: pickedDate,
-          })
+          location_id: locationId,
+          range,
+          date: pickedDate,
+        })
         : Promise.resolve(null);
 
       const [payRes, invoiceRes] = await Promise.all([payResP, invoiceResP]);
@@ -302,60 +310,60 @@ export default function OwnerPayments() {
                 r.hotel == null
                   ? null
                   : {
-                      stay_id:
-                        asRecord(r.hotel).stay_id == null
-                          ? null
-                          : Number(asRecord(r.hotel).stay_id),
-                      room_number:
-                        asRecord(r.hotel).room_number == null
-                          ? null
-                          : String(asRecord(r.hotel).room_number),
-                      guest_name:
-                        asRecord(r.hotel).guest_name == null
-                          ? null
-                          : String(asRecord(r.hotel).guest_name),
-                      guest_phone:
-                        asRecord(r.hotel).guest_phone == null
-                          ? null
-                          : String(asRecord(r.hotel).guest_phone),
-                      checkin_time:
-                        asRecord(r.hotel).checkin_time == null
-                          ? null
-                          : String(asRecord(r.hotel).checkin_time),
-                      checkout_time:
-                        asRecord(r.hotel).checkout_time == null
-                          ? null
-                          : String(asRecord(r.hotel).checkout_time),
-                      actual_minutes:
-                        asRecord(r.hotel).actual_minutes == null
-                          ? null
-                          : Number(asRecord(r.hotel).actual_minutes),
-                    },
+                    stay_id:
+                      asRecord(r.hotel).stay_id == null
+                        ? null
+                        : Number(asRecord(r.hotel).stay_id),
+                    room_number:
+                      asRecord(r.hotel).room_number == null
+                        ? null
+                        : String(asRecord(r.hotel).room_number),
+                    guest_name:
+                      asRecord(r.hotel).guest_name == null
+                        ? null
+                        : String(asRecord(r.hotel).guest_name),
+                    guest_phone:
+                      asRecord(r.hotel).guest_phone == null
+                        ? null
+                        : String(asRecord(r.hotel).guest_phone),
+                    checkin_time:
+                      asRecord(r.hotel).checkin_time == null
+                        ? null
+                        : String(asRecord(r.hotel).checkin_time),
+                    checkout_time:
+                      asRecord(r.hotel).checkout_time == null
+                        ? null
+                        : String(asRecord(r.hotel).checkout_time),
+                    actual_minutes:
+                      asRecord(r.hotel).actual_minutes == null
+                        ? null
+                        : Number(asRecord(r.hotel).actual_minutes),
+                  },
               hotel_rooms: Array.isArray(r.hotel_rooms)
                 ? (r.hotel_rooms as any[]).map((hr: any) => {
-                    const rr = asRecord(hr);
-                    return {
-                      stay_id: rr.stay_id == null ? null : Number(rr.stay_id),
-                      room_number:
-                        rr.room_number == null ? null : String(rr.room_number),
-                      guest_name:
-                        rr.guest_name == null ? null : String(rr.guest_name),
-                      guest_phone:
-                        rr.guest_phone == null ? null : String(rr.guest_phone),
-                      checkin_time:
-                        rr.checkin_time == null
-                          ? null
-                          : String(rr.checkin_time),
-                      checkout_time:
-                        rr.checkout_time == null
-                          ? null
-                          : String(rr.checkout_time),
-                      total_amount:
-                        rr.total_amount == null
-                          ? null
-                          : Number(rr.total_amount),
-                    };
-                  })
+                  const rr = asRecord(hr);
+                  return {
+                    stay_id: rr.stay_id == null ? null : Number(rr.stay_id),
+                    room_number:
+                      rr.room_number == null ? null : String(rr.room_number),
+                    guest_name:
+                      rr.guest_name == null ? null : String(rr.guest_name),
+                    guest_phone:
+                      rr.guest_phone == null ? null : String(rr.guest_phone),
+                    checkin_time:
+                      rr.checkin_time == null
+                        ? null
+                        : String(rr.checkin_time),
+                    checkout_time:
+                      rr.checkout_time == null
+                        ? null
+                        : String(rr.checkout_time),
+                    total_amount:
+                      rr.total_amount == null
+                        ? null
+                        : Number(rr.total_amount),
+                  };
+                })
                 : null,
               performed_by: {
                 role: (asRecord(r.performed_by).role as any) ?? null,
@@ -446,7 +454,7 @@ export default function OwnerPayments() {
         const qty = Number(row.total_qty || 0);
         const amt = Number(row.amount || 0);
         totalQty += qty;
-        
+
         const isOnline = (row.booking_id != null && Number(row.booking_id) > 0) || row.transaction_source === "online_booking";
         if (isOnline) {
           onlineOrders++;
@@ -486,13 +494,13 @@ export default function OwnerPayments() {
     contentRef: printRef,
     documentTitle: printData
       ? (() => {
-          const t = printData.hotel ? "hotel" : printData.items ? "restaurant" : "tourist";
-          const pfx = t === "hotel" ? "RS" : t === "restaurant" ? "DI" : "SB";
-          const code = printData.booking_id && Number(printData.booking_id) > 0
-            ? `${pfx}-${printData.booking_id}`
-            : `${pfx}-POS-${printData.payment_id}`;
-          return `Hoa_don_${code}`;
-        })()
+        const t = printData.hotel ? "hotel" : printData.items ? "restaurant" : "tourist";
+        const pfx = t === "hotel" ? "RS" : t === "restaurant" ? "DI" : "SB";
+        const code = printData.booking_id && Number(printData.booking_id) > 0
+          ? `${pfx}-${printData.booking_id}`
+          : `${pfx}-POS-${printData.payment_id}`;
+        return `Hoa_don_${code}`;
+      })()
       : "Hoa_don",
   });
 
@@ -516,14 +524,14 @@ export default function OwnerPayments() {
     const hotelRooms = Array.isArray(row.hotel_rooms) ? row.hotel_rooms : [];
     const fallbackHotelRoom = row.hotel
       ? {
-          stay_id: row.hotel.stay_id,
-          room_number: row.hotel.room_number,
-          guest_name: row.hotel.guest_name,
-          guest_phone: row.hotel.guest_phone,
-          checkin_time: row.hotel.checkin_time,
-          checkout_time: row.hotel.checkout_time,
-          total_amount: null as number | null,
-        }
+        stay_id: row.hotel.stay_id,
+        room_number: row.hotel.room_number,
+        guest_name: row.hotel.guest_name,
+        guest_phone: row.hotel.guest_phone,
+        checkin_time: row.hotel.checkin_time,
+        checkout_time: row.hotel.checkout_time,
+        total_amount: null as number | null,
+      }
       : null;
     const roomsForRender =
       hotelRooms.length > 0
@@ -1082,9 +1090,32 @@ export default function OwnerPayments() {
       {
         title: "Tổng tiền",
         dataIndex: "total_amount",
-        width: 140,
+        width: 120,
         align: "right",
         render: (v: unknown) => formatMoney(Number(v || 0)),
+      },
+      {
+        title: "Voucher",
+        width: 100,
+        align: "right",
+        render: (_: unknown, row: TicketInvoiceRow) => (
+          row.discount_amount ? <span className="text-orange-500">-{formatMoney(row.discount_amount)}</span> : "-"
+        ),
+      },
+      {
+        title: "Thực nhận",
+        dataIndex: "final_amount",
+        width: 120,
+        align: "right",
+        render: (v: unknown, row: TicketInvoiceRow) => {
+          let finalAmt = 0;
+          if (v != null) {
+            finalAmt = Number(v);
+          } else {
+            finalAmt = Math.max(0, Number(row.total_amount || 0) - Number(row.discount_amount || 0));
+          }
+          return <span className="font-bold text-green-700">{formatMoney(finalAmt)}</span>;
+        }
       },
       Table.EXPAND_COLUMN,
     ],
@@ -1096,7 +1127,7 @@ export default function OwnerPayments() {
       {
         title: "Hạng vé",
         dataIndex: "service_name",
-        render: (v: unknown) => String(v || "-"),
+        render: (v: unknown) => <span className="font-medium text-slate-800">{String(v || "-")}</span>,
       },
       {
         title: "SL",
@@ -1132,7 +1163,7 @@ export default function OwnerPayments() {
               <h1 className="text-xl font-extrabold text-slate-800 mb-1">Lịch sử tổng hợp</h1>
               <p className="text-xs text-slate-400">Xem và đối soát doanh thu của các địa điểm theo thời gian</p>
             </div>
-            
+
             <div className="flex flex-wrap flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">Địa điểm:</span>
@@ -1170,9 +1201,9 @@ export default function OwnerPayments() {
                   allowClear={false}
                   className="rounded-lg py-1.5"
                 />
-                <Button 
-                  icon={<ReloadOutlined />} 
-                  onClick={() => void loadData()} 
+                <Button
+                  icon={<ReloadOutlined />}
+                  onClick={() => void loadData()}
                   loading={loading}
                   className="rounded-lg flex items-center border-slate-200 hover:border-emerald-500 text-slate-600 hover:text-emerald-600"
                 >
@@ -1283,7 +1314,7 @@ export default function OwnerPayments() {
           </div>
         </div>
 
-        <Card 
+        <Card
           title={
             <div className="flex items-center justify-between w-full">
               <span>{isTouristLocation ? "Lịch sử vé" : "Lịch sử hóa đơn"}</span>
@@ -1332,6 +1363,25 @@ export default function OwnerPayments() {
                       scroll={{ x: 'max-content' }}
                       dataSource={Array.isArray(row.items) ? row.items : []}
                       columns={itemColumns}
+                      summary={() => {
+                        let finalAmt = 0;
+                        if (row.final_amount != null) {
+                          finalAmt = Number(row.final_amount);
+                        } else {
+                          finalAmt = Math.max(0, Number(row.total_amount || 0) - Number(row.discount_amount || 0));
+                        }
+
+                        return (
+                          <Table.Summary.Row>
+                            <Table.Summary.Cell index={0} colSpan={3} className="text-right font-semibold text-slate-700">
+                              Thực nhận:
+                            </Table.Summary.Cell>
+                            <Table.Summary.Cell index={1} align="right" className="font-bold text-emerald-700">
+                              {formatMoney(finalAmt)}
+                            </Table.Summary.Cell>
+                          </Table.Summary.Row>
+                        );
+                      }}
                     />
                   </div>
                 ),

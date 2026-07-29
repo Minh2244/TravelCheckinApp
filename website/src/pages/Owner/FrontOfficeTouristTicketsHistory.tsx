@@ -525,62 +525,58 @@ export default function FrontOfficeTouristTicketsHistory() {
               <PosStatCard
                 label="Tổng doanh thu"
                 value={formatMoney(summary.total)}
-                tone="slate"
+                tone="indigo"
+                size="small"
               />
               <PosStatCard
                 label="Tiền mặt"
                 value={formatMoney(summary.cash)}
-                tone="amber"
+                tone="emerald"
+                size="small"
               />
               <PosStatCard
                 label="Chuyển khoản"
                 value={formatMoney(summary.transfer)}
                 tone="sky"
+                size="small"
               />
               <PosStatCard
                 label="Hoa hồng"
                 value={formatMoney(summary.commission_amount || 0)}
-                tone="amber"
+                tone="rose"
+                size="small"
               />
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-              <div className="bg-sky-50 border border-sky-100 rounded-lg p-3 text-center flex flex-col justify-between">
-                <div>
-                  <div className="text-xs text-sky-600 font-semibold uppercase tracking-wider">Đặt trước Online</div>
-                  <div className="text-xl font-bold text-sky-800 mt-1">{ticketStats.soldOnline} vé</div>
-                </div>
-                <div className="text-xs text-sky-500 font-semibold mt-1 border-t border-sky-100/50 pt-1">
-                  {formatMoney(ticketStats.revenueOnline)}
-                </div>
-              </div>
-              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-center flex flex-col justify-between">
-                <div>
-                  <div className="text-xs text-emerald-600 font-semibold uppercase tracking-wider">Bán tại quầy</div>
-                  <div className="text-xl font-bold text-emerald-800 mt-1">{ticketStats.soldPos} vé</div>
-                </div>
-                <div className="text-xs text-emerald-500 font-semibold mt-1 border-t border-emerald-100/50 pt-1">
-                  {formatMoney(ticketStats.revenuePos)}
-                </div>
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center flex flex-col justify-between">
-                <div>
-                  <div className="text-xs text-blue-600 font-semibold uppercase tracking-wider">Đặt trước đã soát</div>
-                  <div className="text-xl font-bold text-blue-800 mt-1">{ticketStats.usedOnline} vé</div>
-                </div>
-                <div className="text-xs text-blue-400 font-medium mt-1 border-t border-blue-100/50 pt-1">
-                  Soát chi tiết
-                </div>
-              </div>
-              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-center flex flex-col justify-between">
-                <div>
-                  <div className="text-xs text-amber-600 font-semibold uppercase tracking-wider">Tổng đã soát</div>
-                  <div className="text-xl font-bold text-amber-800 mt-1">{ticketStats.totalUsed} vé</div>
-                </div>
-                <div className="text-xs text-amber-400 font-medium mt-1 border-t border-amber-100/50 pt-1">
-                  Đã hoàn tất
-                </div>
-              </div>
+              <PosStatCard
+                label="Đặt trước Online"
+                value={`${ticketStats.soldOnline} vé`}
+                subLabel={formatMoney(ticketStats.revenueOnline)}
+                tone="cyan"
+                size="small"
+              />
+              <PosStatCard
+                label="Bán tại quầy"
+                value={`${ticketStats.soldPos} vé`}
+                subLabel={formatMoney(ticketStats.revenuePos)}
+                tone="amber"
+                size="small"
+              />
+              <PosStatCard
+                label="Đặt trước đã soát"
+                value={`${ticketStats.usedOnline} vé`}
+                subLabel="Soát chi tiết"
+                tone="violet"
+                size="small"
+              />
+              <PosStatCard
+                label="Tổng đã soát"
+                value={`${ticketStats.totalUsed} vé`}
+                subLabel="Đã hoàn tất"
+                tone="slate"
+                size="small"
+              />
             </div>
 
             <PosCard title="Biểu đồ doanh thu">

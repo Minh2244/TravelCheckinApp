@@ -50,7 +50,7 @@ export const getImageMetadata = async (req: Request, res: Response): Promise<voi
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT id, original_name, mime_type, file_size, width, height,
-              uploaded_by, uploaded_by_role, alt_text, is_active, created_at
+              alt_text, is_active, created_at
        FROM images WHERE id = ?`,
       [imageId],
     );
@@ -74,8 +74,23 @@ export const getImageMetadata = async (req: Request, res: Response): Promise<voi
 export const deleteImage = async (req: Request, res: Response): Promise<void> => {
   try {
     const imageId = Number(req.params.id);
+    const userId = Number(req.userId);
+    const role = String(req.userRole || "");
     if (!Number.isFinite(imageId) || imageId <= 0) {
       res.status(400).json({ error: "Invalid image ID" });
+      return;
+    }
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, uploaded_by FROM images WHERE id = ? AND is_active = 1 LIMIT 1`,
+      [imageId],
+    );
+    if (!rows[0]) {
+      res.status(404).json({ error: "Image not found" });
+      return;
+    }
+    if (role !== "admin" && Number(rows[0].uploaded_by) !== userId) {
+      res.status(403).json({ error: "Bạn không có quyền xóa ảnh này" });
       return;
     }
 
@@ -90,6 +105,10 @@ export const deleteImage = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    await pool.query(
+      `INSERT INTO audit_logs (user_id, action, details) VALUES (?, 'DELETE_IMAGE', ?)`,
+      [userId, JSON.stringify({ image_id: imageId, timestamp: new Date() })],
+    );
     res.json({ success: true, message: "Đã xóa ảnh" });
   } catch (error) {
     console.error("Lỗi xóa ảnh:", error);

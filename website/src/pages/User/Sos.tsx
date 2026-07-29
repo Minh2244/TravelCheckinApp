@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import UserLayout from "../../layouts/UserLayout";
 import sosApi from "../../api/sosApi";
+import { useSocket } from "../../contexts/SocketContext";
 
 const Sos = () => {
+  const socket = useSocket();
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -10,6 +12,32 @@ const Sos = () => {
   const [alertId, setAlertId] = useState<number | null>(null);
   const [lastPingAt, setLastPingAt] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const checkActiveSos = async () => {
+      try {
+        const res = await sosApi.getActiveSos();
+        if (res?.success && res.data) {
+          setAlertId(res.data.alert_id);
+          setTracking(true);
+          const s = res.data.status;
+          if (s === "processing") {
+            setStatus("Đang xử lý - Đội cứu hộ đang di chuyển đến vị trí của bạn!");
+          } else if (s === "resolved") {
+            setStatus("Cứu hộ thành công! Bạn đã an toàn.");
+          } else if (s === "cancelled") {
+            setStatus("Yêu cầu SOS đã bị hủy.");
+          } else {
+            setStatus("Đã gửi tín hiệu SOS và đang chia sẻ vị trí");
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi khi kiểm tra SOS active:", err);
+      }
+    };
+    checkActiveSos();
+  }, []);
+
 
   const handleSendSos = () => {
     setLoading(true);
@@ -110,19 +138,11 @@ const Sos = () => {
   }, [tracking, alertId]);
 
   useEffect(() => {
-    if (!tracking) return;
+    if (!tracking || !socket) return;
 
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    const base = import.meta.env.VITE_API_URL || "http://localhost:3000";
-    const sseUrl = `${base}/api/events?token=${encodeURIComponent(token)}`;
-    const sse = new EventSource(sseUrl);
-
-    sse.onmessage = (event) => {
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.type === "sos_status_update") {
+        if (data?.type === "sos_status_update") {
           const newStatus = data.status;
           if (newStatus === "processing") {
             setStatus("Đang xử lý - Đội cứu hộ đang di chuyển đến vị trí của bạn!");
@@ -132,17 +152,25 @@ const Sos = () => {
               setTracking(false);
               setAlertId(null);
             }, 3500);
+          } else if (newStatus === "cancelled") {
+            setStatus("Yêu cầu SOS đã bị hủy.");
+            setTimeout(() => {
+              setTracking(false);
+              setAlertId(null);
+            }, 3500);
           }
         }
       } catch (err) {
-        console.error("SSE parse error in Sos.tsx:", err);
+        console.error("Socket parse error in Sos.tsx:", err);
       }
     };
 
+    socket.on("realtime_event", handleEvent);
+
     return () => {
-      sse.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, [tracking]);
+  }, [tracking, socket]);
 
   return (
     <UserLayout title="SOS" activeKey="/user/sos">

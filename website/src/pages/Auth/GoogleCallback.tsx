@@ -49,76 +49,25 @@ const GoogleCallback = () => {
           return;
         }
 
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const accessToken = params.get("access_token");
+        const code = urlParams.get("code");
+        const state = urlParams.get("state");
 
-        console.log(
-          "🔑 Access Token:",
-          accessToken ? "✅ Found" : "❌ Not found",
-        );
-        console.log("🔑 Full hash:", hash);
+        console.log("🔑 Authorization Code:", code ? "✅ Found" : "❌ Not found");
 
-        if (!accessToken) {
-          throw new Error("Không nhận được access token từ Google");
-        }
-
-        console.log("📡 Fetching user info from Google API...");
-        const response = await fetch(
-          "https://www.googleapis.com/oauth2/v2/userinfo",
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          },
-        );
-
-        console.log("📡 Google API Response Status:", response.status);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("❌ Google API Error:", errorText);
-          throw new Error(`Lỗi Google API (${response.status}): ${errorText}`);
-        }
-
-        const profile = await response.json();
-        console.log("👤 Google Profile RAW:", profile);
-
-        // ⭐ FIX: Google có thể trả về 'id' thay vì 'sub'
-        const userId = profile.sub || profile.id;
-        const userEmail = profile.email;
-        const userName = profile.name || profile.given_name || "Google User";
-        const userPicture = profile.picture;
-
-        console.log("✅ Parsed profile:", {
-          userId,
-          userEmail,
-          userName,
-          userPicture,
-        });
-
-        // ⭐ VALIDATE DỮ LIỆU
-        if (!userId) {
-          console.error("❌ Missing user ID. Full profile:", profile);
-          throw new Error("Google không trả về user ID (sub hoặc id)");
-        }
-        if (!userEmail) {
-          console.error("❌ Missing email. Full profile:", profile);
-          throw new Error("Google không trả về email");
+        if (!code) {
+          throw new Error("Không nhận được authorization code từ Google");
         }
 
         if (window.opener) {
-          console.log("📤 Sending profile to parent window...");
+          console.log("📤 Sending code to parent window...");
 
           const profileData = {
             type: "GOOGLE_AUTH_SUCCESS",
-            profile: {
-              sub: userId, // Sử dụng userId (có thể là sub hoặc id)
-              email: userEmail,
-              name: userName,
-              picture: userPicture || null,
-            },
+            state,
+            code,
           };
 
-          console.log("📤 Profile data:", profileData);
+          console.log("📤 Auth data:", profileData);
 
           window.opener.postMessage(profileData, window.location.origin);
 

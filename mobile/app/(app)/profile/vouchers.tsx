@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -11,9 +11,10 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import { userApi } from "../../../src/services/user.api";
+import { userApi, type LocationVoucher } from "../../../src/services/user.api";
+import { voucherStillUsable } from "../../../src/lib/voucher-utils";
 
-type VoucherItem = {
+type VoucherItem = LocationVoucher & {
   voucher_id: number;
   code: string | null;
   campaign_name: string | null;
@@ -52,7 +53,7 @@ export default function VouchersScreen() {
       if (resp?.success) {
         setVouchers((resp.data as any) || []);
       } else {
-        setError(resp.message || "Không thể tải voucher");
+        setError("Không thể kết nối đến máy chủ");
       }
     } catch (e) {
       console.error(e);
@@ -73,13 +74,23 @@ export default function VouchersScreen() {
     void fetchVouchers();
   }, []);
 
-  const now = new Date();
-  const filteredVouchers = vouchers
-    .filter((v) => new Date(v.end_date) >= now)
-    .filter((v) => {
-      if (filter === "all") return true;
-      return v.apply_to_service_type === "all" || v.apply_to_service_type === filter;
-    });
+  const filteredVouchers = useMemo(() => {
+    const now = new Date();
+    const seen = new Set<string | number>();
+    return vouchers
+      .filter((v) => new Date(v.end_date) >= now)
+      .filter((v) => voucherStillUsable(v as LocationVoucher))
+      .filter((v) => {
+        if (filter === "all") return true;
+        return v.apply_to_service_type === "all" || v.apply_to_service_type === filter;
+      })
+      .filter((v) => {
+        const key = v.voucher_id ?? v.code;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [vouchers, filter]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("vi-VN", {
@@ -170,7 +181,7 @@ export default function VouchersScreen() {
               </Text>
             </View>
           ) : (
-            filteredVouchers.map((v) => {
+            filteredVouchers.map((v: VoucherItem, index: number) => {
               const maxUses = Number(v.max_uses_per_user);
               const used = Number(v.user_used_count || 0);
               const remainingUses = maxUses > 0 ? Math.max(0, maxUses - used) : null;
@@ -199,7 +210,7 @@ export default function VouchersScreen() {
 
               return (
                 <View
-                  key={v.voucher_id}
+                  key={`voucher-${v.voucher_id || v.code || index}-${index}`}
                   className="bg-white rounded-2xl flex-row overflow-hidden border border-slate-100 mb-4 shadow-sm"
                   style={{ elevation: 2, height: 140 }}
                 >

@@ -860,10 +860,17 @@ export default function OwnerLocationOpsConfig() {
   const tableAreaOptions = roomAreaOptions;
 
   const filteredTableList = useMemo(() => {
-    if (tableListArea === "all") return tables;
-    const areaId = Number(tableListArea);
-    if (!Number.isFinite(areaId)) return tables;
-    return tables.filter((table) => Number(table.area_id) === areaId);
+    const list = tableListArea === "all"
+      ? tables
+      : (() => {
+          const areaId = Number(tableListArea);
+          if (!Number.isFinite(areaId)) return tables;
+          return tables.filter((table) => Number(table.area_id) === areaId);
+        })();
+    // Natural sort: "Bàn 2" trước "Bàn 10"
+    return [...list].sort((a, b) =>
+      String(a.table_name || "").localeCompare(String(b.table_name || ""), "vi", { numeric: true, sensitivity: "base" })
+    );
   }, [tableListArea, tables]);
 
   const selectedTableIdSet = useMemo(
@@ -1780,9 +1787,9 @@ export default function OwnerLocationOpsConfig() {
               <Table<ServiceCategoryRow>
                 rowKey="category_id"
                 dataSource={roomCategories}
-                pagination={{ pageSize: 10 }}
+                pagination={false}
                 sticky
-                scroll={{ y: 300 }}
+                scroll={{ x: 'max-content', y: 300 }}
                 columns={[
                   { title: "Tên danh mục", dataIndex: "category_name" },
                   {
@@ -1913,9 +1920,9 @@ export default function OwnerLocationOpsConfig() {
               <Table
                 rowKey="room_id"
                 dataSource={rooms}
-                pagination={{ pageSize: 20 }}
+                pagination={false}
                 sticky
-                scroll={{ y: 420 }}
+                scroll={{ x: 'max-content', y: 300 }}
                 rowSelection={
                   roomMultiSelect
                     ? {
@@ -2215,9 +2222,9 @@ export default function OwnerLocationOpsConfig() {
               <Table<AreaRow>
                 rowKey="area_id"
                 dataSource={areas}
-                pagination={{ pageSize: 20 }}
+                pagination={false}
                 sticky
-                scroll={{ y: 300 }}
+                scroll={{ x: 'max-content', y: 300 }}
                 columns={[
                   { title: "Khu", dataIndex: "area_name" },
                   { title: "Thứ tự", dataIndex: "sort_order", width: 120 },
@@ -2327,9 +2334,9 @@ export default function OwnerLocationOpsConfig() {
               <Table<TableRow>
                 rowKey="table_id"
                 dataSource={filteredTableList}
-                pagination={{ pageSize: 20 }}
+                pagination={false}
                 sticky
-                scroll={{ y: 420 }}
+                scroll={{ x: 'max-content', y: 300 }}
                 rowSelection={
                   tableMultiSelect
                     ? {

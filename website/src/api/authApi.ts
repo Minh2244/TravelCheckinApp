@@ -90,6 +90,10 @@ const authApi = {
     const response = await axiosClient.get("/auth/session");
     return response.data;
   },
+  getPublicSettings: async () => {
+    const response = await axiosClient.get("/auth/public-settings");
+    return response.data;
+  },
 };
 
 export default authApi;

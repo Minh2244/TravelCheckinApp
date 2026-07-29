@@ -80,6 +80,7 @@ class ClassificationResult:
     allowed: bool
     risk_level: str
     reason: str
+    entities: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

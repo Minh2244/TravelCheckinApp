@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import UserLayout from "../../layouts/UserLayout";
 import bookingApi from "../../api/bookingApi";
 import { formatMoney } from "../../utils/formatMoney";
 import type { TableReservationItem } from "../../types/booking.types";
 import { Modal, message } from "antd";
-import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
+import { useSocket } from "../../contexts/SocketContext";
 
 const formatDisplayDateTime = (value: string | null | undefined): string => {
   if (!value) return "";
@@ -68,6 +68,10 @@ const statusMeta = (status: string) => {
 
 export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const locationIdParam = searchParams.get("locationId");
+  const socket = useSocket();
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [passes, setPasses] = useState<TableReservationItem[]>([]);
@@ -79,7 +83,12 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
       setError(null);
       const res = await bookingApi.getMyTablePass();
       if (res.success) {
-        setPasses(res.data || []);
+        let loadedPasses = res.data || [];
+        if (locationIdParam) {
+          const locId = parseInt(locationIdParam, 10);
+          loadedPasses = loadedPasses.filter(p => p.locationId === locId);
+        }
+        setPasses(loadedPasses);
       } else {
         setError(res.message || "Không thể tải danh sách vé");
       }
@@ -95,29 +104,30 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
     void loadPasses();
   }, [loadPasses]);
 
-  // SSE: nhận trạng thái vé realtime từ server
+  // Global Socket Listener for status changes
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-    const url = resolveBackendUrl(`/api/events?token=${encodeURIComponent(token)}`);
-    if (!url) return;
+    const handleStatusChange = () => {
+      void loadPasses();
+    };
+    window.addEventListener("tc-booking-status-changed", handleStatusChange);
+    return () => {
+      window.removeEventListener("tc-booking-status-changed", handleStatusChange);
+    };
+  }, [loadPasses]);
 
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
+  // Nhận trạng thái vé realtime từ server
+  useEffect(() => {
+    if (!socket) return;
+    
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          booking_id?: number;
-          new_status?: string;
-        };
-
         if (data?.type === "booking_confirmed") {
           const bid = Number(data.booking_id);
           if (!Number.isFinite(bid) || bid <= 0) return;
           setPasses((prev) =>
             prev.map((p) =>
               Number(p.bookingId) === bid
-                ? { ...p, bookingStatus: "confirmed" }
+                ? { ...p, bookingStatus: "confirmed", canCancel: false }
                 : p,
             ),
           );
@@ -164,10 +174,12 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
       }
     };
 
+    socket.on("realtime_event", handleEvent);
+
     return () => {
-      es.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, []);
+  }, [socket]);
 
   const handleCancelBooking = async (bookingId: number) => {
     Modal.confirm({
@@ -280,15 +292,15 @@ export default function TableBookingPass({ isEmbedded }: { isEmbedded?: boolean 
                       
                       {/* Left: Ticket Info */}
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                          <div className="flex flex-col gap-1">
+                        <div className="flex items-start justify-between border-b border-slate-100 pb-2.5 gap-2">
+                          <div className="flex flex-col gap-1 min-w-0">
                             {pass.invoiceCode && (
-                              <span className="text-xl font-extrabold text-blue-700 tracking-tight font-mono">
+                              <span className="text-base sm:text-lg font-extrabold text-blue-700 tracking-tight font-mono truncate">
                                 Hóa đơn: {pass.invoiceCode}
                               </span>
                             )}
                           </div>
-                          <span className={`rounded-md px-3 py-1 text-xs font-bold uppercase tracking-wider ${badge}`}>
+                          <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-center ${badge}`}>
                             {label}
                           </span>
                         </div>

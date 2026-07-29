@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Avatar, Button, Form, Input, Tag, message } from "antd";
-import { CameraOutlined, LockOutlined, SaveOutlined } from "@ant-design/icons";
+import { CameraOutlined, LockOutlined, SaveOutlined, EditOutlined, EyeOutlined, EyeInvisibleOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import AvatarCropper from "../../components/AvatarCropper";
+import VirtualBankCard from "../../components/VirtualBankCard";
 
 import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
@@ -96,12 +97,12 @@ const Profile = () => {
   const [profile, setProfile] = useState<AdminProfileDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-
-  // Live action counts
-  const [pendingLocations, setPendingLocations] = useState(0);
-  const [pendingReports, setPendingReports] = useState(0);
-  const [pendingWithdrawals, setPendingWithdrawals] = useState(0);
-  const [activeSos, setActiveSos] = useState(0);
+  const [bankInfo, setBankInfo] = useState<{
+    bank_name: string;
+    bank_account: string;
+    account_holder: string;
+  } | null>(null);
+  const [showBankAccount, setShowBankAccount] = useState(false);
 
   // Avatar upload
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
@@ -149,32 +150,22 @@ const Profile = () => {
     return null;
   };
 
-  const fetchActionCounts = async () => {
-    try {
-      const [locs, reps, drawsRaw, sos] = await Promise.all([
-        adminApi.getLocations({ status: "pending" }),
-        adminApi.getReports({ status: "pending" }),
-        adminApi.getCommissionPaymentRequests(),
-        adminApi.getSosAlerts({ status: "pending" })
-      ]);
 
-      if (locs?.success) setPendingLocations(locs.pagination?.total || locs.data?.length || 0);
-      if (reps?.success) setPendingReports(reps.pagination?.total || reps.data?.length || 0);
-      if (drawsRaw?.success && Array.isArray(drawsRaw.data)) {
-        const pendingDraws = drawsRaw.data.filter((item: any) => item.status === "pending");
-        setPendingWithdrawals(pendingDraws.length);
-      } else if (drawsRaw?.success) {
-        setPendingWithdrawals(drawsRaw.pagination?.total || drawsRaw.data?.length || 0);
+
+  const fetchBankInfo = async () => {
+    try {
+      const response = await adminApi.getAdminBank();
+      if (response?.success && response.data) {
+        setBankInfo(response.data);
       }
-      if (sos?.success) setActiveSos(sos.pagination?.total || sos.data?.length || 0);
-    } catch {
-      // Fetch stats silently
+    } catch (error) {
+      console.error("Lỗi lấy thông tin thẻ ngân hàng admin:", error);
     }
   };
 
   useEffect(() => {
     fetchProfile();
-    fetchActionCounts();
+    fetchBankInfo();
     return () => {
       if (pendingAvatarPreview) URL.revokeObjectURL(pendingAvatarPreview);
       if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
@@ -458,69 +449,21 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Trung tâm xử lý nhanh (Admin Action Hub) */}
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)] p-6 space-y-4 text-left">
-              <h4 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
-                ⚡ Trung tâm xử lý công việc
-              </h4>
-              <p className="text-[11px] text-slate-400">Các công việc đang chờ bạn phê duyệt hoặc giải quyết:</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => navigate("/admin/locations")}
-                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-indigo-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
-                >
-                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">🏢</span>
-                  <span className="text-[10px] font-bold text-indigo-900 leading-tight">Duyệt địa điểm</span>
-                  <span className="mt-1.5 rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-bold text-white">
-                    {pendingLocations} chờ duyệt
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => navigate("/admin/reports")}
-                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-rose-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
-                >
-                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">⚠️</span>
-                  <span className="text-[10px] font-bold text-rose-900 leading-tight">Báo cáo vi phạm</span>
-                  <span className="mt-1.5 rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-bold text-white">
-                    {pendingReports} tin mới
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => navigate("/admin/payments")}
-                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-emerald-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
-                >
-                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">💸</span>
-                  <span className="text-[10px] font-bold text-emerald-900 leading-tight">Yêu cầu rút tiền</span>
-                  <span className="mt-1.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white">
-                    {pendingWithdrawals} yêu cầu
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => navigate("/admin/sos")}
-                  className="flex flex-col items-center justify-center p-3 rounded-2xl bg-slate-50 hover:bg-amber-50/40 border border-slate-200/60 transition-all text-center group shadow-sm"
-                >
-                  <span className="text-lg mb-1 group-hover:scale-115 transition-transform">🚨</span>
-                  <span className="text-[10px] font-bold text-amber-900 leading-tight">Theo dõi SOS</span>
-                  <span className="mt-1.5 rounded-full bg-amber-600 px-2 py-0.5 text-[9px] font-bold text-white">
-                    {activeSos} khẩn cấp
-                  </span>
-                </button>
-              </div>
-            </div>
 
           </div>
 
-          {/* Cột phải: Form thông tin quản trị */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] space-y-6">
-            <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4">
-              Thông tin định danh quản trị
-            </h3>
+          {/* Cột phải: Form thông tin & Thẻ ngân hàng */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] animate-fadeIn">
+            <div className="flex flex-col xl:flex-row gap-8">
 
-            <Form form={profileForm} layout="vertical">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* Cột thông tin liên hệ */}
+              <div className="flex-1 space-y-6">
+                <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4 flex items-center gap-2">
+                  Thông tin định danh quản trị
+                </h3>
+
+                <Form form={profileForm} layout="vertical">
+                  <div className="grid grid-cols-1 gap-4">
                 <Form.Item
                   name="full_name"
                   label="Họ và tên"
@@ -540,17 +483,7 @@ const Profile = () => {
                   <Input placeholder="Họ và tên" maxLength={100} className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200" />
                 </Form.Item>
 
-                <Form.Item label="Tên đăng nhập (Username)">
-                  <div className="relative">
-                    <Input
-                      value={profile?.username || "Chưa thiết lập"}
-                      disabled
-                      className="rounded-xl py-2.5 bg-slate-100/60 text-slate-400 border-slate-200 cursor-not-allowed"
-                    />
-                    <LockOutlined className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400" />
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1">Tên đăng nhập không thể thay đổi.</div>
-                </Form.Item>
+
 
                 <Form.Item label="Email kết nối">
                   <div className="relative">
@@ -595,17 +528,50 @@ const Profile = () => {
                     className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200"
                   />
                 </Form.Item>
+
+                <Form.Item name="address" label="Địa chỉ làm việc">
+                  <Input placeholder="Địa chỉ của bạn" maxLength={255} className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200" />
+                </Form.Item>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 border-t border-slate-200 pt-5 text-xs text-slate-400 mt-6">
+                    <div>Trạng thái hệ thống: <span className="font-semibold text-slate-600">{getStatusLabel(profile?.status)}</span></div>
+                    <div>Phân quyền chính thức: <span className="font-semibold text-slate-600">{getRoleLabel(profile?.role)}</span></div>
+                  </div>
+                </Form>
               </div>
 
-              <Form.Item name="address" label="Địa chỉ làm việc">
-                <Input placeholder="Địa chỉ của bạn" maxLength={255} className="rounded-xl py-2.5 bg-slate-50 border border-slate-200/80 hover:bg-slate-50 focus:bg-white transition-all duration-200" />
-              </Form.Item>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-200 pt-5 text-xs text-slate-400 mt-6">
-                <div>Trạng thái hệ thống: <span className="font-semibold text-slate-600">{getStatusLabel(profile?.status)}</span></div>
-                <div>Phân quyền chính thức: <span className="font-semibold text-slate-600">{getRoleLabel(profile?.role)}</span></div>
+              {/* Cột thẻ ngân hàng (Platform Bank) */}
+              <div className="xl:w-[380px] shrink-0 space-y-6">
+                <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4 flex items-center gap-2">
+                  Thẻ ngân hàng (Platform)
+                </h3>
+                <div className="relative group">
+                  <div className="absolute top-4 right-4 z-20 flex gap-2">
+                    <Button
+                      type="text"
+                      icon={showBankAccount ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                      onClick={() => setShowBankAccount(!showBankAccount)}
+                      className="text-white hover:text-white bg-white/20 hover:bg-white/40"
+                    />
+                    <Button
+                      type="text"
+                      icon={<EditOutlined />}
+                      onClick={() => navigate("/admin/bank")}
+                      className="text-white hover:text-white bg-white/20 hover:bg-white/40"
+                    />
+                  </div>
+                  <VirtualBankCard
+                    bankName={bankInfo?.bank_name || ""}
+                    accountNumber={showBankAccount ? (bankInfo?.bank_account || "") : "•••• •••• ••••"}
+                    accountName={bankInfo?.account_holder || "VUI LÒNG CẬP NHẬT"}
+                    qrUrl={bankInfo && bankInfo.bank_name && bankInfo.bank_account ? `https://img.vietqr.io/image/${bankInfo.bank_name}-${bankInfo.bank_account}-compact2.jpg?accountName=${encodeURIComponent(bankInfo.account_holder || "")}` : ""}
+                    title=""
+                  />
+                </div>
               </div>
-            </Form>
+
+            </div>
           </div>
 
         </div>

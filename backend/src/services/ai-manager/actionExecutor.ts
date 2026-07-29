@@ -1,5 +1,6 @@
 import pool from "../../config/database";
 import { ownerGetOrderStats, ownerGetRevenueStructure, ownerGetTopServices, ownerAnalyzeReviews } from "./ownerAiService";
+import { adminGetUserGrowth, adminGetOwnersStats, adminGetRevenueStats, adminGetTopLocations, adminViewLocations, adminViewSosAlerts, adminSendPushNotification, adminAdjustCommissionRate } from "./adminAiService";
 
 export interface ExecuteActionPayload {
   command_id: string;
@@ -16,6 +17,12 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
 
   const { action_key, action_plan, actor_user_id, command_id, role, route } = payload;
   let resultData = {};
+
+  /** Chuyển YYYY-MM-DD sang DD/MM/YYYY */
+  const fmt = (d: string) => {
+    const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : d;
+  };
 
   try {
     // Insert initial record
@@ -54,19 +61,116 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         const end_date = ents.end_date || ents.expiry_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const min_order_value = Number(ents.min_order_value ?? 0);
         const campaign_name = ents.campaign_name || ents.title || 'Voucher từ AI';
+        const apply_to_service_type = ents.apply_to_service_type || 'all';
+        const apply_to_location_type = ents.apply_to_location_type || 'all';
+        const max_discount_amount = Number(ents.max_discount_amount ?? 0) || null;
+        const usage_limit = ents.usage_limit !== undefined ? Number(ents.usage_limit) : 100;
+        const target_group = ents.target_group || 'all';
+        const max_uses_per_user = ents.max_uses_per_user !== undefined ? Number(ents.max_uses_per_user) : 1;
+        const quantity = ents.quantity !== undefined ? Number(ents.quantity) : 1;
 
-        await pool.query(
-          `INSERT INTO vouchers 
-            (owner_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date, status) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
-          [actor_user_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date]
-        );
+        const generatedCodes: string[] = [];
+        for (let i = 0; i < quantity; i++) {
+          let currentCode = quantity > 1 ? `${code}_${i+1}` : code;
+          const currentName = quantity > 1 ? `${campaign_name} ${i+1}` : campaign_name;
+          
+          let attempt = 0;
+          let success = false;
+          while (!success && attempt < 3) {
+            try {
+              await pool.query(
+                `INSERT INTO vouchers
+                  (owner_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date, status, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
+                [actor_user_id, currentCode, currentName, discount_type, discount_value, min_order_value, start_date, end_date, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group]
+              );
+              generatedCodes.push(currentCode);
+              success = true;
+            } catch (err: any) {
+              if (err.code === 'ER_DUP_ENTRY') {
+                attempt++;
+                currentCode = `${code}_${Math.floor(Math.random() * 90000 + 10000)}`;
+              } else {
+                throw err;
+              }
+            }
+          }
+          if (!success) {
+            resultData = { success: false, message: `❌ Mã voucher ${currentCode} đã trùng lặp quá nhiều lần. Vui lòng thử lại.` };
+            break;
+          }
+        }
 
         const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + ' đ';
+        const fmt = (d: string) => d.match(/^(\d{4})-(\d{2})-(\d{2})/) ? `${d.substr(8,2)}/${d.substr(5,2)}/${d.substr(0,4)}` : d;
         resultData = {
           success: true,
-          message: `✅ Đã tạo voucher **${code}** thành công!\n• Giảm: ${fmtMoney(discount_value)}\n• Hạn: ${start_date} → ${end_date}\n• Đơn tối thiểu: ${min_order_value > 0 ? fmtMoney(min_order_value) : 'Không giới hạn'}`,
+          message: `✅ Đã tạo ${quantity > 1 ? `**${quantity}** mã` : 'mã'} voucher thành công!\n• Mã: ${generatedCodes.join(', ')}\n• Giảm: ${fmtMoney(discount_value)}\n• Hạn: ${fmt(start_date)} → ${fmt(end_date)}\n• Đơn tối thiểu: ${min_order_value > 0 ? fmtMoney(min_order_value) : 'Không giới hạn'}\n• Lượt dùng / mã: ${usage_limit} (Tối đa ${max_uses_per_user} lần/user)`,
         };
+        break;
+      }
+      case "admin_create_system_voucher": {
+        const ents = action_plan.entities as any || {};
+        const code = ents.code || `SYSDEAL${Math.floor(Math.random() * 9000 + 1000)}`;
+        const discount_value = Number(ents.discount_value ?? ents.discount_amount ?? 0);
+        if (!discount_value) {
+          resultData = { success: false, message: "Thiếu thông tin số tiền giảm giá. Sếp vui lòng nhập lại!" };
+          break;
+        }
+        const raw_type = String(ents.discount_type || 'amount').toLowerCase();
+        const discount_type = raw_type === 'percent' || raw_type === 'percentage' ? 'percent' : 'amount';
+        const today = new Date().toISOString().split('T')[0];
+        const start_date = ents.start_date || today;
+        const end_date = ents.end_date || ents.expiry_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const min_order_value = Number(ents.min_order_value ?? 0);
+        const campaign_name = ents.campaign_name || ents.title || 'Voucher Toàn Hệ Thống';
+        const apply_to_service_type = ents.apply_to_service_type || 'all';
+        const apply_to_location_type = ents.apply_to_location_type || 'all';
+        const max_discount_amount = Number(ents.max_discount_amount ?? 0) || null;
+        const usage_limit = ents.usage_limit !== undefined ? Number(ents.usage_limit) : 100;
+        const target_group = ents.target_group || 'all';
+        const max_uses_per_user = ents.max_uses_per_user !== undefined ? Number(ents.max_uses_per_user) : 1;
+        const quantity = ents.quantity !== undefined ? Number(ents.quantity) : 1;
+
+        const generatedCodes: string[] = [];
+        for (let i = 0; i < quantity; i++) {
+          let currentCode = quantity > 1 ? `${code}_${i+1}` : code;
+          const currentName = quantity > 1 ? `${campaign_name} ${i+1}` : campaign_name;
+          
+          let attempt = 0;
+          let success = false;
+          while (!success && attempt < 3) {
+            try {
+              await pool.query(
+                `INSERT INTO vouchers 
+                  (owner_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date, status, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
+                [actor_user_id, currentCode, currentName, discount_type, discount_value, min_order_value, start_date, end_date, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group]
+              );
+              generatedCodes.push(currentCode);
+              success = true;
+            } catch (err: any) {
+              if (err.code === 'ER_DUP_ENTRY') {
+                attempt++;
+                currentCode = `${code}_${Math.floor(Math.random() * 90000 + 10000)}`;
+              } else {
+                throw err;
+              }
+            }
+          }
+          if (!success) {
+            resultData = { success: false, message: `❌ Mã voucher ${currentCode} đã trùng lặp quá nhiều lần. Vui lòng thử lại.` };
+            break;
+          }
+        }
+
+        if (!resultData.hasOwnProperty('success')) {
+          const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + ' đ';
+          resultData = {
+            success: true,
+            message: `✅ Đã tạo ${quantity > 1 ? `**${quantity}** mã` : 'mã'} voucher hệ thống thành công!\n• Mã: ${generatedCodes.join(', ')}\n• Giảm: ${fmtMoney(discount_value)}\n• Hạn: ${fmt(start_date)} → ${fmt(end_date)}\n• Đơn tối thiểu: ${min_order_value > 0 ? fmtMoney(min_order_value) : 'Không giới hạn'}\n• Lượt dùng / mã: ${usage_limit} (Tối đa ${max_uses_per_user} lần/user)`,
+          };
+        }
         break;
       }
       case "owner_review_reply_draft":
@@ -98,15 +202,38 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
       case "admin_user_lock": {
         const ents = action_plan.entities as any || {};
         const user_id = ents.user_id;
+        const target_role = ents.target_role;
+        const action = ents.action || "lock";
+        const statusValue = action === "unlock" ? "active" : "locked";
+        const actionLabel = action === "unlock" ? "mở khóa" : "khóa";
         
         if (user_id) {
-          await pool.query("UPDATE users SET status = 'locked' WHERE user_id = ?", [user_id]);
+          await pool.query("UPDATE users SET status = ? WHERE user_id = ?", [statusValue, user_id]);
+          resultData = {
+            success: true,
+            message: `Đã ${actionLabel} tài khoản user ID ${user_id} thành công.`,
+          };
+        } else if (target_role) {
+          let condition = "role IN ('user', 'owner')";
+          let roleLabel = "User và Owner";
+          if (target_role === "user") {
+            condition = "role = 'user'";
+            roleLabel = "tất cả User";
+          } else if (target_role === "owner") {
+            condition = "role = 'owner'";
+            roleLabel = "tất cả Owner";
+          }
+          const [res] = await pool.query<any>(`UPDATE users SET status = ? WHERE ${condition}`, [statusValue]);
+          resultData = {
+            success: true,
+            message: `Đã ${actionLabel} thành công ${res.affectedRows || 0} tài khoản ${roleLabel} trên hệ thống.`,
+          };
+        } else {
+          resultData = {
+            success: false,
+            message: `Thiếu thông tin đối tượng cần ${actionLabel}.`,
+          };
         }
-        
-        resultData = {
-          success: true,
-          message: `Đã khóa tài khoản user ID ${user_id} thành công.`,
-        };
         break;
       }
       case "owner_view_employees":
@@ -175,6 +302,33 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         }
         break;
       }
+      case "owner_manage_booking": {
+        const ents = action_plan.entities as any || {};
+        const booking_id = ents.booking_id;
+        const action = ents.action;
+        
+        if (!booking_id) {
+          resultData = { success: false, message: "Thiếu ID đơn hàng để xử lý." };
+          break;
+        }
+        
+        let newStatus = 'pending';
+        let actionLabel = '';
+        if (action === 'approve') { newStatus = 'confirmed'; actionLabel = 'xác nhận'; }
+        else if (action === 'cancel') { newStatus = 'cancelled'; actionLabel = 'hủy'; }
+        else if (action === 'complete') { newStatus = 'completed'; actionLabel = 'hoàn thành'; }
+        
+        await pool.query(
+          "UPDATE bookings SET status = ? WHERE booking_id = ?",
+          [newStatus, booking_id]
+        );
+        
+        resultData = {
+          success: true,
+          message: `Đã ${actionLabel} đơn hàng #${booking_id} thành công.`
+        };
+        break;
+      }
       case "admin_location_review": {
         const ents = action_plan.entities as any || {};
         const location_id = ents.location_id;
@@ -222,7 +376,7 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + ' đ';
         resultData = {
           success: true,
-          message: `✅ Đã tạo voucher hệ thống **${code}** thành công!\n• Giảm: ${fmtMoney(discount_value)}\n• Hạn: ${start_date} → ${end_date}\n• Đơn tối thiểu: ${min_order_value > 0 ? fmtMoney(min_order_value) : 'Không giới hạn'}`,
+          message: `✅ Đã tạo voucher hệ thống **${code}** thành công!\n• Giảm: ${fmtMoney(discount_value)}\n• Hạn: ${fmt(start_date)} → ${fmt(end_date)}\n• Đơn tối thiểu: ${min_order_value > 0 ? fmtMoney(min_order_value) : 'Không giới hạn'}`,
         };
         break;
       }
@@ -283,7 +437,7 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
                 [actor_user_id, start_date_param + " 00:00:00", end_date_param + " 23:59:59"]
               );
               const total = Number(rows[0]?.total || 0);
-              msg += `- Từ ${start_date_param} đến ${end_date_param}: ${total.toLocaleString('vi-VN')} đ\n`;
+              msg += `- Từ ${fmt(start_date_param)} đến ${fmt(end_date_param)}: ${total.toLocaleString('vi-VN')} đ\n`;
             }
             // Trường hợc 3: time_range (today/this_week/this_month/this_year)
             else {
@@ -331,29 +485,7 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
             }
           } else {
             // Admin query
-            const [rowsCurrent] = await pool.query<any[]>(
-              `SELECT COALESCE(SUM(amount), 0) as total FROM payments 
-               WHERE status = 'completed' AND MONTH(payment_time) = MONTH(CURRENT_DATE()) AND YEAR(payment_time) = YEAR(CURRENT_DATE())`
-            );
-            const currentTotal = Number(rowsCurrent[0]?.total || 0);
-
-            const [rowsPrev] = await pool.query<any[]>(
-              `SELECT COALESCE(SUM(amount), 0) as total FROM payments 
-               WHERE status = 'completed' AND MONTH(payment_time) = MONTH(CURRENT_DATE() - INTERVAL 1 MONTH) AND YEAR(payment_time) = YEAR(CURRENT_DATE() - INTERVAL 1 MONTH)`
-            );
-            const prevTotal = Number(rowsPrev[0]?.total || 0);
-
-            msg = `Đây là số liệu doanh thu của TOÀN HỆ THỐNG:\n`;
-            msg += `- Doanh thu tháng này: ${currentTotal.toLocaleString('vi-VN')} đ\n`;
-            msg += `- Doanh thu tháng trước: ${prevTotal.toLocaleString('vi-VN')} đ\n`;
-            
-            if (currentTotal === 0 && prevTotal === 0) {
-              msg += `\n(Hệ thống hiện chưa ghi nhận giao dịch nào trong 2 kỳ gần đây)`;
-            } else if (currentTotal >= prevTotal) {
-              msg += `\n=> 📈 Tuyệt vời! Doanh thu hệ thống **TĂNG** (hoặc bằng) so với tháng trước. Sếp đang làm rất tốt! 🎉`;
-            } else {
-              msg += `\n=> 📉 Doanh thu hệ thống **GIẢM**. Sếp có muốn xem xét tạo Voucher Hệ Thống để kích cầu không?`;
-            }
+            msg = await adminGetRevenueStats(time_range, months, start_date_param, end_date_param);
           }
         } catch (e: any) {
           msg = "Đã xảy ra lỗi khi tính toán dữ liệu: " + e.message;
@@ -366,10 +498,76 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         break;
       }
 
+      case "admin_view_users":
+      case "admin_get_user_growth": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date_param = ents.start_date as string | undefined;
+        const end_date_param = ents.end_date as string | undefined;
+        let msg = await adminGetUserGrowth(time_range, months, start_date_param, end_date_param);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_get_owners": {
+        const ents = action_plan.entities as any || {};
+        const limit = Number(ents.limit) || 5;
+        let msg = await adminGetOwnersStats(limit);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_get_top_locations": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "all";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        const limit = Number(ents.limit) || 3;
+        let msg = await adminGetTopLocations(time_range, months, start_date, end_date, limit);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_view_locations": {
+        let msg = await adminViewLocations();
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_view_sos_alerts": {
+        let msg = await adminViewSosAlerts();
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_send_push_notification": {
+        const ents = action_plan.entities as any || {};
+        const title = ents.title || "Thông báo từ hệ thống";
+        const message = ents.message || "";
+        let msg = await adminSendPushNotification(actor_user_id, title, message);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_adjust_commission_rate": {
+        const ents = action_plan.entities as any || {};
+        const commission_rate = Number(ents.commission_rate || 0);
+        const location_id = ents.location_id ? Number(ents.location_id) : undefined;
+        const owner_id = ents.owner_id ? Number(ents.owner_id) : undefined;
+        let msg = await adminAdjustCommissionRate(commission_rate, location_id, owner_id);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
       case "owner_get_order_stats": {
         const ents = action_plan.entities as any || {};
         const time_range = ents.time_range || "today";
-        let msg = await ownerGetOrderStats(actor_user_id, time_range);
+          const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+          const start_date = ents.start_date;
+          const end_date = ents.end_date;
+          let msg = await ownerGetOrderStats(actor_user_id, time_range, months, start_date, end_date);
         resultData = { success: true, message: msg };
         break;
       }
@@ -377,7 +575,10 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
       case "owner_get_revenue_structure": {
         const ents = action_plan.entities as any || {};
         const time_range = ents.time_range || "today";
-        let msg = await ownerGetRevenueStructure(actor_user_id, time_range);
+          const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+          const start_date = ents.start_date;
+          const end_date = ents.end_date;
+          let msg = await ownerGetRevenueStructure(actor_user_id, time_range, months, start_date, end_date);
         resultData = { success: true, message: msg };
         break;
       }
@@ -385,8 +586,11 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
       case "owner_get_top_services": {
         const ents = action_plan.entities as any || {};
         const time_range = ents.time_range || "today";
-        const location_name = ents.location_name;
-        let msg = await ownerGetTopServices(actor_user_id, time_range, location_name);
+          const location_name = ents.location_name;
+          const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+          const start_date = ents.start_date;
+          const end_date = ents.end_date;
+          let msg = await ownerGetTopServices(actor_user_id, time_range, location_name, months, start_date, end_date);
         resultData = { success: true, message: msg };
         break;
       }

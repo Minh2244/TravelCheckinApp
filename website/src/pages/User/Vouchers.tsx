@@ -26,12 +26,29 @@ const Vouchers = () => {
   }, []);
 
   const now = new Date();
-  const filtered = items
+  const filteredRaw = items
     .filter((v) => new Date(v.end_date) >= now)
     .filter((v) => {
       if (filter === "all") return true;
       return v.apply_to_service_type === "all" || v.apply_to_service_type === filter;
     });
+
+  // Gom nhóm voucher theo voucher_id
+  const groupedVouchers = Object.values(
+    filteredRaw.reduce((acc, v) => {
+      if (!acc[v.voucher_id]) {
+        acc[v.voucher_id] = { ...v, _rawItems: [] };
+      }
+      acc[v.voucher_id]._rawItems.push(v);
+      return acc;
+    }, {} as Record<string, any>)
+  ).map((group: any) => {
+    // Số lượng thực tế = Số lượt tối đa - Số lần đã sử dụng
+    const maxUses = Number(group.max_uses_per_user || 1);
+    const usedCount = Number(group.user_used_count || 0);
+    const actualQuantity = Math.max(0, maxUses - usedCount);
+    return { ...group, actualQuantity };
+  }).filter((g) => g.actualQuantity > 0);
 
   return (
     <UserLayout title="Voucher" activeKey="/user/vouchers">
@@ -76,7 +93,7 @@ const Vouchers = () => {
             {error}
           </div>
         ) : null}
-        {!loading && filtered.length === 0 ? (
+        {!loading && groupedVouchers.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-gray-200/60 bg-gradient-to-br from-gray-50 to-white p-6 text-sm text-gray-500 text-center">
             {items.length === 0
               ? "Chưa có voucher nào. Hãy vào trang chi tiết địa điểm và bấm Lưu voucher."
@@ -85,7 +102,7 @@ const Vouchers = () => {
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2 max-h-[650px] overflow-y-auto pr-1">
-          {filtered.map((v) => {
+          {groupedVouchers.map((v) => {
             const isExpired = new Date(v.end_date) < now;
             const maxUses = Number(v.max_uses_per_user);
             const used = Number(v.user_used_count || 0);
@@ -123,6 +140,13 @@ const Vouchers = () => {
                 }`}
                 style={{ height: "140px" }}
               >
+                {/* Badge Số lượng */}
+                {v.actualQuantity > 1 && (
+                  <div className="absolute top-0 left-0 bg-rose-500 text-white text-[10px] font-black px-2.5 py-1 rounded-br-xl rounded-tl-2xl z-10 shadow-sm border-b border-r border-rose-600">
+                    x{v.actualQuantity}
+                  </div>
+                )}
+
                 {/* Left Violet Stub */}
                 <div className="relative w-32 bg-indigo-600 flex flex-col justify-center items-center text-white shrink-0 p-4 select-none">
                   {/* Decorative Sparkle */}

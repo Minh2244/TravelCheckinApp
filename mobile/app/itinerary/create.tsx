@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 import { itineraryApi } from "../../src/services/itinerary.api";
+import { AppAlert as Alert } from "../../src/modules/ui/app-alert";
 
 export default function CreateItineraryScreen() {
   const router = useRouter();

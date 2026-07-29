@@ -6,10 +6,11 @@ type Props = {
   extra?: ReactNode;
   className?: string;
   bodyClassName?: string;
+  bodyStyle?: React.CSSProperties;
   children: ReactNode;
 };
 
-const PosCard = ({ title, extra, className, bodyClassName, children }: Props) => {
+const PosCard = ({ title, extra, className, bodyClassName, bodyStyle, children }: Props) => {
   return (
     <Card
       title={title}
@@ -18,6 +19,7 @@ const PosCard = ({ title, extra, className, bodyClassName, children }: Props) =>
       styles={{
         body: {
           padding: 16,
+          ...bodyStyle,
         },
       }}
     >

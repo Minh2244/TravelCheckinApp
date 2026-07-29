@@ -13,19 +13,23 @@ const getBackendOrigin = (): string | null => {
   }
 };
 
-export const resolveBackendUrl = (input?: string | null): string | null => {
+export const resolveBackendUrl = (input?: string | null, cacheBuster?: string | number): string | null => {
   if (!input) return null;
   const value = String(input).trim();
   if (!value) return null;
 
-  // Already absolute or data URL
-  if (/^(https?:)?\/\//i.test(value) || value.startsWith("data:")) {
-    return value;
+  let url = value;
+  if (!/^(https?:)?\/\//i.test(value) && !value.startsWith("data:")) {
+    const origin = getBackendOrigin();
+    if (origin) {
+      url = value.startsWith("/") ? `${origin}${value}` : `${origin}/${value}`;
+    }
   }
 
-  const origin = getBackendOrigin();
-  if (!origin) return value;
+  if (cacheBuster && !url.startsWith("data:")) {
+    url += (url.includes("?") ? "&" : "?") + `t=${cacheBuster}`;
+  }
 
-  if (value.startsWith("/")) return `${origin}${value}`;
-  return `${origin}/${value}`;
+  return url;
 };
+

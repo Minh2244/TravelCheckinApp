@@ -158,7 +158,7 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
         );
       }
       const amount = Number(br.final_amount || 0);
-      if (!Number.isFinite(amount) || amount <= 0) {
+      if (!Number.isFinite(amount) || amount < 0) {
         throw new BookingPaymentError("Số tiền booking không hợp lệ", 400);
       }
       totalAmount += amount;
@@ -171,32 +171,25 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
        LIMIT 1`,
       [ownerId],
     );
-    const bankAccount = ownerRows[0]?.bank_account
-      ? String(ownerRows[0].bank_account)
-      : "";
-    const bankName = ownerRows[0]?.bank_name
-      ? String(ownerRows[0].bank_name)
-      : "";
-    const accountHolder = ownerRows[0]?.account_holder
-      ? String(ownerRows[0].account_holder)
-      : "";
-
-    if (!bankAccount || !bankName || !accountHolder) {
-      throw new BookingPaymentError(
-        "Chủ địa điểm chưa cập nhật thông tin ngân hàng để thanh toán",
-        400,
-      );
-    }
-
     const [settingsRows] = await conn.query<RowDataPacket[]>(
       `SELECT setting_key, setting_value
        FROM system_settings
-       WHERE setting_key IN ('default_commission_rate','vat_rate')`,
+       WHERE setting_key IN ('default_commission_rate','vat_rate','default_bank_account','default_bank_name','default_account_holder')`,
     );
     const settings: Record<string, string | null> = {};
     for (const r of settingsRows) {
       settings[String(r.setting_key)] = r.setting_value;
     }
+
+    const bankAccount = ownerRows[0]?.bank_account
+      ? String(ownerRows[0].bank_account)
+      : settings.default_bank_account || "999999999";
+    const bankName = ownerRows[0]?.bank_name
+      ? String(ownerRows[0].bank_name)
+      : settings.default_bank_name || "MBBank";
+    const accountHolder = ownerRows[0]?.account_holder
+      ? String(ownerRows[0].account_holder)
+      : settings.default_account_holder || "TRAVEL CHECKIN APP";
 
     const commissionRate = Number(
       bookingRows[0]?.commission_rate ??
@@ -234,6 +227,9 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
       booking_scope: "room_batch",
     };
 
+    const isZeroAmount = totalAmount <= 0;
+    const initialStatus = isZeroAmount ? 'completed' : 'pending';
+
     const [insert] = await conn.query<ResultSetHeader>(
       `INSERT INTO payments (
         user_id,
@@ -253,7 +249,7 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
         notes,
         performed_by_user_id,
         performed_by_role
-      ) VALUES (?, ?, NULL, ?, 'online_booking', ?, ?, ?, ?, ?, 'VietQR', ?, ?, 'pending', ?, ?, 'user')`,
+      ) VALUES (?, ?, NULL, ?, 'online_booking', ?, ?, ?, ?, ?, 'VietQR', ?, ?, ?, ?, ?, 'user')`,
       [
         userId,
         locationId,
@@ -265,10 +261,22 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
         ownerReceivable,
         tx,
         JSON.stringify(qrData),
+        initialStatus,
         batchNote,
         userId,
       ],
     );
+
+    if (isZeroAmount) {
+      const placeholders = bookingIds.map(() => "?").join(",");
+      await conn.query(
+        `UPDATE bookings
+         SET status = 'pending',
+             notes = NULL
+         WHERE booking_id IN (${placeholders})`,
+        [...bookingIds]
+      );
+    }
 
     const [newRows] = await conn.query<RowDataPacket[]>(
       `SELECT * FROM payments WHERE payment_id = ? LIMIT 1`,
@@ -569,31 +577,24 @@ export const createOrGetUserPaymentForBooking = async (params: {
       [ownerId],
     );
 
-    const bankAccount = ownerRows[0]?.bank_account
-      ? String(ownerRows[0].bank_account)
-      : "";
-    const bankName = ownerRows[0]?.bank_name
-      ? String(ownerRows[0].bank_name)
-      : "";
-    const accountHolder = ownerRows[0]?.account_holder
-      ? String(ownerRows[0].account_holder)
-      : "";
-
-    if (!bankAccount || !bankName || !accountHolder) {
-      throw new BookingPaymentError(
-        "Chủ địa điểm chưa cập nhật thông tin ngân hàng để thanh toán",
-        400,
-      );
-    }
-
     const [settingsRows] = await conn.query<RowDataPacket[]>(
       `SELECT setting_key, setting_value FROM system_settings
-       WHERE setting_key IN ('default_commission_rate','vat_rate')`,
+       WHERE setting_key IN ('default_commission_rate','vat_rate','default_bank_account','default_bank_name','default_account_holder')`,
     );
 
     const settings: Record<string, string | null> = {};
     for (const r of settingsRows)
       settings[String(r.setting_key)] = r.setting_value;
+
+    const bankAccount = ownerRows[0]?.bank_account
+      ? String(ownerRows[0].bank_account)
+      : settings.default_bank_account || "999999999";
+    const bankName = ownerRows[0]?.bank_name
+      ? String(ownerRows[0].bank_name)
+      : settings.default_bank_name || "MBBank";
+    const accountHolder = ownerRows[0]?.account_holder
+      ? String(ownerRows[0].account_holder)
+      : settings.default_account_holder || "TRAVEL CHECKIN APP";
 
     const [locRateRows] = await conn.query<RowDataPacket[]>(
       `SELECT commission_rate FROM locations WHERE location_id = ? LIMIT 1`,
@@ -608,7 +609,7 @@ export const createOrGetUserPaymentForBooking = async (params: {
     const vatRate = Number(settings.vat_rate ?? 0);
 
     const amount = Number(booking.final_amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    if (!Number.isFinite(amount) || amount < 0) {
       throw new BookingPaymentError("Số tiền thanh toán không hợp lệ", 400);
     }
 
@@ -677,6 +678,9 @@ export const createOrGetUserPaymentForBooking = async (params: {
         "Đã thanh toán nếu có vấn đề phát sinh hay không tới bị hủy thì tiền không được hoàn lại",
     };
 
+    const isZeroAmount = amount <= 0;
+    const initialStatus = isZeroAmount ? 'completed' : 'pending';
+
     const [insert] = await conn.query<ResultSetHeader>(
       `INSERT INTO payments (
         user_id,
@@ -696,7 +700,7 @@ export const createOrGetUserPaymentForBooking = async (params: {
         notes,
         performed_by_user_id,
         performed_by_role
-      ) VALUES (?, ?, ?, ?, 'online_booking', ?, ?, ?, ?, ?, 'VietQR', ?, ?, 'pending', ?, ?, 'user')`,
+      ) VALUES (?, ?, ?, ?, 'online_booking', ?, ?, ?, ?, ?, 'VietQR', ?, ?, ?, ?, ?, 'user')`,
       [
         userId,
         Number(booking.location_id),
@@ -709,10 +713,21 @@ export const createOrGetUserPaymentForBooking = async (params: {
         ownerReceivable,
         tx,
         JSON.stringify(qrData),
+        initialStatus,
         JSON.stringify(notes),
         userId,
       ],
     );
+
+    if (isZeroAmount) {
+      await conn.query(
+        `UPDATE bookings
+         SET status = 'pending',
+             notes = NULL
+         WHERE booking_id = ?`,
+        [bookingId]
+      );
+    }
 
     const [newRows] = await conn.query<RowDataPacket[]>(
       `SELECT * FROM payments WHERE payment_id = ? LIMIT 1`,

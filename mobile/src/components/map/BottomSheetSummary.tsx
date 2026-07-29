@@ -5,7 +5,7 @@ import { Image, Pressable, StyleSheet, Text, View, ActivityIndicator } from "rea
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveBackendUrl } from "../../lib/url";
-import type { LocationItem } from "../../types/location";
+import { isPrivateUserLocation, type LocationItem } from "../../types/location";
 import { geoApi } from "../../services/geo.api";
 
 export function BottomSheetSummary({
@@ -27,6 +27,7 @@ export function BottomSheetSummary({
     location.first_image || location.images?.[0] || null,
   );
   const rating = Number(location.rating || 0);
+  const isPrivateLocation = isPrivateUserLocation(location);
 
   // Weather States
   const [temperature, setTemperature] = useState<number | null>(null);
@@ -91,6 +92,12 @@ export function BottomSheetSummary({
           <Text style={styles.subtitle} numberOfLines={1}>
             {location.address}
           </Text>
+          {isPrivateLocation ? (
+            <View style={styles.privateBadge}>
+              <Ionicons name="lock-closed-outline" size={12} color="#0f766e" />
+              <Text style={styles.privateBadgeText}>Rieng tu</Text>
+            </View>
+          ) : null}
           <View className="flex-row items-center gap-3">
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={14} color="#eab308" />
@@ -218,6 +225,21 @@ const styles = StyleSheet.create({
   reviewCount: {
     fontSize: 12,
     color: "#94a3b8",
+  },
+  privateBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: "#ccfbf1",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  privateBadgeText: {
+    color: "#0f766e",
+    fontSize: 11,
+    fontWeight: "800",
   },
   actions: {
     flexDirection: "row",

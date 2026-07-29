@@ -92,6 +92,12 @@ const UserLayout = ({
   const aiScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollAi = useRef(true);
 
+  useEffect(() => {
+    const handleCloseAiChat = () => setAiChatOpen(false);
+    window.addEventListener("tc-close-ai-chat", handleCloseAiChat);
+    return () => window.removeEventListener("tc-close-ai-chat", handleCloseAiChat);
+  }, []);
+
   const [user, setUser] = useState<StoredUser | null>(() => {
     const stored = sessionStorage.getItem("user");
     return parseStoredUser(stored);
@@ -185,6 +191,20 @@ const UserLayout = ({
     } catch {
       setAiError("Không thể gửi tin nhắn.");
       setAiHistory(prev => prev.filter(m => m.history_id !== tempId));
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleClearAiHistory = async () => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử trò chuyện với AI?")) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      await aiApi.clearHistory();
+      setAiHistory([]);
+    } catch {
+      setAiError("Không thể xóa lịch sử AI.");
     } finally {
       setAiLoading(false);
     }
@@ -713,65 +733,76 @@ const UserLayout = ({
                   </div>
 
                   <div className="relative" ref={profileRef}>
-                    <button
-                      type="button"
-                      className="h-10 w-10 overflow-hidden rounded-full border border-gray-200 bg-white hover:border-teal-300 transition-colors duration-200"
+                    <div 
+                      className="flex items-center gap-2 px-1.5 py-1.5 rounded-full border border-gray-200 bg-white shadow-sm hover:shadow-md hover:border-teal-300 transition-all cursor-pointer"
                       onClick={() => setProfileOpen((v) => !v)}
-                      aria-label="Tài khoản"
-                      title="Tài khoản"
                     >
-                      {avatarUrl ? (
-                        <img
-                          src={avatarUrl}
-                          alt="avatar"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-teal-100 text-sm font-semibold text-teal-700">
-                          {initials}
-                        </div>
-                      )}
-                    </button>
+                      <div className="rounded-full p-[2px] bg-gradient-to-tr from-teal-400 to-emerald-400">
+                        {avatarUrl ? (
+                          <img
+                            src={avatarUrl}
+                            alt="avatar"
+                            className="h-7 w-7 rounded-full border-2 border-white object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-white text-xs font-bold text-teal-700 shrink-0">
+                            {initials}
+                          </div>
+                        )}
+                      </div>
+                      <span className="hidden sm:block text-sm font-bold text-slate-700 pl-1 pr-2 truncate max-w-[120px]">
+                        {user?.full_name?.split(' ').pop() || "User"}
+                      </span>
+                      <svg 
+                        className={`text-slate-400 mr-2 w-3 h-3 transition-transform duration-300 ${profileOpen ? 'rotate-90' : 'rotate-0'}`}
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
 
                     {profileOpen ? (
-                      <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg animate-fade-in">
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                          onClick={() => {
-                            setProfileOpen(false);
-                            navigate("/user/profile");
-                          }}
-                        >
-                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
+                      <div className="absolute right-0 top-12 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl animate-fade-in origin-top-right">
+                        <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+                          <p className="text-sm font-bold text-slate-800 truncate">{user?.full_name}</p>
+                          <p className="text-xs font-medium text-slate-500 truncate">{user?.email}</p>
+                        </div>
+                        <div className="p-2 space-y-1">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors duration-150"
+                            onClick={() => {
+                              setProfileOpen(false);
+                              navigate("/user/profile");
+                            }}
+                          >
                             <svg
-                              width="16"
-                              height="16"
+                              width="18"
+                              height="18"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
+                              className="text-slate-400"
                             >
                               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                               <circle cx="12" cy="7" r="4" />
                             </svg>
-                          </span>
-                          Thông tin cá nhân
-                        </button>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150"
-                          onClick={() => {
-                            setProfileOpen(false);
-                            handleLogout();
-                          }}
-                        >
-                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                            Thông tin cá nhân
+                          </button>
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors duration-150"
+                            onClick={() => {
+                              setProfileOpen(false);
+                              handleLogout();
+                            }}
+                          >
                             <svg
-                              width="16"
-                              height="16"
+                              width="18"
+                              height="18"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
@@ -783,9 +814,9 @@ const UserLayout = ({
                               <polyline points="16 17 21 12 16 7" />
                               <line x1="21" y1="12" x2="9" y2="12" />
                             </svg>
-                          </span>
-                          Đăng xuất
-                        </button>
+                            Đăng xuất
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -828,12 +859,19 @@ const UserLayout = ({
             </main>
           </div>
 
+
           {/* Bong bóng Chat AI nổi toàn cục */}
           <div className="fixed bottom-6 right-6 z-40 font-sans">
             <button
               type="button"
               className="flex h-14 w-14 items-center justify-center rounded-full text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-xl shadow-indigo-500/30 transition-all duration-300 hover:scale-110 active:scale-95 border-2 border-white"
-              onClick={() => setAiChatOpen((prev) => !prev)}
+              onClick={() => {
+                  setAiChatOpen((prev) => {
+                    const next = !prev;
+                    if (next) window.dispatchEvent(new Event("tc-close-location-chat"));
+                    return next;
+                  });
+                }}
               aria-label="Trợ lý ảo AI"
             >
               {aiChatOpen ? (
@@ -864,6 +902,13 @@ const UserLayout = ({
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {aiHistory.length > 0 && (
+                      <button onClick={handleClearAiHistory} disabled={aiLoading} className="text-white hover:bg-white/20 p-1.5 rounded-full transition-colors active:scale-95 disabled:opacity-50" title="Xóa lịch sử">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
                     <button onClick={() => setIsAiChatExpanded(p => !p)} className="text-white hover:bg-white/20 p-1.5 rounded-full transition-colors active:scale-95" title={isAiChatExpanded ? "Thu nhỏ" : "Phóng to"}>
                       {isAiChatExpanded ? (
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

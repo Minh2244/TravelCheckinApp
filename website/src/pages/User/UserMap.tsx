@@ -18,7 +18,7 @@ import { useLocations } from "../../hooks/useLocations";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getPinIconByKind } from "../../utils/leafletPinIcons";
 import userApi from "../../api/userApi";
-import type { DiaryItem } from "../../types/user.types";
+import type { CheckinItem, DiaryItem } from "../../types/user.types";
 import locationApi from "../../api/locationApi";
 import geoApi from "../../api/geoApi";
 import {
@@ -33,6 +33,7 @@ import {
 import { locationTypeToVi } from "../../utils/locationTypeText";
 import { getErrorMessage } from "../../utils/safe";
 import { formatDateTimeVi } from "../../utils/formatDateVi";
+import { parseLatLngMaybeSwap } from "../../utils/latLng";
 import {
   REVIEW_UPDATED_EVENT,
   dispatchReviewUpdated,
@@ -166,11 +167,10 @@ const StarRatingPicker = ({
             <button
               key={i}
               type="button"
-              className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
-                filled
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition ${filled
+                ? "bg-amber-100 text-amber-700"
+                : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
               onClick={() => onChange(active ? 0 : i)}
               aria-label={`${i} sao`}
               title={`${i} sao`}
@@ -637,6 +637,35 @@ const isWithinVietnam = (coords: LatLng): boolean => {
   );
 };
 
+const getVietnamBrowserPosition = (
+  pos: GeolocationPosition,
+): LatLng | null => {
+  const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  return isWithinVietnam(coords) ? coords : null;
+};
+
+const getLastKnownVietnamPosition = (checkins: CheckinItem[]): LatLng | null => {
+  for (const item of checkins) {
+    const candidates = [
+      {
+        lat: normalizeNumber(item.checkin_latitude),
+        lng: normalizeNumber(item.checkin_longitude),
+      },
+      {
+        lat: normalizeNumber(item.location_latitude),
+        lng: normalizeNumber(item.location_longitude),
+      },
+    ];
+
+    for (const coords of candidates) {
+      if (coords.lat == null || coords.lng == null) continue;
+      const point = { lat: coords.lat, lng: coords.lng };
+      if (isWithinVietnam(point)) return point;
+    }
+  }
+  return null;
+};
+
 const normalizeSearchText = (v: unknown): string => {
   return String(v ?? "")
     .toLowerCase()
@@ -719,28 +748,28 @@ const scoreSearchResult = (
   const provinceNorm = normalizeProvinceName(extractProvinceFromResult(result));
   const queryProvinceBoost =
     opts.provinceHintNorm &&
-    provinceNorm &&
-    provinceNorm === opts.provinceHintNorm
+      provinceNorm &&
+      provinceNorm === opts.provinceHintNorm
       ? 800
       : 0;
   const userProvinceBoost =
     !queryProvinceBoost &&
-    opts.userProvinceNorm &&
-    provinceNorm &&
-    provinceNorm === opts.userProvinceNorm
+      opts.userProvinceNorm &&
+      provinceNorm &&
+      provinceNorm === opts.userProvinceNorm
       ? 500
       : 0;
   const outsideProvincePenalty =
     !queryProvinceBoost &&
-    opts.userProvinceNorm &&
-    provinceNorm &&
-    provinceNorm !== opts.userProvinceNorm
+      opts.userProvinceNorm &&
+      provinceNorm &&
+      provinceNorm !== opts.userProvinceNorm
       ? -80
       : 0;
   const nonHintPenalty =
     opts.provinceHintNorm &&
-    provinceNorm &&
-    provinceNorm !== opts.provinceHintNorm
+      provinceNorm &&
+      provinceNorm !== opts.provinceHintNorm
       ? -120
       : 0;
 
@@ -837,16 +866,16 @@ const buildSystemSearchResults = (
       hint && provinceNorm && provinceNorm === hint ? 800 : 0;
     const userProvinceBoost =
       !queryProvinceBoost &&
-      userProv &&
-      provinceNorm &&
-      provinceNorm === userProv
+        userProv &&
+        provinceNorm &&
+        provinceNorm === userProv
         ? 500
         : 0;
     const outsideProvincePenalty =
       !queryProvinceBoost &&
-      userProv &&
-      provinceNorm &&
-      provinceNorm !== userProv
+        userProv &&
+        provinceNorm &&
+        provinceNorm !== userProv
         ? -80
         : 0;
     const nonHintPenalty =
@@ -889,24 +918,27 @@ const buildSystemSearchResults = (
 };
 
 const FREE_CHECKIN_RADIUS_M = 80;
+type MyPositionSource = "browser" | "fallback";
 
 const UserMap = () => {
   const navigate = useNavigate();
   const routerLocation = useLocation();
 
 
-  const { locations, loading, error, setKeyword, refetch } = useLocations();
+  const { locations, loading, error, refetch } = useLocations();
   const [selected, setSelected] = useState<Location | null>(null);
   const [pickedPoint, setPickedPoint] = useState<LatLng | null>(null);
   const [pickedName, setPickedName] = useState("");
   const [pickedSuggested, setPickedSuggested] = useState<Location | null>(null);
   const [myPosition, setMyPosition] = useState<LatLng | null>(null);
+  const [myPositionSource, setMyPositionSource] =
+    useState<MyPositionSource | null>(null);
   const lastGpsPosRef = useRef<LatLng | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationDenied, setLocationDenied] = useState(false);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
-  const [checkingIn, setCheckingIn] = useState(false);
+
   const [freeAction, setFreeAction] = useState<"checkin" | "save" | null>(null);
   const [notes, setNotes] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -993,6 +1025,7 @@ const UserMap = () => {
     const p = normalizeProvinceName(userProvince);
     return p || null;
   }, [userProvince]);
+  const hasLiveBrowserPosition = myPositionSource === "browser";
 
   useEffect(() => {
     if (!myPosition) {
@@ -1073,13 +1106,27 @@ const UserMap = () => {
       if (res?.data) {
         setDiaries(res.data);
       }
-    } catch {}
+    } catch { }
+  }, []);
+
+  const loadLastKnownPosition = useCallback(async () => {
+    try {
+      const res = await userApi.getCheckins();
+      const fallback = getLastKnownVietnamPosition(res?.data ?? []);
+      if (!fallback) return;
+      setMyPosition((current) => current ?? fallback);
+      setMyPositionSource((current) => current ?? "fallback");
+      lastGpsPosRef.current = lastGpsPosRef.current ?? fallback;
+      setGpsAccuracy(null);
+      setLocationDenied(false);
+    } catch { }
   }, []);
 
   useEffect(() => {
     void loadFavoriteLocationIds();
     void loadDiaries();
-  }, [loadFavoriteLocationIds, loadDiaries]);
+    void loadLastKnownPosition();
+  }, [loadFavoriteLocationIds, loadDiaries, loadLastKnownPosition]);
 
   // Tu dong lay vi tri khi vao trang + watchPosition + device orientation
   useEffect(() => {
@@ -1093,6 +1140,7 @@ const UserMap = () => {
 
     const startWatch = (initialPos: LatLng) => {
       setMyPosition(initialPos);
+      setMyPositionSource("browser");
       lastGpsPosRef.current = initialPos;
       flyTo(initialPos);
       setLocationDenied(false);
@@ -1101,13 +1149,19 @@ const UserMap = () => {
     const startWatchPosition = () => {
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          const newPos = getVietnamBrowserPosition(pos);
+          if (!newPos) {
+            setGpsAccuracy(null);
+            if (!lastGpsPosRef.current) setLocationDenied(true);
+            return;
+          }
           // Chi cap nhat khi di chuyen > 5m de tranh re-render nhieu
           const prev = lastGpsPosRef.current;
           if (!prev || haversineMeters(prev, newPos) > 5) {
             setMyPosition(newPos);
             lastGpsPosRef.current = newPos;
           }
+          setMyPositionSource("browser");
           setGpsAccuracy(pos.coords.accuracy);
           setLocationDenied(false);
         },
@@ -1129,7 +1183,12 @@ const UserMap = () => {
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const initialPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const initialPos = getVietnamBrowserPosition(pos);
+        if (!initialPos) {
+          setGpsAccuracy(null);
+          if (!lastGpsPosRef.current) setLocationDenied(true);
+          return;
+        }
         setGpsAccuracy(pos.coords.accuracy);
         startWatch(initialPos);
       },
@@ -1177,6 +1236,11 @@ const UserMap = () => {
         return { ...entry, distance };
       })
       .sort((a, b) => {
+        if (a.distance !== null && b.distance !== null) {
+          return a.distance - b.distance;
+        }
+        if (a.distance !== null) return -1;
+        if (b.distance !== null) return 1;
         const nameA = a.item.location_name || "";
         const nameB = b.item.location_name || "";
         return nameA.localeCompare(nameB, "vi");
@@ -1477,9 +1541,14 @@ const UserMap = () => {
   const routeFromRef = useRef<LatLng | null>(null);
   const lastTargetRef = useRef<LatLng | null>(null);
   const lastProfileRef = useRef<string | null>(null);
+  const hasRouteStartPosition = myPosition !== null;
 
   useEffect(() => {
-    if (!routeEnabled || !myPosition || !routeTarget) {
+    if (myPosition) lastGpsPosRef.current = myPosition;
+  }, [myPosition]);
+
+  useEffect(() => {
+    if (!routeEnabled || !hasRouteStartPosition || !routeTarget) {
       setRouteLines(null);
       setRouteInfo(null);
       routeFromRef.current = null;
@@ -1498,10 +1567,12 @@ const UserMap = () => {
 
     // Chi luu vi tri bat dau lan dau khi route moi
     if (!routeFromRef.current) {
-      routeFromRef.current = myPosition;
+      routeFromRef.current = lastGpsPosRef.current;
     } else if (!targetChanged && !profileChanged) {
       return;
     }
+
+    if (!routeFromRef.current) return;
 
     const controller = new AbortController();
     const run = async () => {
@@ -1600,7 +1671,13 @@ const UserMap = () => {
 
     run();
     return () => controller.abort();
-  }, [routeEnabled, routeProfile, routeTarget, myPosition, isSamePoint]);
+  }, [
+    hasRouteStartPosition,
+    isSamePoint,
+    routeEnabled,
+    routeProfile,
+    routeTarget,
+  ]);
 
   // Lưu route vào sessionStorage để persist khi reload
   useEffect(() => {
@@ -1654,8 +1731,7 @@ const UserMap = () => {
     if (!navigator.geolocation) return Promise.resolve(null);
     return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) => resolve(getVietnamBrowserPosition(pos)),
         () => resolve(null),
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 },
       );
@@ -1680,6 +1756,7 @@ const UserMap = () => {
       return;
     }
     setMyPosition(pos);
+    setMyPositionSource("browser");
     recenterTo(pos, 16);
   }, [getCurrentPosition, myPosition, recenterTo]);
 
@@ -1719,6 +1796,7 @@ const UserMap = () => {
         return;
       }
       setMyPosition(pos);
+      setMyPositionSource("browser");
       recenterTo(target, 14);
     },
     [getCurrentPosition, isSamePoint, myPosition, recenterTo],
@@ -1879,7 +1957,7 @@ const UserMap = () => {
     window.addEventListener(REVIEW_UPDATED_EVENT, handler as EventListener);
     const id = window.setInterval(() => {
       void loadSelectedReviews();
-    }, 5000);
+    }, 30000);
     return () => {
       window.removeEventListener(
         REVIEW_UPDATED_EVENT,
@@ -1889,43 +1967,7 @@ const UserMap = () => {
     };
   }, [loadSelectedReviews, selected?.location_id]);
 
-  const handleCheckin = async () => {
-    setFeedback(null);
-    if (!selected) {
-      setFeedback({ type: "error", message: "Vui lòng chọn địa điểm." });
-      return;
-    }
 
-    if (!myPosition) {
-      setFeedback({
-        type: "error",
-        message: "Chưa lấy được vị trí. Vui lòng cấp quyền định vị.",
-      });
-      return;
-    }
-
-    setCheckingIn(true);
-    try {
-      await userApi.createCheckin({
-        location_id: selected.location_id,
-        checkin_latitude: myPosition?.lat ?? null,
-        checkin_longitude: myPosition?.lng ?? null,
-        notes: notes.trim() ? notes.trim() : null,
-      });
-      setNotes("");
-      setFeedback({
-        type: "success",
-        message: "Đã check-in thành công.",
-      });
-    } catch (error) {
-      setFeedback({
-        type: "error",
-        message: getErrorMessage(error, "Không thể tạo check-in."),
-      });
-    } finally {
-      setCheckingIn(false);
-    }
-  };
 
   const handleSaveSelectedLocation = async () => {
     setFeedback(null);
@@ -2143,6 +2185,113 @@ const UserMap = () => {
     navigate(routerLocation.pathname, { replace: true, state: null });
   }, [navigate, routerLocation.pathname, routerLocation.state]);
 
+  const focusQueryHandledRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const navigationState = routerLocation.state as {
+      focusCheckin?: FocusCheckinState;
+      focusRoute?: FocusRouteState;
+    } | null;
+    if (navigationState?.focusCheckin || navigationState?.focusRoute) return;
+
+    const params = new URLSearchParams(routerLocation.search);
+    const routeToValue = params.get("routeTo");
+    const locationValue = routeToValue || params.get("locationId");
+    const locationId = Number(locationValue);
+    if (!Number.isFinite(locationId) || locationId <= 0) return;
+
+    const queryKey = `${routeToValue ? "route" : "focus"}:${locationId}`;
+    if (focusQueryHandledRef.current === queryKey) return;
+    if (loading && locations.length === 0) return;
+
+    let cancelled = false;
+    const applyLocation = (targetLocation: Location) => {
+      if (cancelled) return;
+      const coords = parseLatLngMaybeSwap(
+        targetLocation.latitude,
+        targetLocation.longitude,
+      );
+      if (!coords) {
+        setFeedback({
+          type: "error",
+          message: "Địa điểm này chưa có tọa độ để hiển thị trên bản đồ.",
+        });
+        focusQueryHandledRef.current = queryKey;
+        navigate(routerLocation.pathname, { replace: true, state: null });
+        return;
+      }
+
+      setSelected(targetLocation);
+      setPanelOpen(true);
+      setSidebarTab("detail");
+      setPanelTab("info");
+      flyTo(coords);
+
+      if (routeToValue) {
+        const focusRoute: FocusRouteState = {
+          location_id: Number(targetLocation.location_id),
+          lat: coords.lat,
+          lng: coords.lng,
+          location_name: targetLocation.location_name,
+          address: targetLocation.address,
+          first_image: targetLocation.first_image,
+        };
+        setPendingFocusRoute(focusRoute);
+        setRouteOnlyMode(true);
+        setRouteOnlyDestination(focusRoute);
+      }
+
+      focusQueryHandledRef.current = queryKey;
+      navigate(routerLocation.pathname, { replace: true, state: null });
+    };
+
+    const found = locations.find(
+      (item) => Number(item.location_id) === locationId,
+    );
+    if (found) {
+      applyLocation(found);
+    } else {
+      locationApi
+        .getLocationById(locationId, "web")
+        .then((response) => {
+          if (response.success && response.data) {
+            applyLocation(response.data);
+            return;
+          }
+          if (!cancelled) {
+            setFeedback({
+              type: "error",
+              message: "Không tìm thấy địa điểm cần mở trên bản đồ.",
+            });
+            focusQueryHandledRef.current = queryKey;
+            navigate(routerLocation.pathname, { replace: true, state: null });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setFeedback({
+              type: "error",
+              message: "Không thể tải địa điểm cần mở trên bản đồ.",
+            });
+            focusQueryHandledRef.current = queryKey;
+            navigate(routerLocation.pathname, { replace: true, state: null });
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    flyTo,
+    loading,
+    locations,
+    navigate,
+    routerLocation.pathname,
+    routerLocation.search,
+    routerLocation.state,
+  ]);
+
   useEffect(() => {
     if (!pendingFocusRoute) return;
     if (locations.length === 0 && loading) return; // Wait for locations to load
@@ -2168,7 +2317,7 @@ const UserMap = () => {
               setPanelTab("info");
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     }
 
@@ -2213,7 +2362,7 @@ const UserMap = () => {
               focusCheckinDoneRef.current = focusCheckin.checkin_id;
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
     } else {
       focusCheckinDoneRef.current = focusCheckin.checkin_id;
@@ -2337,9 +2486,6 @@ const UserMap = () => {
     <UserLayout
       title="Bản đồ"
       activeKey="/user/map"
-      showSearch
-      onSearch={setKeyword}
-      searchPlaceholder="Tìm địa điểm..."
     >
       <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-6">
         <section className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
@@ -2397,6 +2543,64 @@ const UserMap = () => {
             ) : null}
           </div>
 
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
+              onClick={() => {
+                setFullMapOpen(true);
+                if (selected) setPanelOpen(true);
+              }}
+            >
+              Mở lớn bản đồ
+            </button>
+            <button
+              type="button"
+              className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
+              onClick={handleRecenterToMyPosition}
+              disabled={locating}
+            >
+              Về vị trí tôi
+            </button>
+
+            <details className="group relative">
+              <summary className="list-none flex items-center gap-1.5 cursor-pointer rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors select-none">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+                {tileOptions.find((t) => t.key === mapStyle)?.label || "Loại bản đồ"}
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="group-open:rotate-180 transition-transform ml-1 text-gray-400">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </summary>
+              <div className="absolute top-full left-0 mt-1.5 w-44 overflow-hidden rounded-2xl bg-white p-1 shadow-xl ring-1 ring-black/5 z-[999] origin-top animate-in fade-in slide-in-from-top-2">
+                {tileOptions.map((tile) => (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    className={`w-full text-left rounded-xl px-3 py-2 text-xs font-medium transition-colors flex items-center gap-2 ${mapStyle === tile.key
+                      ? "bg-slate-50 text-slate-900"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      }`}
+                    onClick={(e) => {
+                      setMapStyle(tile.key);
+                      e.currentTarget.closest("details")?.removeAttribute("open");
+                    }}
+                  >
+                    {mapStyle === tile.key ? (
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-600 shrink-0">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    ) : (
+                      <span className="w-[14px] shrink-0" />
+                    )}
+                    {tile.label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+
           <div className="mt-4 h-[520px] overflow-hidden rounded-2xl border border-gray-100">
             {!fullMapOpen ? (
               <MapContainer
@@ -2428,11 +2632,15 @@ const UserMap = () => {
                     position={[myPosition.lat, myPosition.lng]}
                     icon={myPositionIcon}
                   >
-                    <Popup autoPan={false}>Vị trí của bạn</Popup>
+                    <Popup autoPan={false}>
+                      {hasLiveBrowserPosition
+                        ? "Vị trí của bạn"
+                        : "Vị trí gần nhất đã biết"}
+                    </Popup>
                   </Marker>
                 ) : null}
 
-                {myPosition ? (
+                {myPosition && hasLiveBrowserPosition ? (
                   <CompassMarker
                     position={myPosition}
                     heading={deviceHeading}
@@ -2529,8 +2737,8 @@ const UserMap = () => {
                 ) : null}
 
                 {focusCheckin &&
-                focusCheckin.lat != null &&
-                focusCheckin.lng != null ? (
+                  focusCheckin.lat != null &&
+                  focusCheckin.lng != null ? (
                   <Marker
                     position={[focusCheckin.lat, focusCheckin.lng]}
                     icon={getCircleImageIcon(
@@ -2590,41 +2798,41 @@ const UserMap = () => {
 
                 {routeLines
                   ? routeLines.map((line, index) => (
-                      <React.Fragment key={`route-${index}`}>
-                        {/* Vien trang de route noi bat */}
-                        {index === 0 && (
-                          <Polyline
-                            positions={line.map((p) => [p.lat, p.lng])}
-                            pathOptions={{
-                              color: "#ffffff",
-                              weight: 9,
-                              opacity: 0.8,
-                            }}
-                          />
-                        )}
-                        {/* Duong route chinh */}
+                    <React.Fragment key={`route-${index}`}>
+                      {/* Vien trang de route noi bat */}
+                      {index === 0 && (
                         <Polyline
                           positions={line.map((p) => [p.lat, p.lng])}
                           pathOptions={{
-                            color:
-                              index === 0
-                                ? "#2563eb"
-                                : index === 1
-                                  ? "#10b981"
-                                  : "#f97316",
-                            weight: index === 0 ? 5 : 3,
-                            opacity: index === 0 ? 0.95 : 0.7,
-                            dashArray: index === 0 ? undefined : "6 8",
-                            lineCap: "round",
-                            lineJoin: "round",
+                            color: "#ffffff",
+                            weight: 9,
+                            opacity: 0.8,
                           }}
                         />
-                      </React.Fragment>
-                    ))
+                      )}
+                      {/* Duong route chinh */}
+                      <Polyline
+                        positions={line.map((p) => [p.lat, p.lng])}
+                        pathOptions={{
+                          color:
+                            index === 0
+                              ? "#2563eb"
+                              : index === 1
+                                ? "#10b981"
+                                : "#f97316",
+                          weight: index === 0 ? 5 : 3,
+                          opacity: index === 0 ? 0.95 : 0.7,
+                          dashArray: index === 0 ? undefined : "6 8",
+                          lineCap: "round",
+                          lineJoin: "round",
+                        }}
+                      />
+                    </React.Fragment>
+                  ))
                   : null}
 
                 {/* Mui ten bearing khi co route */}
-                {routeEnabled && routeTarget && myPosition ? (
+                {routeEnabled && routeTarget && myPosition && hasLiveBrowserPosition ? (
                   <BearingArrow
                     position={myPosition}
                     destination={routeTarget}
@@ -2686,14 +2894,6 @@ const UserMap = () => {
                         <div className="space-y-1">
 
 
-                          <button
-                            type="button"
-                            className="w-full flex items-center justify-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-900 px-2 py-1.5 text-[10px] font-bold text-white transition active:scale-[0.98] disabled:opacity-50"
-                            onClick={() => handleFreeAction("checkin")}
-                            disabled={freeAction === "checkin" || !isPickedOpenNow}
-                          >
-                            <span>✅</span> {freeAction === "checkin" ? "Đang check-in..." : "Check-in tại đây"}
-                          </button>
 
                           {!isPickedOpenNow ? (
                             <div className="text-[9px] text-amber-700 bg-amber-50 rounded-md py-0.5 px-1.5 text-center font-bold">
@@ -2739,88 +2939,88 @@ const UserMap = () => {
 
                 {!routeOnlyMode
                   ? filteredLocations.map((entry) => {
-                      const isSelected =
-                        selected?.location_id === entry.item.location_id;
-                      const icon = getCircleImageIcon(
-                            resolveBackendUrl(
-                              entry.item.first_image ??
-                                (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
-                            ),
-                            isSelected,
-                          );
-                      const isRoutingToThis =
-                        routeEnabled &&
-                        routeTarget &&
-                        isSamePoint(routeTarget, {
-                          lat: entry.lat,
-                          lng: entry.lng,
-                        });
+                    const isSelected =
+                      selected?.location_id === entry.item.location_id;
+                    const icon = getCircleImageIcon(
+                      resolveBackendUrl(
+                        entry.item.first_image ??
+                        (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
+                      ),
+                      isSelected,
+                    );
+                    const isRoutingToThis =
+                      routeEnabled &&
+                      routeTarget &&
+                      isSamePoint(routeTarget, {
+                        lat: entry.lat,
+                        lng: entry.lng,
+                      });
 
-                      return (
-                        <Marker
-                          key={`loc-${entry.item.location_id}`}
-                          position={[entry.lat, entry.lng]}
-                          icon={icon}
-                          eventHandlers={{
-                            click: () =>
-                              handleSelectLocation(entry.item, {
-                                lat: entry.lat,
-                                lng: entry.lng,
-                              }),
-                            dblclick: () => {
-                              setSelected(null);
-                              setPanelOpen(false);
-                            },
-                          }}
-                        >
-                          <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
-                            <div className="space-y-2">
-                              <p className="font-semibold text-gray-900">
-                                {entry.item.location_name}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {entry.item.address}
-                              </p>
-                              <div className="flex gap-2">
+                    return (
+                      <Marker
+                        key={`loc-${entry.item.location_id}`}
+                        position={[entry.lat, entry.lng]}
+                        icon={icon}
+                        eventHandlers={{
+                          click: () =>
+                            handleSelectLocation(entry.item, {
+                              lat: entry.lat,
+                              lng: entry.lng,
+                            }),
+                          dblclick: () => {
+                            setSelected(null);
+                            setPanelOpen(false);
+                          },
+                        }}
+                      >
+                        <Popup autoPan={false} closeOnEscapeKey closeOnClick={false}>
+                          <div className="space-y-2">
+                            <p className="font-semibold text-gray-900">
+                              {entry.item.location_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {entry.item.address}
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
+                                onClick={() => {
+                                  setSelected(entry.item);
+                                  setPanelOpen(true);
+                                }}
+                              >
+                                Xem chi tiết
+                              </button>
+
+                              <button
+                                type="button"
+                                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                onClick={() =>
+                                  void ensureRouteToTarget({
+                                    lat: entry.lat,
+                                    lng: entry.lng,
+                                  })
+                                }
+                                disabled={locating}
+                              >
+                                {locating ? "Đang định vị..." : "Đường đi"}
+                              </button>
+                              {isRoutingToThis ? (
                                 <button
                                   type="button"
-                                  className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
-                                  onClick={() => {
-                                    setSelected(entry.item);
-                                    setPanelOpen(true);
-                                  }}
+                                  className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
+                                  onClick={clearRoute}
                                 >
-                                  Xem chi tiết
+                                  Xoá
                                 </button>
-
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                                  onClick={() =>
-                                    void ensureRouteToTarget({
-                                      lat: entry.lat,
-                                      lng: entry.lng,
-                                    })
-                                  }
-                                  disabled={locating}
-                                >
-                                  {locating ? "Đang định vị..." : "Đường đi"}
-                                </button>
-                                {isRoutingToThis ? (
-                                  <button
-                                    type="button"
-                                    className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
-                                    onClick={clearRoute}
-                                  >
-                                    Xoá
-                                  </button>
-                                ) : null}
-                              </div>
+                              ) : null}
                             </div>
-                          </Popup>
-                        </Marker>
-                      );
-                    })
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })
                   : null}
 
                 {!routeOnlyMode && selected && !filteredLocations.some(entry => entry.item.location_id === selected.location_id) ? (
@@ -2832,7 +3032,7 @@ const UserMap = () => {
                     const icon = getCircleImageIcon(
                       resolveBackendUrl(
                         selected.first_image ??
-                          (Array.isArray(selected.images) ? selected.images[0] : null),
+                        (Array.isArray(selected.images) ? selected.images[0] : null),
                       ),
                       isSelected,
                     );
@@ -2906,48 +3106,26 @@ const UserMap = () => {
             )}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-              onClick={() => {
-                setFullMapOpen(true);
-                if (selected) setPanelOpen(true);
-              }}
-            >
-              Mở lớn bản đồ
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
-              onClick={handleRecenterToMyPosition}
-              disabled={locating}
-            >
-              Về vị trí tôi
-            </button>
-          </div>
-
+          {/* Removed map controls to top */}
           {routeTarget ? (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <span className="text-xs text-gray-500">Lộ trình:</span>
               <button
                 type="button"
-                className={`rounded-full px-3 py-1 text-xs ${
-                  routeMode === "motorbike"
-                    ? "bg-teal-600 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
+                className={`rounded-full px-3 py-1 text-xs ${routeMode === "motorbike"
+                  ? "bg-teal-600 text-white"
+                  : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
                 onClick={() => setRouteMode("motorbike")}
               >
                 Xe máy
               </button>
               <button
                 type="button"
-                className={`rounded-full px-3 py-1 text-xs ${
-                  routeMode === "car"
-                    ? "bg-teal-600 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
+                className={`rounded-full px-3 py-1 text-xs ${routeMode === "car"
+                  ? "bg-teal-600 text-white"
+                  : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
                 onClick={() => setRouteMode("car")}
               >
                 Ô tô
@@ -2955,11 +3133,10 @@ const UserMap = () => {
               <span className="text-[10px] text-gray-400" title="OSRM chỉ hỗ trợ profile driving">(ước tính)</span>
               <button
                 type="button"
-                className={`rounded-full px-3 py-1 text-xs ${
-                  routeEnabled
-                    ? "bg-emerald-500 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
+                className={`rounded-full px-3 py-1 text-xs ${routeEnabled
+                  ? "bg-emerald-500 text-white"
+                  : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
                 onClick={() => setRouteEnabled((prev) => !prev)}
               >
                 {routeEnabled ? "Ẩn lộ trình" : "Hiện lộ trình"}
@@ -2974,22 +3151,7 @@ const UserMap = () => {
             </div>
           ) : null}
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {tileOptions.map((tile) => (
-              <button
-                key={tile.key}
-                type="button"
-                className={`rounded-full px-3 py-1 text-xs ${
-                  mapStyle === tile.key
-                    ? "bg-slate-900 text-white"
-                    : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
-                onClick={() => setMapStyle(tile.key)}
-              >
-                {tile.label}
-              </button>
-            ))}
-          </div>
+          {/* Map style options moved to dropdown */}
 
           {routeInfo ? (
             routeInfo.source === "haversine" ? (
@@ -3021,11 +3183,10 @@ const UserMap = () => {
 
           {feedback ? (
             <div
-              className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-                feedback.type === "success"
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-red-50 text-red-600"
-              }`}
+              className={`mt-4 rounded-2xl px-4 py-3 text-sm ${feedback.type === "success"
+                ? "bg-emerald-50 text-emerald-600"
+                : "bg-red-50 text-red-600"
+                }`}
             >
               {feedback.message}
             </div>
@@ -3045,11 +3206,10 @@ const UserMap = () => {
               <button
                 key={tab.key}
                 type="button"
-                className={`flex-1 py-3 text-xs font-semibold transition ${
-                  sidebarTab === tab.key
-                    ? "border-b-2 border-teal-600 text-teal-700 bg-teal-50/50"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                }`}
+                className={`flex-1 py-3 text-xs font-semibold transition ${sidebarTab === tab.key
+                  ? "border-b-2 border-teal-600 text-teal-700 bg-teal-50/50"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
                 onClick={() => setSidebarTab(tab.key)}
               >
                 {tab.label}
@@ -3075,12 +3235,18 @@ const UserMap = () => {
                   onClick={() => {
                     navigator.geolocation.getCurrentPosition(
                       (pos) => {
-                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        const newPos = getVietnamBrowserPosition(pos);
+                        if (!newPos) {
+                          setGpsAccuracy(null);
+                          setLocationDenied(true);
+                          return;
+                        }
                         setMyPosition(newPos);
+                        setMyPositionSource("browser");
                         flyTo(newPos);
                         setLocationDenied(false);
                       },
-                      () => {},
+                      () => { },
                       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
                     );
                   }}
@@ -3091,7 +3257,7 @@ const UserMap = () => {
             ) : null}
 
             {/* Canh bao GPS khong chinh xac */}
-            {!locationDenied && myPosition && gpsAccuracy != null && gpsAccuracy > 500 ? (
+            {!locationDenied && hasLiveBrowserPosition && myPosition && gpsAccuracy != null && gpsAccuracy > 500 ? (
               <div className="mb-3 rounded-xl bg-blue-50 border border-blue-200 px-3 py-2.5 flex items-center gap-2">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500 shrink-0">
                   <circle cx="12" cy="12" r="10" />
@@ -3108,13 +3274,19 @@ const UserMap = () => {
                   onClick={() => {
                     navigator.geolocation.getCurrentPosition(
                       (pos) => {
-                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        const newPos = getVietnamBrowserPosition(pos);
+                        if (!newPos) {
+                          setGpsAccuracy(null);
+                          setLocationDenied(true);
+                          return;
+                        }
                         setMyPosition(newPos);
+                        setMyPositionSource("browser");
                         setGpsAccuracy(pos.coords.accuracy);
                         flyTo(newPos);
                         setLocationDenied(false);
                       },
-                      () => {},
+                      () => { },
                       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
                     );
                   }}
@@ -3127,55 +3299,57 @@ const UserMap = () => {
             {/* Tab: Địa điểm */}
             {sidebarTab === "locations" && !routeOnlyMode ? (
               <div className="space-y-4">
-                {/* Tìm kiếm */}
-                <div className="flex gap-2">
-                  <input
-                    value={searchQuery}
-                    onChange={(event) => {
-                      setSearchQuery(event.target.value);
-                      setSearchSelected(null);
-                    }}
-                    placeholder="Tìm kiếm địa điểm..."
-                    className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm transition-all duration-200 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    className="rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setSearchResults([]);
-                      setSearchMarker(null);
-                      setSearchSelected(null);
-                    }}
-                  >
-                    Xoá
-                  </button>
-                </div>
 
                 {/* Filter loại địa điểm */}
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      { key: "all", label: "Tất cả" },
-                      { key: "food", label: "Ăn uống" },
-                      { key: "tourist", label: "Du lịch" },
-                      { key: "hotel", label: "Khách sạn" },
-                      { key: "mine", label: "Đã lưu" },
-                    ] as const
-                  ).map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        nearbyCategory === item.key
-                          ? "bg-emerald-600 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
-                      onClick={() => setNearbyCategory(item.key)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-3">
+                  <span className="text-[13px] font-semibold text-gray-700">Dịch vụ</span>
+                  <details className="group relative">
+                    <summary className="list-none flex items-center gap-1.5 cursor-pointer rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors select-none">
+                      {
+                        [
+                          { key: "all", label: "Tất cả" },
+                          { key: "food", label: "Ăn uống" },
+                          { key: "tourist", label: "Du lịch" },
+                          { key: "hotel", label: "Khách sạn" },
+                          { key: "mine", label: "Đã lưu" },
+                        ].find((i) => i.key === nearbyCategory)?.label || "Dịch vụ"
+                      }
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-open:rotate-180 transition-transform text-emerald-600">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </summary>
+                    <div className="absolute top-full left-0 mt-1.5 w-36 overflow-hidden rounded-2xl bg-white p-1 shadow-xl ring-1 ring-black/5 z-[1000]">
+                      {(
+                        [
+                          { key: "all", label: "Tất cả" },
+                          { key: "food", label: "Ăn uống" },
+                          { key: "tourist", label: "Du lịch" },
+                          { key: "hotel", label: "Khách sạn" },
+                          { key: "mine", label: "Đã lưu" },
+                        ] as const
+                      ).map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className={`w-full text-left flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition-colors ${nearbyCategory === item.key
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                            }`}
+                          onClick={(e) => {
+                            setNearbyCategory(item.key);
+                            e.currentTarget.closest("details")?.removeAttribute("open");
+                          }}
+                        >
+                          {item.label}
+                          {nearbyCategory === item.key ? (
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-600 shrink-0">
+                              <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                 </div>
 
                 {/* Danh sách địa điểm (gộp Gần bạn + Tất cả) */}
@@ -3200,12 +3374,12 @@ const UserMap = () => {
                       Không có địa điểm phù hợp.
                     </p>
                   ) : (
-                    <div className="flex flex-col gap-2 max-h-[400px] overflow-auto pr-1">
+                    <div className="grid grid-cols-2 gap-3 overflow-y-auto max-h-[calc(100vh-280px)] pr-2 pb-10 custom-scrollbar">
                       {filteredLocations.map((entry) => {
                         const item = entry.item;
                         const imageUrl = resolveBackendUrl(
                           item.first_image ??
-                            (Array.isArray(item.images) ? item.images[0] : null),
+                          (Array.isArray(item.images) ? item.images[0] : null),
                         );
                         const isSelected = selected?.location_id === item.location_id;
                         const typeLabel = locationTypeToVi(item.location_type);
@@ -3214,62 +3388,85 @@ const UserMap = () => {
                           <button
                             key={item.location_id}
                             type="button"
-                            className={`user-sub-card card-lift flex items-stretch overflow-hidden text-left transition rounded-xl ${
-                              isSelected
-                                ? "border-teal-300 bg-teal-50/60 ring-1 ring-teal-300"
-                                : "border-gray-100 bg-white hover:border-gray-200"
-                            }`}
+                            className={`group relative flex flex-col overflow-hidden text-left transition-all duration-300 rounded-2xl shrink-0 border h-[260px] ${isSelected
+                              ? "border-gray-300 bg-gray-50 shadow-md -translate-y-1"
+                              : "border-gray-100 bg-white hover:border-gray-200 hover:shadow-xl hover:-translate-y-1 shadow-lg"
+                              }`}
                             onClick={() =>
                               handleSelectLocation(item, { lat: entry.lat, lng: entry.lng })
                             }
                           >
-                            {/* Anh ben trai */}
-                            <div className="relative w-28 shrink-0 overflow-hidden rounded-l-xl min-h-[72px]">
+                            {/* Ảnh phía trên */}
+                            <div className="relative w-full h-[140px] shrink-0 overflow-hidden bg-gray-100">
                               {imageUrl ? (
                                 <img
                                   src={imageUrl}
                                   alt={item.location_name}
-                                  className="h-full w-full object-cover"
+                                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                                 />
                               ) : (
-                                <div className="h-full w-full bg-gradient-to-br from-teal-100 via-emerald-50 to-cyan-100 flex items-center justify-center">
-                                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-teal-300">
+                                <div className="h-full w-full bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center">
+                                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-400">
                                     <path d="M12 3a7 7 0 0 1 7 7c0 5-7 11-7 11s-7-6-7-11a7 7 0 0 1 7-7z" />
                                     <circle cx="12" cy="10" r="2.5" />
                                   </svg>
                                 </div>
                               )}
-                            </div>
-                            {/* Noi dung ben phai */}
-                            <div className="flex flex-1 flex-col justify-center px-3 py-2 min-w-0">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="inline-block rounded-md bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-700 shrink-0">
+
+                              {/* Badge Category */}
+                              <div className="absolute top-2 left-2 flex shadow-sm">
+                                <span className="inline-flex items-center rounded-full bg-emerald-50/90 backdrop-blur-sm px-2 py-0.5 text-[9px] font-bold text-emerald-700 shadow-sm border border-emerald-100/50">
                                   {typeLabel}
                                 </span>
-                                {item.is_eco_friendly ? (
-                                  <span className="inline-block rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 shrink-0">
-                                    Eco
-                                  </span>
-                                ) : null}
                               </div>
-                              <h4 className="text-sm font-bold text-slate-800 line-clamp-1">
-                                {item.location_name}
-                              </h4>
-                              <div className="mt-1 flex items-center gap-1.5">
-                                <span className="text-xs text-amber-500">★</span>
-                                <span className="text-xs font-semibold text-gray-700">{ratingVal.toFixed(1)}</span>
-                                <span className="text-xs text-gray-400">({item.total_reviews ?? 0})</span>
-                                {entry.distance != null ? (
-                                  <span className="text-xs text-gray-400 ml-auto shrink-0">
+
+                              {/* Badge Distance */}
+                              {entry.distance != null ? (
+                                <div className="absolute top-2 right-2 flex shadow-sm">
+                                  <span className="inline-flex items-center rounded-full bg-gray-900/80 backdrop-blur-md px-2 py-0.5 text-[9px] font-bold text-white">
                                     {formatDistance(entry.distance)}
                                   </span>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {/* Nội dung bên dưới */}
+                            <div className="flex flex-col p-2.5 w-full bg-white flex-1">
+                              <h4 className="text-[14px] font-bold text-blue-600 line-clamp-1 mb-1 group-hover:text-blue-700 transition-colors">
+                                {item.location_name}
+                              </h4>
+
+                              <div className="flex flex-col gap-1 mb-1">
+                                {item.address ? (
+                                  <div className="flex items-start gap-1.5">
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-blue-400 mt-0.5 shrink-0">
+                                      <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
+                                      <circle cx="12" cy="10" r="3" />
+                                    </svg>
+                                    <span className="text-[11px] text-gray-500 line-clamp-2 leading-tight">
+                                      {item.address}
+                                    </span>
+                                  </div>
+                                ) : null}
+
+                                {item.phone ? (
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-blue-400 shrink-0">
+                                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                                    </svg>
+                                    <span className="text-[11px] text-gray-500 line-clamp-1">
+                                      {item.phone}
+                                    </span>
+                                  </div>
                                 ) : null}
                               </div>
-                              {item.address ? (
-                                <p className="mt-0.5 text-[11px] text-gray-400 line-clamp-1">
-                                  {item.address}
-                                </p>
-                              ) : null}
+
+                              <div className="flex items-center gap-1 mt-auto pt-2 border-t border-gray-100">
+                                <span className="text-[14px] text-amber-500">★</span>
+                                <span className="text-[14px] font-bold text-gray-800">{ratingVal.toFixed(1)}</span>
+                                <span className="text-blue-300 mx-1">•</span>
+                                <span className="text-[13px] text-blue-600 font-medium">{item.total_reviews ?? 0} lượt đánh giá</span>
+                              </div>
                             </div>
                           </button>
                         );
@@ -3289,16 +3486,16 @@ const UserMap = () => {
                     {(() => {
                       let img = resolveBackendUrl(
                         selected.first_image ??
-                          (Array.isArray(selected.images) ? selected.images[0] : null),
+                        (Array.isArray(selected.images) ? selected.images[0] : null),
                       );
-                      
+
                       if (!img && selected.description === "User created location") {
                         const matchedDiary = diaries.find(d => d.location_id === selected.location_id || d.location_name === selected.location_name);
                         if (matchedDiary && matchedDiary.images && matchedDiary.images.length > 0) {
                           img = resolveBackendUrl(matchedDiary.images[0]);
                         }
                       }
-                      
+
                       return img ? (
                         <div className="relative w-full aspect-[16/10] rounded-xl overflow-hidden">
                           <img
@@ -3341,11 +3538,10 @@ const UserMap = () => {
                           ({selected.total_reviews ?? 0} đánh giá)
                         </span>
                       </div>
-                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        isSelectedOpenNow
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-red-50 text-red-600"
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${isSelectedOpenNow
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-red-50 text-red-600"
+                        }`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${isSelectedOpenNow ? "bg-emerald-500" : "bg-red-500"}`} />
                         {isSelectedOpenNow ? "Đang mở" : "Đang đóng"}
                         {selectedOpenClose ? ` ${selectedOpenClose.open}-${selectedOpenClose.close}` : ""}
@@ -3354,11 +3550,10 @@ const UserMap = () => {
 
                     {/* Thong ke: gio mo cua + reviews */}
                     <div className="grid grid-cols-2 gap-2">
-                      <div className={`rounded-xl border px-3 py-2.5 text-center ${
-                        isSelectedOpenNow
-                          ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-100"
-                          : "bg-gradient-to-br from-red-50 to-rose-50 border-red-100"
-                      }`}>
+                      <div className={`rounded-xl border px-3 py-2.5 text-center ${isSelectedOpenNow
+                        ? "bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-100"
+                        : "bg-gradient-to-br from-red-50 to-rose-50 border-red-100"
+                        }`}>
                         <p className={`text-lg font-bold ${isSelectedOpenNow ? "text-emerald-700" : "text-red-700"}`}>
                           {selectedOpenClose ? `${selectedOpenClose.open}` : "--:--"}
                         </p>
@@ -3445,11 +3640,10 @@ const UserMap = () => {
                     <div className="flex flex-col gap-2 pt-1">
                       <button
                         type="button"
-                        className={`w-full rounded-xl px-4 py-2.5 text-xs font-medium transition ${
-                          !myPosition
-                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                            : "bg-teal-600 text-white hover:bg-teal-700 shadow-sm"
-                        }`}
+                        className={`w-full rounded-xl px-4 py-2.5 text-xs font-medium transition ${!myPosition
+                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                          : "bg-teal-600 text-white hover:bg-teal-700 shadow-sm"
+                          }`}
                         onClick={handleNavigateToSelected}
                         disabled={locating || !myPosition}
                       >
@@ -3502,11 +3696,10 @@ const UserMap = () => {
                           <button
                             key={`review-filter-${star}`}
                             type="button"
-                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                              active
-                                ? "bg-teal-600 text-white"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active
+                              ? "bg-teal-600 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
                             onClick={() => setReviewFilter(star)}
                           >
                             {star === 0 ? "Tất cả" : `${star} sao`}
@@ -3601,7 +3794,7 @@ const UserMap = () => {
                         <p className="text-xs text-gray-500">Đang tải đánh giá...</p>
                       ) : null}
                       {!selectedReviewsLoading &&
-                      filteredSelectedReviews.length === 0 ? (
+                        filteredSelectedReviews.length === 0 ? (
                         <p className="text-xs text-gray-500">
                           Chưa có đánh giá phù hợp bộ lọc.
                         </p>
@@ -3833,32 +4026,16 @@ const UserMap = () => {
 
       {fullMapOpen ? (
         <div
-          className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 p-4"
+          className="fixed inset-0 z-[999] flex items-start justify-center bg-slate-900/60 pt-2 pb-6 px-3"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setFullMapOpen(false);
           }}
         >
           <div
-            className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
+            className="flex w-full h-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="flex flex-wrap items-center justify-end gap-2 border-b border-gray-100 px-5 py-3">
-              <button
-                type="button"
-                className={`rounded-full border px-4 py-2 text-xs ${
-                  !myPosition
-                    ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-                    : "border-emerald-100 bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                }`}
-                onClick={handleCheckin}
-                disabled={!selected || checkingIn || !isSelectedOpenNow || !myPosition}
-              >
-                {!myPosition
-                  ? "Cần bật định vị"
-                  : checkingIn
-                    ? "Đang check-in..."
-                    : "Check-in nhanh"}
-              </button>
               <button
                 type="button"
                 className="rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50"
@@ -3867,6 +4044,44 @@ const UserMap = () => {
               >
                 Về vị trí tôi
               </button>
+
+              <details className="group relative">
+                <summary className="list-none flex items-center gap-1.5 cursor-pointer rounded-full border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors select-none">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  {tileOptions.find((t) => t.key === mapStyle)?.label || "Loại bản đồ"}
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="group-open:rotate-180 transition-transform ml-1 text-gray-400">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </summary>
+                <div className="absolute top-full right-0 mt-1.5 w-44 overflow-hidden rounded-2xl bg-white p-1 shadow-xl ring-1 ring-black/5 z-[999] origin-top animate-in fade-in slide-in-from-top-2">
+                  {tileOptions.map((tile) => (
+                    <button
+                      key={tile.key}
+                      type="button"
+                      className={`w-full text-left rounded-xl px-3 py-2 text-xs font-medium transition-colors flex items-center gap-2 ${mapStyle === tile.key
+                        ? "bg-slate-50 text-slate-900"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        }`}
+                      onClick={(e) => {
+                        setMapStyle(tile.key);
+                        e.currentTarget.closest("details")?.removeAttribute("open");
+                      }}
+                    >
+                      {mapStyle === tile.key ? (
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-600 shrink-0">
+                          <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                      ) : (
+                        <span className="w-[14px] shrink-0" />
+                      )}
+                      {tile.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+
               <button
                 type="button"
                 className="rounded-full bg-teal-600 px-4 py-2 text-xs text-white hover:bg-teal-700"
@@ -3890,12 +4105,18 @@ const UserMap = () => {
                   onClick={() => {
                     navigator.geolocation.getCurrentPosition(
                       (pos) => {
-                        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        const newPos = getVietnamBrowserPosition(pos);
+                        if (!newPos) {
+                          setGpsAccuracy(null);
+                          setLocationDenied(true);
+                          return;
+                        }
                         setMyPosition(newPos);
+                        setMyPositionSource("browser");
                         flyTo(newPos);
                         setLocationDenied(false);
                       },
-                      () => {},
+                      () => { },
                       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
                     );
                   }}
@@ -3982,9 +4203,9 @@ const UserMap = () => {
                       {(() => {
                         const imageUrl = resolveBackendUrl(
                           selected.first_image ??
-                            (Array.isArray(selected.images)
-                              ? selected.images[0]
-                              : null),
+                          (Array.isArray(selected.images)
+                            ? selected.images[0]
+                            : null),
                         );
                         return imageUrl ? (
                           <div className="overflow-hidden rounded-2xl border border-gray-100">
@@ -4018,11 +4239,10 @@ const UserMap = () => {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className={`rounded-full border px-3 py-1 text-xs ${
-                            !myPosition
-                              ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                          }`}
+                          className={`rounded-full border px-3 py-1 text-xs ${!myPosition
+                            ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            }`}
                           onClick={() =>
                             void ensureRouteToTarget(selectedCoords)
                           }
@@ -4036,11 +4256,10 @@ const UserMap = () => {
                         </button>
                         <button
                           type="button"
-                          className={`rounded-full border px-3 py-1 text-xs hover:bg-gray-50 ${
-                            selectedIsFavorite
-                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                              : "border-gray-200 text-gray-600"
-                          }`}
+                          className={`rounded-full border px-3 py-1 text-xs hover:bg-gray-50 ${selectedIsFavorite
+                            ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                            : "border-gray-200 text-gray-600"
+                            }`}
                           onClick={() => void handleSaveSelectedLocation()}
                           disabled={savingSelected}
                         >
@@ -4070,11 +4289,10 @@ const UserMap = () => {
                           <button
                             key={tab.key}
                             type="button"
-                            className={`rounded-full px-3 py-1 text-xs ${
-                              panelTab === tab.key
-                                ? "bg-teal-600 text-white hover:bg-teal-700"
-                                : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                            }`}
+                            className={`rounded-full px-3 py-1 text-xs ${panelTab === tab.key
+                              ? "bg-teal-600 text-white hover:bg-teal-700"
+                              : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                              }`}
                             onClick={() => setPanelTab(tab.key)}
                           >
                             {tab.label}
@@ -4176,11 +4394,10 @@ const UserMap = () => {
                                   <button
                                     key={`map-review-filter-${star}`}
                                     type="button"
-                                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                                      active
-                                        ? "bg-teal-600 text-white"
-                                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                    }`}
+                                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${active
+                                      ? "bg-teal-600 text-white"
+                                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                      }`}
                                     onClick={() => setReviewFilter(star)}
                                   >
                                     {star === 0 ? "Tất cả" : `${star} sao`}
@@ -4284,7 +4501,7 @@ const UserMap = () => {
                                 </p>
                               ) : null}
                               {!selectedReviewsLoading &&
-                              filteredSelectedReviews.length === 0 ? (
+                                filteredSelectedReviews.length === 0 ? (
                                 <p className="text-xs text-gray-500">
                                   Chưa có đánh giá phù hợp bộ lọc.
                                 </p>
@@ -4559,11 +4776,15 @@ const UserMap = () => {
                         position={[myPosition.lat, myPosition.lng]}
                         icon={myPositionIcon}
                       >
-                        <Popup autoPan={false}>Vị trí của bạn</Popup>
+                        <Popup autoPan={false}>
+                          {hasLiveBrowserPosition
+                            ? "Vị trí của bạn"
+                            : "Vị trí gần nhất đã biết"}
+                        </Popup>
                       </Marker>
                     ) : null}
 
-                    {myPosition ? (
+                    {myPosition && hasLiveBrowserPosition ? (
                       <CompassMarker
                         position={myPosition}
                         heading={deviceHeading}
@@ -4612,8 +4833,8 @@ const UserMap = () => {
                     ) : null}
 
                     {focusCheckin &&
-                    focusCheckin.lat != null &&
-                    focusCheckin.lng != null ? (
+                      focusCheckin.lat != null &&
+                      focusCheckin.lng != null ? (
                       <Marker
                         position={[focusCheckin.lat, focusCheckin.lng]}
                         icon={getCircleImageIcon(
@@ -4671,39 +4892,39 @@ const UserMap = () => {
 
                     {routeLines
                       ? routeLines.map((line, index) => (
-                          <React.Fragment key={`route-full-${index}`}>
-                            {index === 0 && (
-                              <Polyline
-                                positions={line.map((p) => [p.lat, p.lng])}
-                                pathOptions={{
-                                  color: "#ffffff",
-                                  weight: 9,
-                                  opacity: 0.8,
-                                }}
-                              />
-                            )}
+                        <React.Fragment key={`route-full-${index}`}>
+                          {index === 0 && (
                             <Polyline
                               positions={line.map((p) => [p.lat, p.lng])}
                               pathOptions={{
-                                color:
-                                  index === 0
-                                    ? "#2563eb"
-                                    : index === 1
-                                      ? "#10b981"
-                                      : "#f97316",
-                                weight: index === 0 ? 5 : 3,
-                                opacity: index === 0 ? 0.95 : 0.7,
-                                dashArray: index === 0 ? undefined : "6 8",
-                                lineCap: "round",
-                                lineJoin: "round",
+                                color: "#ffffff",
+                                weight: 9,
+                                opacity: 0.8,
                               }}
                             />
-                          </React.Fragment>
-                        ))
+                          )}
+                          <Polyline
+                            positions={line.map((p) => [p.lat, p.lng])}
+                            pathOptions={{
+                              color:
+                                index === 0
+                                  ? "#2563eb"
+                                  : index === 1
+                                    ? "#10b981"
+                                    : "#f97316",
+                              weight: index === 0 ? 5 : 3,
+                              opacity: index === 0 ? 0.95 : 0.7,
+                              dashArray: index === 0 ? undefined : "6 8",
+                              lineCap: "round",
+                              lineJoin: "round",
+                            }}
+                          />
+                        </React.Fragment>
+                      ))
                       : null}
 
                     {/* Mui ten bearing khi co route */}
-                    {routeEnabled && routeTarget && myPosition ? (
+                    {routeEnabled && routeTarget && myPosition && hasLiveBrowserPosition ? (
                       <BearingArrow
                         position={myPosition}
                         destination={routeTarget}
@@ -4765,16 +4986,6 @@ const UserMap = () => {
                             <div className="space-y-1">
 
 
-                              <button
-                                type="button"
-                                className="w-full flex items-center justify-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-900 px-2 py-1.5 text-[10px] font-bold text-white transition active:scale-[0.98] disabled:opacity-50"
-                                onClick={() => handleFreeAction("checkin")}
-                                disabled={
-                                  freeAction === "checkin" || !isPickedOpenNow
-                                }
-                              >
-                                <span>✅</span> {freeAction === "checkin" ? "Đang check-in..." : "Check-in tại đây"}
-                              </button>
 
                               {!isPickedOpenNow ? (
                                 <div className="text-[9px] text-amber-700 bg-amber-50 rounded-md py-0.5 px-1.5 text-center font-bold">
@@ -4871,90 +5082,90 @@ const UserMap = () => {
 
                     {!routeOnlyMode
                       ? filteredLocations.map((entry) => {
-                          const isSelected =
-                            selected?.location_id === entry.item.location_id;
-                          const icon = getCircleImageIcon(
-                                resolveBackendUrl(
-                                  entry.item.first_image ??
-                                    (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
-                                ),
-                                isSelected,
-                              );
-                          const isRoutingToThis =
-                            routeEnabled &&
-                            routeTarget &&
-                            isSamePoint(routeTarget, {
-                              lat: entry.lat,
-                              lng: entry.lng,
-                            });
+                        const isSelected =
+                          selected?.location_id === entry.item.location_id;
+                        const icon = getCircleImageIcon(
+                          resolveBackendUrl(
+                            entry.item.first_image ??
+                            (Array.isArray(entry.item.images) ? entry.item.images[0] : null),
+                          ),
+                          isSelected,
+                        );
+                        const isRoutingToThis =
+                          routeEnabled &&
+                          routeTarget &&
+                          isSamePoint(routeTarget, {
+                            lat: entry.lat,
+                            lng: entry.lng,
+                          });
 
-                          return (
-                            <Marker
-                              key={`loc-full-${entry.item.location_id}`}
-                              position={[entry.lat, entry.lng]}
-                              icon={icon}
-                              eventHandlers={{
-                                click: () =>
-                                  handleSelectLocation(entry.item, {
-                                    lat: entry.lat,
-                                    lng: entry.lng,
-                                  }),
-                                dblclick: () => {
-                                  setSelected(null);
-                                  setPanelOpen(false);
-                                },
-                              }}
-                            >
-                              <Popup autoPan={false}>
-                                <div className="space-y-2">
-                                  <p className="font-semibold text-gray-900">
-                                    {entry.item.location_name}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {entry.item.address}
-                                  </p>
-                                  <div className="flex gap-2">
+                        return (
+                          <Marker
+                            key={`loc-full-${entry.item.location_id}`}
+                            position={[entry.lat, entry.lng]}
+                            icon={icon}
+                            eventHandlers={{
+                              click: () =>
+                                handleSelectLocation(entry.item, {
+                                  lat: entry.lat,
+                                  lng: entry.lng,
+                                }),
+                              dblclick: () => {
+                                setSelected(null);
+                                setPanelOpen(false);
+                              },
+                            }}
+                          >
+                            <Popup autoPan={false}>
+                              <div className="space-y-2">
+                                <p className="font-semibold text-gray-900">
+                                  {entry.item.location_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {entry.item.address}
+                                </p>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
+                                    onClick={() => {
+                                      setSelected(entry.item);
+                                      setPanelOpen(true);
+                                    }}
+                                  >
+                                    Xem chi tiết
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                    onClick={() =>
+                                      void ensureRouteToTarget({
+                                        lat: entry.lat,
+                                        lng: entry.lng,
+                                      })
+                                    }
+                                    disabled={locating}
+                                  >
+                                    {locating
+                                      ? "Đang định vị..."
+                                      : "Đường đi"}
+                                  </button>
+                                  {isRoutingToThis ? (
                                     <button
                                       type="button"
-                                      className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
-                                      onClick={() => {
-                                        setSelected(entry.item);
-                                        setPanelOpen(true);
-                                      }}
+                                      className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
+                                      onClick={clearRoute}
                                     >
-                                      Xem chi tiết
+                                      Xoá
                                     </button>
-
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
-                                      onClick={() =>
-                                        void ensureRouteToTarget({
-                                          lat: entry.lat,
-                                          lng: entry.lng,
-                                        })
-                                      }
-                                      disabled={locating}
-                                    >
-                                      {locating
-                                        ? "Đang định vị..."
-                                        : "Đường đi"}
-                                    </button>
-                                    {isRoutingToThis ? (
-                                      <button
-                                        type="button"
-                                        className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-600"
-                                        onClick={clearRoute}
-                                      >
-                                        Xoá
-                                      </button>
-                                    ) : null}
-                                  </div>
+                                  ) : null}
                                 </div>
-                              </Popup>
-                            </Marker>
-                          );
-                        })
+                              </div>
+                            </Popup>
+                          </Marker>
+                        );
+                      })
                       : null}
 
                     {!routeOnlyMode && selected && !filteredLocations.some(entry => entry.item.location_id === selected.location_id) ? (
@@ -4966,7 +5177,7 @@ const UserMap = () => {
                         const icon = getCircleImageIcon(
                           resolveBackendUrl(
                             selected.first_image ??
-                              (Array.isArray(selected.images) ? selected.images[0] : null),
+                            (Array.isArray(selected.images) ? selected.images[0] : null),
                           ),
                           isSelected,
                         );
@@ -5045,22 +5256,20 @@ const UserMap = () => {
                     <span className="text-xs text-gray-500">Lộ trình:</span>
                     <button
                       type="button"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        routeMode === "motorbike"
-                          ? "bg-teal-600 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
+                      className={`rounded-full px-3 py-1 text-xs ${routeMode === "motorbike"
+                        ? "bg-teal-600 text-white"
+                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        }`}
                       onClick={() => setRouteMode("motorbike")}
                     >
                       Xe máy
                     </button>
                     <button
                       type="button"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        routeMode === "car"
-                          ? "bg-teal-600 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
+                      className={`rounded-full px-3 py-1 text-xs ${routeMode === "car"
+                        ? "bg-teal-600 text-white"
+                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        }`}
                       onClick={() => setRouteMode("car")}
                     >
                       Ô tô
@@ -5068,11 +5277,10 @@ const UserMap = () => {
                     <span className="text-[10px] text-gray-400" title="OSRM chỉ hỗ trợ profile driving">(ước tính)</span>
                     <button
                       type="button"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        routeEnabled
-                          ? "bg-emerald-500 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
+                      className={`rounded-full px-3 py-1 text-xs ${routeEnabled
+                        ? "bg-emerald-500 text-white"
+                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                        }`}
                       onClick={() => setRouteEnabled((prev) => !prev)}
                     >
                       {routeEnabled ? "Ẩn lộ trình" : "Hiện lộ trình"}
@@ -5086,22 +5294,7 @@ const UserMap = () => {
                     </button>
                   </>
                 ) : null}
-                <div className="ml-auto flex flex-wrap items-center gap-2">
-                  {tileOptions.map((tile) => (
-                    <button
-                      key={tile.key}
-                      type="button"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        mapStyle === tile.key
-                          ? "bg-slate-900 text-white"
-                          : "border border-gray-200 text-gray-600 hover:bg-gray-50"
-                      }`}
-                      onClick={() => setMapStyle(tile.key)}
-                    >
-                      {tile.label}
-                    </button>
-                  ))}
-                </div>
+                {/* Map style options moved to top bar */}
               </div>
 
               {routeInfo ? (

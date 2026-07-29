@@ -1,440 +1,190 @@
-# AI Manager Bot
+# 🤖 AI Manager Bot — Nhật Ký Của Một Con Bot Biết Nghĩ
 
-## 0. Lệnh nhanh dễ chạy
+> *"Tui không phải ChatGPT, tui là con bot được đào tạo riêng để phục vụ hệ thống du lịch này."*
 
-Máy hiện tại mình đã kiểm tra:
+Đây là bộ não AI phục vụ cho **Admin** và **Owner** trong hệ thống TravelCheckinApp — một microservice Python chạy song song cùng Backend Node.js.
 
-- Python: `3.11.5`
-- pip: `25.2`
-- GPU: có NVIDIA RTX 3050, `nvidia-smi` đã nhận
-- Thư viện nền: đã có `fastapi`, `uvicorn`, `pydantic`, `pytest`, `numpy`, `scikit-learn`, `joblib`
-- Còn thiếu: `torch`
+---
 
-### 0.1. Nếu chưa có môi trường `.venv`
+## 📋 Mục Lục
 
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -r requirements-ml.txt
+- [Tổng Quan](#tổng-quan)
+- [Kiến Trúc Hệ Thống AI](#kiến-trúc-hệ-thống-ai)
+- [Cấu Trúc Thư Mục](#cấu-trúc-thư-mục)
+- [Các API Endpoint](#các-api-endpoint)
+- [Luồng Xử Lý Thông Minh](#luồng-xử-lý-thông-minh)
+- [Cài Đặt & Chạy](#cài-đặt--chạy)
+- [Biến Môi Trường](#biến-môi-trường)
+
+---
+
+## Tổng Quan
+
+| Thông tin | Chi tiết |
+|-----------|----------|
+| **Ngôn ngữ** | Python 3.x |
+| **Framework** | FastAPI + Uvicorn |
+| **LLM Provider** | Google Gemini (AI) + OpenAI GPT (fallback) |
+| **Database** | MySQL (kết nối trực tiếp để lấy ngữ cảnh) |
+| **Cổng mặc định** | `8090` |
+| **Khởi động cùng** | Backend Node.js (qua `concurrently`) |
+
+Bot này không dùng ChatGPT thẳng cho user — nó **phân tích intent**, **lấy dữ liệu thực từ DB**, rồi mới trả lời thông minh theo ngữ cảnh của từng vai trò.
+
+---
+
+## Kiến Trúc Hệ Thống AI
+
 ```
-
-### 0.2. Cài PyTorch để train bằng GPU
-
-Chỉ cần chạy lệnh này nếu `torch` chưa có:
-
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-.\.venv\Scripts\Activate.ps1
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-Kiểm tra GPU có vào được PyTorch không:
-
-```powershell
-python -c "import torch; print('CUDA:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
-```
-
-### 0.3. Train bằng GPU trước
-
-Lệnh này ưu tiên an toàn cho RTX 3050 4GB, giảm nguy cơ lỗi gần cuối lúc train:
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot\tools\train_intent_model.py --device cuda --epochs 8 --batch-size 32 --hidden-dim 128
-```
-
-### 0.4. Nếu GPU lỗi thì train bằng CPU
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot\tools\train_intent_model.py --device cpu --epochs 8 --batch-size 64 --hidden-dim 128
-```
-
-### 0.5. Test sau khi train
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot\tools\predict_intent_model.py "hom nay doanh thu quan tang hay giam"
-python -m unittest discover -s ai-manager-bot\tests -p "test_*.py"
-```
-
-Nếu train bằng GPU hay bị lỗi khoảng 90%, thử giảm tiếp batch:
-
-```powershell
-python ai-manager-bot\tools\train_intent_model.py --device cuda --epochs 8 --batch-size 16 --hidden-dim 128
+User / Owner / Admin
+        │
+        ▼
+  [Backend Node.js :3000]
+        │  forward request
+        ▼
+  [AI Manager Bot :8090]  ◄─── FastAPI / Uvicorn
+        │
+        ├── Intent Service       ← Phân tích ý định người dùng (Gemini)
+        ├── Action Registry      ← Đăng ký danh sách hành động hợp lệ
+        ├── Action Planner       ← Lập kế hoạch hành động từ intent
+        ├── NLP Fallback         ← Rule-based khi LLM không chắc chắn
+        ├── Prompt Suggestions   ← Gợi ý câu hỏi theo role & route
+        └── LLM Layer            ← Giao tiếp với Google Gemini / OpenAI
 ```
 
 ---
 
-Đây là service AI riêng cho Owner/Admin của TravelCheckinApp.
+## Cấu Trúc Thư Mục
 
-Mục tiêu giai đoạn đầu:
-
-- Chạy độc lập trong thư mục `ai-manager-bot`.
-- Chưa nối Backend chính.
-- Chưa gọi MySQL thật khi bot đang suy luận.
-- Chưa gọi API nghiệp vụ thật.
-- Chưa tự thực thi action.
-- Chỉ phân loại ý định, hiểu câu hỏi, tạo câu trả lời nháp và trả `ActionPlan` an toàn.
-
-Khi bot ổn, Backend chính mới gọi bot qua `managerBotClient`. Bot chỉ “nghĩ và đề xuất”, Backend chính vẫn là nơi kiểm quyền, lấy dữ liệu thật, preview, xác nhận và thực thi.
-
----
-
-## 1. Chức năng hiện có
-
-MVP hiện đã có:
-
-- Phân loại intent theo `owner` và `admin`.
-- Chặn route/action cấm của Owner.
-- Nhận diện action `read`, `draft`, `write`, `critical`, `blocked`.
-- Trích xuất entity cơ bản.
-- Tạo câu trả lời từ mock context.
-- Tạo `ActionPlan` có cấu trúc.
-- Unit test bằng fixture JSON.
-- Chuẩn hóa tiếng Việt đời thường: `ko`, `hong`, `hok`, `dc`, `gium`, `doang thu`, giọng miền Nam.
-- Sinh dataset synthetic lớn cho Owner/Admin.
-- Export dataset thành SQL để lưu vào MySQL.
-- Script train intent model bằng CPU hoặc GPU CUDA.
-
----
-
-## 2. Cấu trúc thư mục
-
-```text
+```
 ai-manager-bot/
-  app/                         # Logic xử lý bot/API
-  database/                    # Migration và seed SQL
-  datasets/                    # Bộ dữ liệu seed/sinh tự động
-  models/                      # Model sau khi train
-  tests/                       # Unit tests
-  tools/                       # Script sinh dữ liệu/train/dự đoán/export SQL
-  requirements.txt             # Thư viện chạy API
-  requirements-ml.txt          # Thư viện train ML cơ bản
+├── app/
+│   ├── main.py                  # Entry point FastAPI — định nghĩa tất cả route
+│   ├── intent_service.py        # Tim não của bot — phân tích intent + gọi Gemini
+│   ├── action_registry.py       # Danh sách tất cả action được phép theo role
+│   ├── action_planner.py        # Lập plan từ intent đã phân tích
+│   ├── evaluator.py             # Đánh giá độ chính xác của bot (test cases)
+│   ├── inference.py             # Điều phối: predict + process payload
+│   ├── llm_layer.py             # Wrapper gọi LLM (Gemini / OpenAI)
+│   ├── nlp_fallback.py          # Fallback rule-based khi LLM không chắc
+│   ├── prompt_suggestions.py    # Sinh gợi ý câu hỏi theo context
+│   ├── schemas.py               # Pydantic models — validate request/response
+│   ├── settings.py              # Đọc cấu hình từ .env
+│   ├── text_normalizer.py       # Chuẩn hóa văn bản tiếng Việt
+│   ├── vietnamese_lexicon.py    # Từ điển tiếng Việt chuyên ngành du lịch
+│   ├── vietnamese_stopwords.txt # Danh sách stopwords tiếng Việt (~20KB)
+│   └── prompts/                 # System prompts theo từng role
+├── database/                    # Script kết nối + query MySQL
+├── datasets/                    # Dữ liệu huấn luyện intent
+├── models/                      # Model ML đã train (intent classifier)
+├── tests/                       # Pytest test cases
+├── tools/
+│   ├── train_intent_model.py        # Train model phân loại intent
+│   ├── predict_intent_model.py      # Test predict thử
+│   ├── build_synthetic_dataset.py   # Sinh dữ liệu tổng hợp
+│   └── export_training_examples_sql.py # Export từ DB
+├── requirements.txt             # Thư viện Python cần thiết
+└── .env.example                 # Mẫu biến môi trường
 ```
 
 ---
 
-## 3. Cài môi trường
+## Các API Endpoint
 
-Chạy từ PowerShell:
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/health` | Kiểm tra trạng thái bot, LLM provider đang dùng |
+| `POST` | `/predict` | Dự đoán intent từ payload văn bản |
+| `POST` | `/chat` | Chat đầy đủ — phân tích + trả lời có ngữ cảnh |
+| `GET` | `/suggestions` | Lấy gợi ý câu hỏi theo `role` và `route` |
+| `POST` | `/plan-action` | Phân tích intent + trả về kế hoạch hành động |
+| `POST` | `/evaluate` | Chạy test cases đánh giá độ chính xác |
+| `GET` | `/evaluate/default` | Chạy bộ test cases mặc định |
 
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
+---
+
+## Luồng Xử Lý Thông Minh
+
+```
+1. Nhận tin nhắn từ người dùng (Admin/Owner)
+         │
+2. Chuẩn hóa văn bản tiếng Việt (text_normalizer)
+         │
+3. Gọi Gemini để phân tích intent
+         │ (thất bại / không chắc)
+         ├──────────────────────────────────►
+         │                                  │
+4. intent_service xử lý              NLP Fallback (rule-based)
+         │
+5. Lấy ngữ cảnh từ Node.js backend (/api/internal/ai/context)
+         │
+6. Kiểm tra action_registry — hành động có được phép không?
+         │
+7. action_planner tạo ra kế hoạch hành động
+         │
+8. LLM Layer gọi Gemini sinh câu trả lời cuối
+         │
+9. Trả về response có cấu trúc (intent, label, allowed, action_plan)
+```
+
+---
+
+## Cài Đặt & Chạy
+
+```bash
+# Tạo môi trường ảo
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+
+# Kích hoạt (Windows)
+.venv\Scripts\activate
+
+# Cài thư viện
 pip install -r requirements.txt
-pip install -r requirements-ml.txt
+
+# Chạy riêng lẻ
+uvicorn app.main:app --host 127.0.0.1 --port 8090 --reload
 ```
 
-Nếu PowerShell in tiếng Việt bị lỗi encoding:
+> **Hoặc chạy cùng backend** (khuyến nghị):
+> ```bash
+> cd backend && npm run dev
+> ```
+> Lệnh này tự động khởi động cả Node.js và Python bot song song.
 
-```powershell
-$env:PYTHONIOENCODING="utf-8"
+---
+
+## Biến Môi Trường
+
+Tạo file `.env` từ `.env.example`:
+
+```env
+# LLM Provider
+LLM_PROVIDER=gemini          # hoặc openai
+OPENAI_API_KEY=sk-...        # nếu dùng OpenAI
+OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=...           # nếu dùng Gemini
+
+# MySQL — để bot lấy ngữ cảnh dữ liệu thực
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=...
+DB_NAME=travel_checkin
 ```
 
 ---
 
-## 4. Cài GPU PyTorch CUDA
+## Ghi Chú Kỹ Thuật
 
-Nếu máy có NVIDIA GPU và muốn train bằng GPU, cài PyTorch CUDA 12.1:
+> [!NOTE]
+> Bot hỗ trợ xử lý **tiếng Việt có dấu và không dấu** nhờ `text_normalizer.py` và `vietnamese_lexicon.py`. Người dùng có thể gõ "lich su don hang" hay "lịch sử đơn hàng" đều hiểu đúng.
 
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-.\.venv\Scripts\Activate.ps1
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
+> [!TIP]
+> Dùng endpoint `/evaluate/default` để kiểm tra nhanh độ chính xác của bot sau khi thay đổi prompt hoặc cập nhật model.
 
-Kiểm tra GPU:
-
-```powershell
-python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
-```
-
-Nếu kết quả là `True` và hiện tên GPU thì train bằng `--device cuda` được.
-
-Nếu chưa nhận GPU thì vẫn có thể train CPU bằng `--device cpu`.
+> [!IMPORTANT]
+> Bot phải được chạy **sau khi** Backend Node.js đã khởi động vì nó cần gọi về `/api/internal/ai/context` để lấy dữ liệu ngữ cảnh thực tế.
 
 ---
 
-## 5. Chạy test
-
-Chạy từ thư mục gốc dự án:
-
-```powershell
-cd E:\TravelCheckinApp
-python -m unittest discover -s ai-manager-bot/tests -p "test_*.py"
-python -m compileall ai-manager-bot/app ai-manager-bot/tools
-```
-
-Kết quả mong muốn:
-
-```text
-Ran 9 tests
-OK
-```
-
----
-
-## 6. Chạy API bot độc lập
-
-Cài môi trường xong thì chạy:
-
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-.\.venv\Scripts\Activate.ps1
-uvicorn app.main:app --reload --port 7001
-```
-
-Endpoint hiện có:
-
-```text
-GET  /health
-GET  /suggestions
-POST /predict
-POST /chat
-POST /plan-action
-POST /evaluate
-```
-
-Bot API này chỉ dùng để test độc lập. Chưa nối Backend chính ở giai đoạn này.
-
-Test guided prompt:
-
-```powershell
-Invoke-RestMethod -Uri 'http://127.0.0.1:8090/suggestions?role=owner&route=/owner/dashboard' -Method Get
-Invoke-RestMethod -Uri 'http://127.0.0.1:8090/suggestions?role=owner&route=/owner/front-office/restaurant' -Method Get
-```
-
----
-
-## 7. Kiểm tra database đã đủ chưa
-
-Dump hiện tại `TravelCheckinApp.sql` đã có các bảng AI nền:
-
-- `ai_conversations`
-- `ai_chat_history`
-- `ai_assistant_feedback`
-
-Nhưng để tự huấn luyện Owner/Admin AI thì cần thêm các bảng:
-
-- `ai_action_runs`
-- `ai_action_policies`
-- `ai_prompt_versions`
-- `ai_training_examples`
-- `ai_model_versions`
-- `ai_prompt_suggestions`
-- `ai_prompt_impressions`
-
-Các bảng này nằm trong:
-
-```text
-ai-manager-bot/database/001_ai_manager_bot_tables.sql
-```
-
----
-
-## 8. Nạp migration AI Manager Bot vào MySQL
-
-Chạy từ thư mục gốc:
-
-```powershell
-cd E:\TravelCheckinApp
-Get-Content ai-manager-bot\database\001_ai_manager_bot_tables.sql | & "D:\app\My SQL Sever\bin\mysql.exe" -u root -p TravelCheckinApp
-```
-
-Sau khi nhập mật khẩu MySQL, migration sẽ tạo các bảng còn thiếu.
-
-Nếu máy bạn đã thêm MySQL vào PATH, có thể dùng lệnh ngắn:
-
-```powershell
-mysql -u root -p TravelCheckinApp < ai-manager-bot\database\001_ai_manager_bot_tables.sql
-```
-
----
-
-## 9. Sinh dataset lớn
-
-Dataset được sinh local, không copy comment riêng tư trên mạng xã hội. Nội dung là synthetic, có thêm tiếng Việt đời thường, viết tắt, lỗi chính tả và giọng miền Nam.
-
-Chạy:
-
-```powershell
-cd E:\TravelCheckinApp
-$env:PYTHONIOENCODING="utf-8"
-python ai-manager-bot/tools/build_synthetic_dataset.py --per-intent 3500
-```
-
-Output:
-
-```text
-ai-manager-bot/datasets/generated/owner_admin_synthetic_large.jsonl
-```
-
-Với `--per-intent 3500`, dataset khoảng:
-
-```text
-38.500 mẫu
-mỗi intent trên 20.000 từ
-```
-
----
-
-## 10. Export dataset thành SQL
-
-Sau khi sinh dataset:
-
-```powershell
-cd E:\TravelCheckinApp
-$env:PYTHONIOENCODING="utf-8"
-python ai-manager-bot/tools/export_training_examples_sql.py
-```
-
-Output:
-
-```text
-ai-manager-bot/database/seed_ai_training_examples.sql
-```
-
----
-
-## 11. Nạp dữ liệu huấn luyện vào MySQL
-
-Chạy:
-
-```powershell
-cd E:\TravelCheckinApp
-Get-Content ai-manager-bot\database\seed_ai_training_examples.sql | & "D:\app\My SQL Sever\bin\mysql.exe" -u root -p TravelCheckinApp
-```
-
-Nếu MySQL có trong PATH:
-
-```powershell
-mysql -u root -p TravelCheckinApp < ai-manager-bot\database\seed_ai_training_examples.sql
-```
-
-Lưu ý:
-
-- Phải chạy migration ở bước 8 trước.
-- Seed hiện tại khoảng `38.500` dòng.
-- Dữ liệu được lưu vào bảng `ai_training_examples`.
-
----
-
-## 12. Train model bằng GPU
-
-Đảm bảo đã cài PyTorch CUDA và kiểm tra GPU thành công.
-
-Chạy:
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot/tools/train_intent_model.py --device cuda --epochs 8
-```
-
-Model sau khi train sẽ nằm ở:
-
-```text
-ai-manager-bot/models/owner_admin_intent_v1/
-  model.pt
-  metadata.json
-```
-
----
-
-## 13. Train model bằng CPU
-
-Nếu GPU chưa dùng được:
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot/tools/train_intent_model.py --device cpu --epochs 8
-```
-
-CPU chậm hơn GPU nhưng vẫn dùng được để kiểm thử.
-
----
-
-## 14. Test model sau khi train
-
-Ví dụ test câu sai chính tả/giọng miền Nam:
-
-```powershell
-cd E:\TravelCheckinApp
-python ai-manager-bot/tools/predict_intent_model.py --text "doang thu thang nay giam hong coi gium tui"
-```
-
-Ví dụ khác:
-
-```powershell
-python ai-manager-bot/tools/predict_intent_model.py --text "them dv cafe sua 20k vo quan gium tui nha"
-python ai-manager-bot/tools/predict_intent_model.py --text "admin khoa tk user nay dc hong"
-python ai-manager-bot/tools/predict_intent_model.py --text "khach chui 1 sao soan cau tra loi hen"
-```
-
----
-
-## 15. Quy trình chạy đầy đủ từ đầu
-
-Nếu muốn chạy một mạch:
-
-```powershell
-cd E:\TravelCheckinApp\ai-manager-bot
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements-ml.txt
-python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-```powershell
-cd E:\TravelCheckinApp
-python -m unittest discover -s ai-manager-bot/tests -p "test_*.py"
-python ai-manager-bot/tools/build_synthetic_dataset.py --per-intent 3500
-python ai-manager-bot/tools/export_training_examples_sql.py
-Get-Content ai-manager-bot\database\001_ai_manager_bot_tables.sql | & "D:\app\My SQL Sever\bin\mysql.exe" -u root -p TravelCheckinApp
-Get-Content ai-manager-bot\database\seed_ai_training_examples.sql | & "D:\app\My SQL Sever\bin\mysql.exe" -u root -p TravelCheckinApp
-python ai-manager-bot/tools/train_intent_model.py --device cuda --epochs 8
-python ai-manager-bot/tools/predict_intent_model.py --text "doang thu thang nay giam hong coi gium tui"
-```
-
-Nếu chưa có GPU:
-
-```powershell
-python ai-manager-bot/tools/train_intent_model.py --device cpu --epochs 8
-```
-
----
-
-## 16. Quy tắc tích hợp Backend sau này
-
-Chưa nối service này vào Backend chính cho tới khi:
-
-- Unit test pass.
-- Model phân loại đúng intent cơ bản.
-- Owner route/action cấm bị chặn đúng.
-- Admin critical action luôn cần xác nhận.
-- Response schema ổn định.
-- Backend chính có `managerBotClient`.
-- Backend chính có `policyEngine`.
-- Backend chính có `contextSanitizer`.
-- Backend chính có `actionRegistry`.
-
-Khi tích hợp thật:
-
-```text
-ai-manager-bot chỉ suy luận và đề xuất.
-Backend Node.js kiểm quyền, lấy dữ liệu thật và thực thi.
-```
-
-Bot không được:
-
-- Tự ghi MySQL production.
-- Tự gọi API nghiệp vụ để sửa dữ liệu.
-- Tự execute action.
-- Tự vượt quyền Owner/Admin.
-- Tự chạy SQL từ nội dung chat.
+*Được xây dựng như một phần của luận văn tốt nghiệp — Đại học Tây Đô* 🎓

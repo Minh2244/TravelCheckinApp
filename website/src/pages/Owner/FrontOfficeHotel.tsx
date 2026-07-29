@@ -8,6 +8,7 @@ import {
   InputNumber,
   Modal,
   Segmented,
+  Select,
   Space,
   Spin,
   Tag,
@@ -24,6 +25,7 @@ import {
   BrowserMultiFormatReader,
   type IScannerControls,
 } from "@zxing/browser";
+import { useSocket } from "../../contexts/SocketContext";
 
 type RoomRow = {
   room_id: number;
@@ -177,6 +179,7 @@ export default function FrontOfficeHotel(props: {
 }) {
   const { locationId, floors, role } = props;
   const navigate = useNavigate();
+  const socket = useSocket();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"rooms" | "pending" | "qr">("rooms");
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
@@ -642,7 +645,7 @@ export default function FrontOfficeHotel(props: {
 
   const startingRef = useRef(false);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (signal?: AbortSignal) => {
     if (startingRef.current) return;
     const video = videoRef.current;
     if (!video) return;
@@ -666,6 +669,10 @@ export default function FrontOfficeHotel(props: {
           }
         },
       );
+      if (signal?.aborted) {
+        controls.stop();
+        return;
+      }
       scanControlsRef.current = controls;
       setCameraReady(true);
     } catch (error) {
@@ -679,6 +686,7 @@ export default function FrontOfficeHotel(props: {
   }, [scanReader, stopCamera]);
 
   useEffect(() => {
+    const controller = new AbortController();
     if (!scanModalOpen) {
       stopCamera();
       return;
@@ -686,7 +694,7 @@ export default function FrontOfficeHotel(props: {
     let rafId: number;
     const tryStart = () => {
       if (videoRef.current) {
-        void startCamera();
+        void startCamera(controller.signal);
       } else {
         rafId = requestAnimationFrame(tryStart);
       }
@@ -694,6 +702,7 @@ export default function FrontOfficeHotel(props: {
     rafId = requestAnimationFrame(tryStart);
     return () => {
       cancelAnimationFrame(rafId);
+      controller.abort();
       stopCamera();
     };
   }, [scanModalOpen, startCamera, stopCamera]);
@@ -722,7 +731,7 @@ export default function FrontOfficeHotel(props: {
     const id = window.setInterval(() => {
       if (document.hidden) return;
       tick();
-    }, 5000);
+    }, 30000);
 
     const onVisibility = () => {
       if (!document.hidden) tick();
@@ -737,21 +746,10 @@ export default function FrontOfficeHotel(props: {
 
   // Realtime: auto-sync danh sách phòng giữa nhiều màn hình vận hành
   useEffect(() => {
-    const token = sessionStorage.getItem("accessToken");
-    if (!token) return;
-
-    const url = resolveBackendUrl(
-      `/api/events?token=${encodeURIComponent(token)}`,
-    );
-    if (!url) return;
-
-    const es = new EventSource(url);
-    es.onmessage = (evt) => {
+    if (!socket) return;
+    
+    const handleEvent = (data: any) => {
       try {
-        const data = JSON.parse(evt.data) as {
-          type?: string;
-          location_id?: number;
-        };
         if (data?.type !== "hotel_updated") return;
         if (Number(data.location_id) !== Number(locationId)) return;
 
@@ -761,10 +759,12 @@ export default function FrontOfficeHotel(props: {
       }
     };
 
+    socket.on("realtime_event", handleEvent);
+
     return () => {
-      es.close();
+      socket.off("realtime_event", handleEvent);
     };
-  }, [load, locationId]);
+  }, [load, locationId, socket]);
 
   const categories = useMemo(() => {
     const map = new Map<
@@ -1806,11 +1806,9 @@ export default function FrontOfficeHotel(props: {
     await load(floor);
   };
 
-  const activeCategoryLabel = useMemo(() => {
-    if (categoryKey === "all") return "Tất cả";
-    const found = categories.find((c) => c.key === categoryKey);
-    return found?.label || "";
-  }, [categories, categoryKey]);
+
+
+
 
   const renderPendingPanel = () => {
     return (
@@ -2067,12 +2065,12 @@ export default function FrontOfficeHotel(props: {
     </Card>
   );
 
-  const renderPaymentPanel = (inStack?: boolean) => {
+  const renderPaymentPanel = () => {
     const r = activeRoom;
 
     if (!r) {
       return (
-        <div className={inStack ? "" : "sticky top-4"}>
+        <div className="">
           <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b bg-gradient-to-r from-white to-blue-50">
               <div className="text-sm font-semibold">Vận hành</div>
@@ -2100,7 +2098,7 @@ export default function FrontOfficeHotel(props: {
       : 0;
 
     return (
-      <div className={inStack ? "" : "sticky top-4"}>
+      <div className="">
         <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b bg-gradient-to-r from-white to-blue-50">
             <div className="flex items-start justify-between gap-2">
@@ -2190,6 +2188,9 @@ export default function FrontOfficeHotel(props: {
                     Phương thức thanh toán
                   </div>
                   <Segmented
+                    block
+                    size="large"
+                    className="bg-slate-200/60 p-1 font-semibold text-slate-700 w-full"
                     value={checkoutMethod}
                     onChange={(v) => setCheckoutMethod(v as any)}
                     options={[
@@ -2406,24 +2407,25 @@ export default function FrontOfficeHotel(props: {
   };
 
   const renderHistoryPanel = () => (
-    <div>
-      <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-        <div className="px-4 py-3 bg-white">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Lịch sử</div>
-            <Button
-              size="small"
-              onClick={() =>
-                navigate(
-                  `/owner/front-office/payments-history?location_id=${locationId}`,
-                )
-              }
-            >
-              Lịch sử thanh toán
-            </Button>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col gap-2 mt-2">
+      <Button
+        className="w-full h-10 border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 font-medium !rounded-full"
+        onClick={() =>
+          navigate(
+            `/owner/front-office/payments-history?location_id=${locationId}`,
+          )
+        }
+      >
+        Lịch sử thanh toán
+      </Button>
+      <Button
+        className="w-full h-10 border-teal-500 text-teal-600 hover:bg-teal-50 font-medium !rounded-full"
+        onClick={() => {
+          window.dispatchEvent(new Event("tc-open-owner-chat-history"));
+        }}
+      >
+        💬 Lịch sử Chat
+      </Button>
     </div>
   );
 
@@ -2470,77 +2472,47 @@ export default function FrontOfficeHotel(props: {
               </Space>
             }
           >
-            <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-xs text-gray-500">
-                Danh mục: <b>{activeCategoryLabel}</b>
-                {roomQuery.trim() ? (
-                  <>
-                    {" "}
-                    • Tìm: <b>{roomQuery.trim()}</b>
-                  </>
-                ) : null}
-              </div>
-              <div className="text-xs text-gray-500">
-                Tổng: <b>{roomsFiltered.length}</b> phòng
-              </div>
-            </div>
-
             <div className="flex gap-4">
               <div className="hidden md:block w-[320px] shrink-0">
                 <div className="sticky top-4">{renderSidebar()}</div>
               </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-col lg:flex-row gap-4">
-                  <div className="lg:w-[220px] shrink-0">
-                    <div className="rounded-2xl border bg-white shadow-sm overflow-hidden">
-                      <div className="px-4 py-3 border-b bg-gray-50/60">
-                        <div className="text-sm font-semibold">Danh mục</div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          Chọn để lọc
-                        </div>
-                      </div>
-                      <div className="p-3 space-y-2">
-                        {categoryButtons.map((c) => {
-                          const active = String(categoryKey) === String(c.key);
-                          return (
-                            <button
-                              key={c.key}
-                              type="button"
-                              onClick={() => setCategoryKey(String(c.key))}
-                              className={
-                                "w-full text-left rounded-xl border px-3 py-2 text-sm transition flex items-center justify-between gap-2 " +
-                                (active
-                                  ? "border-blue-500 bg-blue-50"
-                                  : "border-gray-200 bg-white hover:border-blue-300")
-                              }
-                            >
-                              <span className="truncate font-medium">
-                                {c.label}
-                              </span>
-                              <span
-                                className={
-                                  "text-xs px-2 py-0.5 rounded-full border " +
-                                  (active
-                                    ? "border-blue-200 text-blue-700 bg-white"
-                                    : "border-gray-200 text-gray-600 bg-gray-50")
-                                }
-                              >
-                                {c.count}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+              <div className="flex-1 min-w-0 flex flex-col gap-4">
+                {/* Beautiful Compact Select Dropdown */}
+                <div className="w-full flex items-center gap-2 bg-gradient-to-r from-blue-50/30 to-indigo-50/30 p-2 rounded-xl border border-blue-100 shadow-sm">
+                  <span className="text-sm font-bold text-slate-700 whitespace-nowrap pl-2">Lọc theo:</span>
+                  <div className="rounded-full border border-blue-200 bg-white overflow-hidden shadow-sm transition hover:border-blue-400">
+                    <Select
+                      bordered={false}
+                      value={categoryKey}
+                      onChange={(v) => setCategoryKey(v)}
+                      className="min-w-[160px]"
+                      style={{ height: 36 }}
+                      popupMatchSelectWidth={false}
+                      options={categoryButtons.map(c => ({
+                        label: (
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="font-medium text-slate-700">{c.label}</span>
+                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 font-bold">{c.count}</span>
+                          </div>
+                        ),
+                        value: String(c.key)
+                      }))}
+                    />
                   </div>
+                  {roomQuery.trim() ? (
+                    <div className="text-sm text-gray-500 hidden sm:block ml-2">
+                      Tìm: <b className="text-blue-600">{roomQuery.trim()}</b>
+                    </div>
+                  ) : null}
+                </div>
 
-                  <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
                     <div
+                      className="max-h-[calc(100vh-160px)] overflow-y-auto custom-scrollbar pr-2"
                       style={{
                         display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill, minmax(240px, 1fr))",
+                        gridTemplateColumns: "repeat(2, 1fr)",
                         gap: 16,
                         alignItems: "start",
                       }}
@@ -2753,18 +2725,31 @@ export default function FrontOfficeHotel(props: {
                                         </div>
                                         {(() => {
                                           const checkinTime = new Date(String(r.expected_checkin)).getTime();
-                                          if (nowTs >= checkinTime) {
-                                            const elapsedSeconds = Math.floor((nowTs - checkinTime) / 1000);
-                                            const remainingSeconds = 3600 - elapsedSeconds;
+                                          const deadline = checkinTime + 3600 * 1000;
+                                          const remainingSeconds = Math.floor((deadline - nowTs) / 1000);
+
+                                          if (remainingSeconds <= 0) {
                                             return (
                                               <div className="mt-1.5 font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1 text-[11px] inline-flex items-center gap-1">
-                                                {remainingSeconds <= 0
-                                                  ? "⏳ Quá hạn chờ check-in"
-                                                  : `⏳ Hủy sau: ${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`}
+                                                ⏳ Quá hạn chờ check-in
                                               </div>
                                             );
                                           }
-                                          return null;
+
+                                          const isLate = nowTs >= checkinTime;
+                                          const h = Math.floor(remainingSeconds / 3600);
+                                          const m = Math.floor((remainingSeconds % 3600) / 60);
+                                          const s = remainingSeconds % 60;
+                                          
+                                          const timeString = h > 0 
+                                            ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+                                            : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+                                          return (
+                                            <div className={`mt-1.5 font-semibold border rounded-lg px-2 py-1 text-[11px] inline-flex items-center gap-1 ${isLate ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'}`}>
+                                              ⏳ Hủy sau: {timeString}
+                                            </div>
+                                          );
                                         })()}
                                       </>
                                     ) : null}
@@ -2893,16 +2878,8 @@ export default function FrontOfficeHotel(props: {
                     </div>
                   </div>
 
-                  <div className="hidden xl:block w-[380px] shrink-0">
-                    <div className="space-y-4">
-                      {renderPaymentPanel()}
-                      {renderHistoryPanel()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="xl:hidden mt-4 space-y-4">
-                  {renderPaymentPanel(true)}
+                  <div className="xl:hidden mt-4 space-y-4">
+                  {renderPaymentPanel()}
                   {renderHistoryPanel()}
                 </div>
 
@@ -2911,6 +2888,13 @@ export default function FrontOfficeHotel(props: {
                     Chưa có phòng. Owner có thể tạo phòng ở Back-office.
                   </div>
                 ) : null}
+              </div>
+
+              <div className="hidden xl:block w-[350px] shrink-0">
+                <div className="flex flex-col gap-4 max-h-[calc(100vh-160px)] overflow-y-auto pr-2 custom-scrollbar">
+                  {renderPaymentPanel()}
+                  {renderHistoryPanel()}
+                </div>
               </div>
             </div>
           </Card>
@@ -3061,7 +3045,7 @@ export default function FrontOfficeHotel(props: {
                 <span className="font-semibold">Xác nhận đã chuyển khoản</span>.
               </div>
 
-              <div className="mt-4 flex items-start gap-4 flex-wrap">
+              <div className="mt-4 flex flex-col items-center">
                 <div className="shrink-0 rounded-2xl border bg-slate-50 p-3">
                   <img
                     src={transferBatchInit.qr.qr_code_url}
@@ -3069,33 +3053,13 @@ export default function FrontOfficeHotel(props: {
                     className="h-48 w-48 rounded-xl"
                   />
                 </div>
-                <div className="min-w-[220px] flex-1 rounded-2xl border bg-white px-4 py-3">
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                    <div className="text-gray-500">Ngân hàng</div>
-                    <div className="text-right font-semibold">
-                      {transferBatchInit.qr.bank_name}
-                    </div>
-
-                    <div className="text-gray-500">Số TK</div>
-                    <div className="text-right font-semibold">
-                      {transferBatchInit.qr.bank_account}
-                    </div>
-
-                    <div className="text-gray-500">Chủ TK</div>
-                    <div className="text-right font-semibold">
-                      {transferBatchInit.qr.account_holder}
-                    </div>
-
-                    <div className="text-gray-500">Số tiền</div>
-                    <div className="text-right font-bold">
-                      {formatMoney(transferBatchInit.qr.amount)}
-                    </div>
-
-                    <div className="text-gray-500">Nội dung</div>
-                    <div className="text-right font-semibold break-all">
-                      {transferBatchInit.qr.note}
-                    </div>
-                  </div>
+                <div className="mt-3 text-center">
+                  <p className="text-lg font-bold text-red-600">
+                    {formatMoney(transferBatchInit.qr.amount)}
+                  </p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">
+                    Nội dung: <span className="text-blue-600 font-semibold">{transferBatchInit.qr.note}</span>
+                  </p>
                 </div>
               </div>
 
@@ -3156,7 +3120,7 @@ export default function FrontOfficeHotel(props: {
                 <span className="font-semibold">Xác nhận đã chuyển khoản</span>.
               </div>
 
-              <div className="mt-4 flex items-start gap-4 flex-wrap">
+              <div className="mt-4 flex flex-col items-center">
                 <div className="shrink-0 rounded-2xl border bg-slate-50 p-3">
                   <img
                     src={transferInit.qr.qr_code_url}
@@ -3164,33 +3128,13 @@ export default function FrontOfficeHotel(props: {
                     className="h-48 w-48 rounded-xl"
                   />
                 </div>
-                <div className="min-w-[220px] flex-1 rounded-2xl border bg-white px-4 py-3">
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                    <div className="text-gray-500">Ngân hàng</div>
-                    <div className="text-right font-semibold">
-                      {transferInit.qr.bank_name}
-                    </div>
-
-                    <div className="text-gray-500">Số TK</div>
-                    <div className="text-right font-semibold">
-                      {transferInit.qr.bank_account}
-                    </div>
-
-                    <div className="text-gray-500">Chủ TK</div>
-                    <div className="text-right font-semibold">
-                      {transferInit.qr.account_holder}
-                    </div>
-
-                    <div className="text-gray-500">Số tiền</div>
-                    <div className="text-right font-bold">
-                      {formatMoney(transferInit.qr.amount)}
-                    </div>
-
-                    <div className="text-gray-500">Nội dung</div>
-                    <div className="text-right font-semibold break-all">
-                      {transferInit.qr.note}
-                    </div>
-                  </div>
+                <div className="mt-3 text-center">
+                  <p className="text-lg font-bold text-red-600">
+                    {formatMoney(transferInit.qr.amount)}
+                  </p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">
+                    Nội dung: <span className="text-blue-600 font-semibold">{transferInit.qr.note}</span>
+                  </p>
                 </div>
               </div>
 
@@ -3307,7 +3251,10 @@ export default function FrontOfficeHotel(props: {
       <Modal
         title="Quét mã QR Check-in"
         open={scanModalOpen}
-        onCancel={() => setScanModalOpen(false)}
+        onCancel={() => {
+          stopCamera();
+          setScanModalOpen(false);
+        }}
         footer={null}
         destroyOnClose
         centered

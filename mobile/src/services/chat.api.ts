@@ -10,6 +10,7 @@ export interface LocationChatMessageItem {
   content: string;
   image_data?: string | null;
   has_image?: boolean;
+  is_read?: number | boolean;
   created_at: string;
   customer_avatar?: string | null;
 }
@@ -24,10 +25,14 @@ export interface LocationChatSessionItem {
 }
 
 export const chatApi = {
-  getHistory: async (locationId: number, customerId?: number) => {
+  getHistory: async (locationId: number, customerId?: number, afterId?: number) => {
     const response = await api.get<any>(`/chat/location/${locationId}`, {
-      params: { customerId },
+      params: { customerId, afterId },
     });
+    return response.data;
+  },
+  getMessageImage: async (locationId: number, messageId: number) => {
+    const response = await api.get<any>(`/chat/location/${locationId}/message/${messageId}/image`);
     return response.data;
   },
   sendMessage: async (
@@ -55,8 +60,12 @@ export const chatApi = {
     });
     return response.data;
   },
-  getAiHistory: async () => {
-    const response = await api.get<any>("/ai/history");
+  getAiHistory: async (afterId?: number) => {
+    const response = await api.get<any>("/ai/history", { params: { afterId } });
+    return response.data;
+  },
+  clearAiHistory: async () => {
+    const response = await api.delete<any>("/ai/history");
     return response.data;
   },
   getUnreadCounts: async () => {

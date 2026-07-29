@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveBackendUrl } from "../../../../src/lib/url";
 import { showToast } from "../../../../src/modules/ui/toast-store";
 import { locationApi } from "../../../../src/services/location.api";
+import { travelColors } from "../../../../src/theme/travel";
 import type {
   LocationItem,
   LocationServiceItem,
@@ -141,7 +142,7 @@ export default function LocationServicesScreen() {
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#0f766e" />
+        <ActivityIndicator size="large" color={travelColors.teal} />
         <Text style={styles.loadingText}>Đang tải dịch vụ...</Text>
       </View>
     );
@@ -151,7 +152,7 @@ export default function LocationServicesScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color="#0f172a" />
+          <Ionicons name="chevron-back" size={24} color={travelColors.ink} />
         </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.eyebrow}>Dịch vụ tại địa điểm</Text>
@@ -173,7 +174,7 @@ export default function LocationServicesScreen() {
             onPress={() => router.push(`/booking/table/0?locationId=${id}`)}
           >
             <View style={styles.tableBookingIcon}>
-              <Ionicons name="restaurant-outline" size={24} color="#0f766e" />
+              <Ionicons name="restaurant-outline" size={23} color={travelColors.teal} />
             </View>
             <View style={styles.tableBookingText}>
               <Text style={styles.tableBookingTitle}>Đặt bàn</Text>
@@ -207,7 +208,7 @@ export default function LocationServicesScreen() {
                   onPress={() => router.push(`/booking/ticket/all?locationId=${id}`)}
                 >
                   <View style={[styles.serviceImage, styles.imageFallback]}>
-                    <Ionicons name="ticket" size={26} color="#0f766e" />
+                    <Ionicons name="ticket" size={25} color={travelColors.teal} />
                   </View>
                   <View style={styles.serviceInfo}>
                     <Text style={styles.serviceName}>Mua vé tham quan</Text>
@@ -265,26 +266,26 @@ export default function LocationServicesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#eef2f3",
+    backgroundColor: travelColors.surface,
   },
   loadingScreen: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    backgroundColor: "#eef2f3",
+    backgroundColor: travelColors.surface,
   },
   loadingText: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 14,
   },
   header: {
     minHeight: 82,
     paddingHorizontal: 14,
     paddingBottom: 12,
-    backgroundColor: "#ffffff",
+    backgroundColor: travelColors.card,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: travelColors.line,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: travelColors.surfaceSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -301,13 +302,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   eyebrow: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 12,
     fontWeight: "600",
   },
   title: {
     marginTop: 2,
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 20,
     fontWeight: "800",
   },
@@ -316,21 +317,21 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   tableBookingCard: {
-    minHeight: 96,
-    padding: 14,
-    backgroundColor: "#ffffff",
+    minHeight: 88,
+    padding: 12,
+    backgroundColor: travelColors.card,
     borderWidth: 1,
-    borderColor: "#99f6e4",
-    borderRadius: 8,
+    borderColor: travelColors.tealSoft,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
   tableBookingIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 8,
-    backgroundColor: "#ccfbf1",
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: travelColors.tealSoft,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -338,13 +339,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tableBookingTitle: {
-    color: "#0f172a",
-    fontSize: 18,
+    color: travelColors.ink,
+    fontSize: 17,
     fontWeight: "900",
   },
   tableBookingDescription: {
     marginTop: 4,
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   groupTitle: {
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 18,
     fontWeight: "800",
   },
@@ -365,29 +366,29 @@ const styles = StyleSheet.create({
     minWidth: 26,
     height: 24,
     borderRadius: 12,
-    backgroundColor: "#ccfbf1",
-    color: "#0f766e",
+    backgroundColor: travelColors.tealSoft,
+    color: travelColors.tealDark,
     textAlign: "center",
     textAlignVertical: "center",
     fontSize: 12,
     fontWeight: "800",
   },
   serviceCard: {
-    minHeight: 96,
+    minHeight: 88,
     padding: 10,
-    backgroundColor: "#ffffff",
+    backgroundColor: travelColors.card,
     borderWidth: 1,
-    borderColor: "#dbe4ea",
-    borderRadius: 8,
+    borderColor: travelColors.line,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
   },
   serviceImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 7,
-    backgroundColor: "#f1f5f9",
+    width: 68,
+    height: 68,
+    borderRadius: 10,
+    backgroundColor: travelColors.surfaceSoft,
   },
   imageFallback: {
     alignItems: "center",
@@ -397,19 +398,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   serviceName: {
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 16,
     fontWeight: "800",
   },
   serviceDescription: {
     marginTop: 3,
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 13,
     lineHeight: 18,
   },
   servicePrice: {
     marginTop: 6,
-    color: "#0f766e",
+    color: travelColors.teal,
     fontSize: 15,
     fontWeight: "800",
   },
@@ -420,13 +421,13 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: 12,
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 18,
     fontWeight: "800",
   },
   emptyText: {
     marginTop: 5,
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",

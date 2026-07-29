@@ -3,6 +3,9 @@ import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { travelColors } from "../../../src/theme/travel";
+import { useAppSettingsStore } from "../../../src/store/app-settings";
+
 const tabIconMap = {
   home: {
     active: "home",
@@ -16,9 +19,9 @@ const tabIconMap = {
     active: "map",
     inactive: "map-outline",
   },
-  itineraries: {
-    active: "calendar",
-    inactive: "calendar-outline",
+  support: {
+    active: "headset",
+    inactive: "headset-outline",
   },
   profile: {
     active: "person",
@@ -28,26 +31,27 @@ const tabIconMap = {
 
 export default function AppTabsLayout() {
   const insets = useSafeAreaInsets();
+  const appPrimary = useAppSettingsStore((state) => state.app_primary_color) || travelColors.teal;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#0f766e",
-        tabBarInactiveTintColor: "#475569",
+        tabBarActiveTintColor: appPrimary,
+        tabBarInactiveTintColor: "#475467",
         sceneStyle: {
-          backgroundColor: "#eef2f3",
+          backgroundColor: travelColors.surface,
         },
         tabBarStyle: {
-          height: 50 + Math.max(insets.bottom, Platform.OS === "android" ? 2 : 6),
-          paddingTop: Platform.OS === "android" ? 4 : 3,
+          height: 48 + Math.max(insets.bottom, Platform.OS === "android" ? 2 : 6),
+          paddingTop: Platform.OS === "android" ? 3 : 3,
           paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 2 : 6),
           paddingHorizontal: 10,
-          backgroundColor: "#ffffff",
+          backgroundColor: travelColors.card,
           borderTopWidth: Platform.OS === "android" ? 0 : 1,
-          borderTopColor: "#dbe4ea",
+          borderTopColor: travelColors.line,
           elevation: Platform.OS === "android" ? 0 : 8,
-          shadowColor: "#0f172a",
+          shadowColor: travelColors.ink,
           shadowOpacity: Platform.OS === "android" ? 0 : 0.06,
           shadowRadius: 10,
           shadowOffset: {
@@ -63,7 +67,7 @@ export default function AppTabsLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 10,
-          fontWeight: "700",
+          fontWeight: "800",
           marginTop: Platform.OS === "android" ? -4 : -1,
         },
       }}
@@ -108,20 +112,9 @@ export default function AppTabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="itineraries"
+        name="support"
         options={{
-          title: "Lịch trình",
-          tabBarIcon: ({ color, focused, size }) => (
-            <Ionicons
-              name={
-                focused
-                  ? tabIconMap.itineraries.active
-                  : tabIconMap.itineraries.inactive
-              }
-              color={color}
-              size={size}
-            />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen

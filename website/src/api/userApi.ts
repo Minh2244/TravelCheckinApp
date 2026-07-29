@@ -108,7 +108,10 @@ const userApi = {
   createCheckin: async (payload: CreateCheckinPayload) => {
     const response = await axiosClient.post<
       ApiResponse<{
-        checkin_id: number;
+        checkin_id?: number;
+        location_id?: number;
+        location_name?: string | null;
+        action?: "checkin" | "save";
         safety_warning?: boolean;
         safety_message?: string | null;
       }>
@@ -133,6 +136,15 @@ const userApi = {
     const response = await axiosClient.patch<ApiResponse<Location>>(
       `/user/created-locations/${locationId}`,
       payload,
+    );
+    return response.data;
+  },
+  uploadMyCreatedLocationCover: async (locationId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const response = await axiosClient.post<ApiResponse<{ image_url: string }>>(
+      `/user/created-locations/${locationId}/cover`,
+      formData,
     );
     return response.data;
   },
@@ -232,20 +244,29 @@ const userApi = {
       await axiosClient.post(`/user/vouchers/${voucherId}/claim`);
     return response.data;
   },
-  getMySavedVouchers: async () => {
+  getMySavedVouchers: async (params?: { locationId?: number }) => {
     const response =
-      await axiosClient.get<ApiResponse<any[]>>("/user/vouchers/saved");
+      await axiosClient.get<ApiResponse<any[]>>("/user/vouchers/saved", { params });
     return response.data;
   },
-  getDiaries: async () => {
+  getDiaries: async (params?: { locationId?: number }) => {
     const response =
-      await axiosClient.get<ApiResponse<DiaryItem[]>>("/user/diary");
+      await axiosClient.get<ApiResponse<DiaryItem[]>>("/user/diary", { params });
     return response.data;
   },
   createDiary: async (payload: CreateDiaryPayload) => {
     const response = await axiosClient.post<ApiResponse<{ diary_id: number }>>(
       "/user/diary",
       payload,
+    );
+    return response.data;
+  },
+  uploadDiaryImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const response = await axiosClient.post<ApiResponse<{ image_url: string }>>(
+      "/user/diary/upload",
+      formData,
     );
     return response.data;
   },

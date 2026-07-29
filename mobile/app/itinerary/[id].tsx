@@ -5,7 +5,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Modal,
   TextInput,
   RefreshControl,
@@ -19,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { itineraryApi, ItineraryDetail, ItineraryItemInput } from "../../src/services/itinerary.api";
 import { locationApi } from "../../src/services/location.api";
 import type { LocationItem } from "../../src/types/location";
+import { AppAlert as Alert } from "../../src/modules/ui/app-alert";
 
 export default function ItineraryDetailScreen() {
   const router = useRouter();
@@ -346,7 +346,7 @@ export default function ItineraryDetailScreen() {
             {detail.title}
           </Text>
           <Text className="text-[10px] text-slate-400 font-bold mt-0.5">
-            📅 {new Date(detail.start_date).toLocaleDateString("vi-VN")} - {new Date(detail.end_date).toLocaleDateString("vi-VN")}
+            Ngày: {new Date(detail.start_date).toLocaleDateString("vi-VN")} - {new Date(detail.end_date).toLocaleDateString("vi-VN")}
           </Text>
         </View>
         
@@ -467,12 +467,11 @@ export default function ItineraryDetailScreen() {
                         {item.custom_name}
                       </Text>
                     </View>
-
-                    {item.custom_address && (
+                    {item.custom_address ? (
                       <Text className="text-[10px] text-slate-400 mt-1" numberOfLines={1}>
-                        📍 {item.custom_address}
+                        Địa chỉ: {item.custom_address}
                       </Text>
-                    )}
+                    ) : null}
 
                     {item.note && (
                       <Text className="text-xs text-slate-500 mt-1.5 italic leading-[18px]">

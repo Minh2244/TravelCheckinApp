@@ -8,8 +8,10 @@ import {
   getLocationServicesPublic,
   getLocationTicketsStock,
   getLocations,
+  createCustomLocation,
+  updateCustomLocationName,
 } from "../controllers/locationController";
-import { authenticateTokenOptional } from "../middleware/authMiddleware";
+import { authenticateToken, authenticateTokenOptional } from "../middleware/authMiddleware";
 
 const router = Router();
 
@@ -18,6 +20,12 @@ router.get("/search", authenticateTokenOptional, getLocations);
 
 // GET /api/locations
 router.get("/", authenticateTokenOptional, getLocations);
+
+// POST /api/locations/custom
+router.post("/custom", authenticateToken, createCustomLocation);
+
+// PUT /api/locations/custom/:id
+router.put("/custom/:id", authenticateToken, updateCustomLocationName);
 
 // GET /api/locations/:id/services?type=
 router.get(

@@ -1,23 +1,29 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
   DeviceEventEmitter,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { LocationReviews } from "../../../src/components/location/LocationReviews";
-import { resolveBackendUrl } from "../../../src/lib/url";
+import { resolveBackendImageSource, resolveBackendUrl } from "../../../src/lib/url";
 import { isLocationOpen } from "../../../src/lib/time";
+import { voucherStillUsable } from "../../../src/lib/voucher-utils";
 import { useAuthStore } from "../../../src/modules/auth/store";
+import { confirm } from "../../../src/modules/ui/confirm-store";
+import { getCachedImageUri } from "../../../src/modules/image/image-cache";
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { geoApi } from "../../../src/services/geo.api";
 import { locationApi } from "../../../src/services/location.api";
@@ -26,10 +32,20 @@ import {
   type LocationVoucher,
 } from "../../../src/services/user.api";
 import { chatApi } from "../../../src/services/chat.api";
-import type { LocationItem } from "../../../src/types/location";
+import { isPrivateUserLocation, type LocationItem } from "../../../src/types/location";
 import { LocationChatModal } from "../../../src/components/chat/LocationChatBubble";
+import { travelColors } from "../../../src/theme/travel";
 
-type DetailTab = "overview" | "reviews" | "about";
+type DetailTab = "overview" | "reviews" | "about" | "diary";
+
+type DiaryItem = {
+  diary_id: number;
+  location_id: number | null;
+  mood?: "happy" | "excited" | "neutral" | "sad" | "angry" | "tired";
+  notes?: string | null;
+  images?: string | string[] | null;
+  created_at?: string | null;
+};
 
 function locationTypeLabel(value?: string | null) {
   const type = String(value || "").toLowerCase();
@@ -56,6 +72,123 @@ function normalizeImages(value?: string[] | string | null) {
   } catch {
     return [value];
   }
+}
+
+function DiaryPhoto({
+  image,
+  index,
+  onRemove,
+  onOpen,
+}: {
+  image: string;
+  index: number;
+  onRemove?: () => void;
+  onOpen?: () => void;
+}) {
+  const [source, setSource] = useState<any>(null);
+  const [failed, setFailed] = useState(false);
+  const lastTapRef = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+
+    const resolved = resolveBackendUrl(image) || image;
+    if (!/^https?:\/\//i.test(resolved)) {
+      setSource({ uri: resolved });
+      return () => {
+        active = false;
+      };
+    }
+
+    setSource(null);
+    getCachedImageUri(resolved)
+      .then((cachedUri) => {
+        if (!active) return;
+        setSource(cachedUri ? { uri: cachedUri } : resolveBackendImageSource(image));
+      })
+      .catch(() => {
+        if (!active) return;
+        setSource(resolveBackendImageSource(image));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [image]);
+
+  const handlePress = () => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 280) {
+      onOpen?.();
+      lastTapRef.current = 0;
+      return;
+    }
+    lastTapRef.current = now;
+  };
+
+  return (
+    <Pressable style={styles.diaryPhotoFrame} onPress={handlePress}>
+      {source && !failed ? (
+        <Image
+          source={source}
+          style={styles.diaryImage}
+          resizeMode="cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <View style={styles.diaryPhotoFallback}>
+          <Ionicons name="image-outline" size={22} color={travelColors.muted} />
+          <Text style={styles.diaryPhotoFallbackText}>
+            {failed ? "Lỗi ảnh" : `Ảnh ${index + 1}`}
+          </Text>
+        </View>
+      )}
+
+      {onRemove ? (
+        <Pressable style={styles.diaryRemovePhotoButton} onPress={onRemove}>
+          <Ionicons name="close" size={13} color="#ffffff" />
+        </Pressable>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function DiaryZoomImage({ image }: { image: string }) {
+  const [source, setSource] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    const resolved = resolveBackendUrl(image) || image;
+
+    if (!/^https?:\/\//i.test(resolved)) {
+      setSource({ uri: resolved });
+      return () => {
+        active = false;
+      };
+    }
+
+    setSource(null);
+    getCachedImageUri(resolved)
+      .then((cachedUri) => {
+        if (!active) return;
+        setSource(cachedUri ? { uri: cachedUri } : resolveBackendImageSource(image));
+      })
+      .catch(() => {
+        if (!active) return;
+        setSource(resolveBackendImageSource(image));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [image]);
+
+  if (!source) {
+    return <ActivityIndicator color="#ffffff" size="large" />;
+  }
+
+  return <Image source={source} style={styles.diaryZoomImage} resizeMode="contain" />;
 }
 
 function openingHoursLabel(
@@ -135,6 +268,29 @@ export default function LocationDetailScreen() {
   const [vouchers, setVouchers] = useState<LocationVoucher[]>([]);
   const [vouchersLoading, setVouchersLoading] = useState(false);
   const [claimingVoucherId, setClaimingVoucherId] = useState<number | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [diary, setDiary] = useState<DiaryItem | null>(null);
+  const [diaryNotes, setDiaryNotes] = useState("");
+  const [diaryImages, setDiaryImages] = useState<string[]>([]);
+  const [newDiaryImages, setNewDiaryImages] = useState<string[]>([]);
+  const [zoomDiaryImage, setZoomDiaryImage] = useState<string | null>(null);
+  const [savingDiary, setSavingDiary] = useState(false);
+  const [diaryLoading, setDiaryLoading] = useState(false);
+  const isPrivateLocation = isPrivateUserLocation(location);
+  const locationDescription = useMemo(() => {
+    const raw = String(location?.description || "").trim();
+    if (isPrivateLocation && (!raw || raw.toLowerCase() === "user created location")) {
+      return "Địa điểm tự do do bạn tạo, chỉ hiển thị trong tài khoản của bạn.";
+    }
+    return raw || "Địa điểm chưa cập nhật phần giới thiệu.";
+  }, [isPrivateLocation, location?.description]);
+  const diaryPreviewImages = useMemo(
+    () => [...diaryImages, ...newDiaryImages].filter(Boolean).slice(0, 6),
+    [diaryImages, newDiaryImages],
+  );
 
   const loadDetail = async () => {
     if (!id) return;
@@ -151,6 +307,7 @@ export default function LocationDetailScreen() {
         ]);
 
       setLocation(locationResponse.data);
+      setRenameValue(locationResponse.data?.location_name || "");
       setUnreadCount(unreadResponse.userUnread || 0);
       setIsFavorite(
         (favoriteResponse.data || []).some(
@@ -176,13 +333,13 @@ export default function LocationDetailScreen() {
             setUnreadCount(res.userUnread || 0);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     });
     return () => sub.remove();
   }, []);
 
   useEffect(() => {
-    if (!id || !user) {
+    if (!id || !user || isPrivateLocation) {
       setVouchers([]);
       return;
     }
@@ -196,9 +353,8 @@ export default function LocationDetailScreen() {
         if (!active) return;
         setVouchers(
           (response.data || []).filter((voucher) => {
-            const maxUses = Number(voucher.max_uses_per_user || 0);
-            const used = Number(voucher.user_used_count || 0);
-            return maxUses <= 0 || used < maxUses;
+            const isClaimed = Boolean(voucher.is_claimed) || Number(voucher.claimed_count || 0) > 0;
+            return !isClaimed && voucherStillUsable(voucher);
           }),
         );
       })
@@ -212,7 +368,7 @@ export default function LocationDetailScreen() {
     return () => {
       active = false;
     };
-  }, [id, user]);
+  }, [id, isPrivateLocation, user]);
 
   useEffect(() => {
     const latitude = Number(location?.latitude);
@@ -251,6 +407,52 @@ export default function LocationDetailScreen() {
       active = false;
     };
   }, [location?.latitude, location?.longitude]);
+
+  useEffect(() => {
+    if (!isPrivateLocation && activeTab === "diary") {
+      setActiveTab("overview");
+    }
+    if (isPrivateLocation && (activeTab === "reviews" || activeTab === "about")) {
+      setActiveTab("overview");
+    }
+  }, [activeTab, isPrivateLocation]);
+
+  useEffect(() => {
+    if (!id || !isPrivateLocation) {
+      setDiary(null);
+      setDiaryNotes("");
+      setDiaryImages([]);
+      setNewDiaryImages([]);
+      return;
+    }
+
+    let active = true;
+    setDiaryLoading(true);
+    userApi
+      .getDiaries({ locationId: id })
+      .then((response) => {
+        if (!active) return;
+        const entry = (response.data || [])[0] as DiaryItem | undefined;
+        setDiary(entry || null);
+        setDiaryNotes(entry?.notes || "");
+        setDiaryImages(entry ? normalizeImages(entry.images).filter(Boolean) : []);
+        setNewDiaryImages([]);
+      })
+      .catch(() => {
+        if (!active) return;
+        setDiary(null);
+        setDiaryNotes("");
+        setDiaryImages([]);
+        setNewDiaryImages([]);
+      })
+      .finally(() => {
+        if (active) setDiaryLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, isPrivateLocation]);
 
   const gallery = useMemo(() => {
     if (!location) return [];
@@ -311,11 +513,7 @@ export default function LocationDetailScreen() {
     try {
       await userApi.claimVoucher(voucherId);
       setVouchers((current) =>
-        current.map((voucher) =>
-          voucher.voucher_id === voucherId
-            ? { ...voucher, is_claimed: true }
-            : voucher,
-        ),
+        current.filter((voucher) => voucher.voucher_id !== voucherId),
       );
       showToast("Đã lưu voucher vào kho của bạn");
     } catch {
@@ -325,10 +523,172 @@ export default function LocationDetailScreen() {
     }
   };
 
+  const savePrivateLocationName = async () => {
+    if (!location || savingName) return;
+    const nextName = renameValue.trim();
+    if (nextName.length < 3) {
+      showToast("Tên vị trí quá ngắn");
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      const response = await userApi.updateMyCreatedLocation(location.location_id, {
+        location_name: nextName,
+      });
+      const updated = response.data || { ...location, location_name: nextName };
+      setLocation((current) => current ? { ...current, ...updated, location_name: nextName } : current);
+      setRenameValue(nextName);
+      setIsRenaming(false);
+      showToast("Đã đổi tên vị trí");
+    } catch {
+      showToast("Không thể đổi tên vị trí");
+    } finally {
+      setSavingName(false);
+    }
+  };
+
+  const pickPrivateLocationCover = async () => {
+    if (!location || uploadingCover) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast("Cần cấp quyền thư viện ảnh");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    setUploadingCover(true);
+    try {
+      const response = await userApi.uploadMyCreatedLocationCover(
+        location.location_id,
+        result.assets[0].uri,
+      );
+      const imageUrl = response.data?.image_url || null;
+      if (imageUrl) {
+        setLocation((current) =>
+          current
+            ? {
+              ...current,
+              first_image: imageUrl,
+              images: [imageUrl, ...normalizeImages(current.images).filter((item) => item !== imageUrl)],
+            }
+            : current,
+        );
+      }
+      showToast("Đã cập nhật ảnh bìa");
+    } catch {
+      showToast("Không thể cập nhật ảnh bìa");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const pickDiaryImages = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast("Cần cấp quyền thư viện ảnh");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      quality: 0.85,
+      selectionLimit: 6,
+    });
+
+    if (!result.canceled && result.assets) {
+      const picked = result.assets
+        .map((asset) => asset.uri)
+        .filter(Boolean);
+      if (picked.length > 0) {
+        const availableSlots = Math.max(0, 6 - diaryImages.length);
+        setNewDiaryImages((current) =>
+          Array.from(new Set([...current, ...picked])).slice(0, availableSlots),
+        );
+        showToast(`Đã chọn ${picked.length} ảnh nhật ký`);
+      }
+    }
+  };
+
+  const savePrivateDiary = async () => {
+    if (!location || savingDiary) return;
+    if (!diaryNotes.trim() && diaryImages.length === 0 && newDiaryImages.length === 0) {
+      showToast("Nhập ghi chú hoặc chọn ảnh");
+      return;
+    }
+
+    setSavingDiary(true);
+    try {
+      const uploadedImages: string[] = [];
+      for (const uri of newDiaryImages) {
+        const response = await userApi.uploadDiaryImage(uri);
+        if (response.success && response.data?.image_url) {
+          uploadedImages.push(response.data.image_url);
+        }
+      }
+      if (newDiaryImages.length > 0 && uploadedImages.length !== newDiaryImages.length) {
+        throw new Error("Không thể tải đủ ảnh nhật ký");
+      }
+
+      const allImages = [...diaryImages, ...uploadedImages].slice(0, 6);
+      await userApi.createDiary({
+        location_id: location.location_id,
+        location_name: location.location_name,
+        mood: "happy",
+        notes: diaryNotes.trim(),
+        images: allImages,
+      });
+
+      const refreshed = await userApi.getDiaries({ locationId: location.location_id });
+      const entry = (refreshed.data || [])[0] as DiaryItem | undefined;
+      setDiary(entry || null);
+      setDiaryNotes(entry?.notes || diaryNotes.trim());
+      setDiaryImages(entry ? normalizeImages(entry.images).filter(Boolean) : allImages);
+      setNewDiaryImages([]);
+      showToast(diary ? "Đã cập nhật nhật ký" : "Đã lưu nhật ký");
+    } catch {
+      showToast("Không thể lưu nhật ký");
+    } finally {
+      setSavingDiary(false);
+    }
+  };
+
+  const deletePrivateDiary = async () => {
+    if (!diary?.diary_id) return;
+    const ok = await confirm({
+      title: "Xóa nhật ký",
+      message: "Bạn có chắc muốn xóa nhật ký này?",
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    try {
+      await userApi.deleteDiary(diary.diary_id);
+      setDiary(null);
+      setDiaryNotes("");
+      setDiaryImages([]);
+      setNewDiaryImages([]);
+      showToast("Đã xóa nhật ký");
+    } catch {
+      showToast("Không thể xóa nhật ký");
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator color="#0f766e" size="large" />
+        <ActivityIndicator color={travelColors.teal} size="large" />
         <Text style={styles.loadingText}>Đang tải địa điểm...</Text>
       </View>
     );
@@ -346,7 +706,18 @@ export default function LocationDetailScreen() {
   }
 
   const coverUrl = gallery[0] || null;
+  const coverSource = coverUrl ? resolveBackendImageSource(coverUrl) : null;
   const rating = Number(location.rating || 0);
+  const detailTabs = isPrivateLocation
+    ? ([
+      ["overview", "Tổng quan"],
+      ["diary", "Nhật ký"],
+    ] as const)
+    : ([
+      ["overview", "Tổng quan"],
+      ["reviews", "Đánh giá"],
+      ["about", "Giới thiệu"],
+    ] as const);
 
   return (
     <View style={styles.container}>
@@ -357,8 +728,8 @@ export default function LocationDetailScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 86 }}
       >
         <View style={styles.coverContainer}>
-          {coverUrl ? (
-            <Image source={{ uri: coverUrl }} style={styles.coverImage} resizeMode="cover" />
+          {coverSource ? (
+            <Image source={coverSource} style={styles.coverImage} resizeMode="cover" />
           ) : (
             <View style={[styles.coverImage, styles.coverFallback]}>
               <Ionicons name="image-outline" size={42} color="#94a3b8" />
@@ -367,44 +738,12 @@ export default function LocationDetailScreen() {
 
           <View style={[styles.headerActions, { top: Math.max(insets.top, 14) }]}>
             <Pressable style={styles.iconButton} onPress={() => router.back()}>
-              <Ionicons name="chevron-back" size={24} color="#0f172a" />
+              <Ionicons name="chevron-back" size={24} color={travelColors.ink} />
             </Pressable>
-            <View style={styles.headerRight}>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => {
-                  const type = location?.location_type || "";
-                  const target = ["restaurant", "cafe"].includes(type)
-                    ? "/wallet/table-pass"
-                    : ["hotel", "resort", "homestay"].includes(type)
-                      ? "/wallet/room-pass"
-                      : ["attraction", "eco_tourism", "tourist"].includes(type)
-                        ? "/wallet/tickets"
-                        : "/wallet";
-                  router.push(target as any);
-                }}
-              >
-                <Ionicons name="cart-outline" size={23} color="#0f172a" />
-              </Pressable>
-              <Pressable
-                style={styles.iconButton}
-                onPress={() => void toggleFavorite()}
-                disabled={favoriteLoading}
-              >
-                <Ionicons
-                  name={isFavorite ? "heart" : "heart-outline"}
-                  size={23}
-                  color={isFavorite ? "#dc2626" : "#0f172a"}
-                />
-              </Pressable>
-              <Pressable style={styles.iconButton} onPress={() => void shareLocation()}>
-                <Ionicons name="share-outline" size={23} color="#0f172a" />
-              </Pressable>
-            </View>
           </View>
 
-          <View style={styles.weatherOverlay}>
-            <Ionicons name="partly-sunny-outline" size={21} color="#0369a1" />
+          <View style={[styles.weatherOverlay, { top: Math.max(insets.top, 14) }]}>
+            <Ionicons name="partly-sunny-outline" size={24} color="#0369a1" />
             <View>
               <Text style={styles.weatherOverlayTemperature}>
                 {weatherLoading
@@ -418,11 +757,26 @@ export default function LocationDetailScreen() {
               </Text>
             </View>
           </View>
-          
-          {!isLocationOpen(location.opening_hours) && (
-            <View style={styles.closedOverlay}>
-              <Ionicons name="time-outline" size={20} color="#fff" />
-              <Text style={styles.closedOverlayText}>Đang đóng cửa</Text>
+
+          {isPrivateLocation ? (
+            <Pressable
+              style={styles.coverEditButton}
+              disabled={uploadingCover}
+              onPress={() => void pickPrivateLocationCover()}
+            >
+              <Ionicons name="image-outline" size={16} color={travelColors.teal} />
+              <Text style={styles.coverEditText}>
+                {uploadingCover ? "Đang tải" : "Đổi ảnh"}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {!isPrivateLocation && (location.temp_close_type || !isLocationOpen(location.opening_hours)) && (
+            <View style={[styles.closedOverlay, location.temp_close_type && { backgroundColor: "rgba(220, 38, 38, 0.85)" }]}>
+              <Ionicons name={location.temp_close_type ? "alert-circle-outline" : "time-outline"} size={20} color="#fff" />
+              <Text style={styles.closedOverlayText}>
+                {location.temp_close_type ? "Tạm thời đóng cửa" : "Đang đóng cửa"}
+              </Text>
             </View>
           )}
         </View>
@@ -430,47 +784,75 @@ export default function LocationDetailScreen() {
         <View style={styles.infoPanel}>
           <View style={styles.typeBadge}>
             <Text style={styles.typeBadgeText}>
-              {locationTypeLabel(location.location_type)}
+              {isPrivateLocation ? "Vị trí tự do" : locationTypeLabel(location.location_type)}
             </Text>
           </View>
-          <Text style={styles.locationTitle}>{location.location_name}</Text>
-          <View style={styles.ratingRow}>
-            <Ionicons name="star" size={16} color="#eab308" />
-            <Text style={styles.ratingScore}>
-              {rating > 0 ? rating.toFixed(1) : "Chưa có"}
-            </Text>
-            <Text style={styles.reviewCount}>
-              ({location.total_reviews || 0} đánh giá)
-            </Text>
-          </View>
+          {isPrivateLocation ? (
+            <View style={styles.renameBlock}>
+              {isRenaming ? (
+                <TextInput
+                  value={renameValue}
+                  onChangeText={setRenameValue}
+                  autoFocus
+                  style={styles.renameInput}
+                />
+              ) : (
+                <Text style={styles.locationTitle}>{location.location_name}</Text>
+              )}
+              <Pressable
+                style={styles.renameButton}
+                disabled={savingName}
+                onPress={() => {
+                  if (isRenaming) void savePrivateLocationName();
+                  else setIsRenaming(true);
+                }}
+              >
+                <Ionicons name={isRenaming ? "checkmark" : "pencil"} size={18} color={travelColors.teal} />
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={styles.locationTitle}>{location.location_name}</Text>
+          )}
+          {!isPrivateLocation ? (
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={16} color="#eab308" />
+              <Text style={styles.ratingScore}>
+                {rating > 0 ? rating.toFixed(1) : "Chưa có"}
+              </Text>
+              <Text style={styles.reviewCount}>
+                ({location.total_reviews || 0} đánh giá)
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.privateDetailBadge}>
+              <Ionicons name="lock-closed-outline" size={14} color={travelColors.teal} />
+              <Text style={styles.privateDetailBadgeText}>Vị trí riêng tư</Text>
+            </View>
+          )}
 
           <View style={styles.quickActions}>
             <Pressable style={styles.quickAction} onPress={openDirections}>
-              <Ionicons name="navigate-outline" size={21} color="#0f766e" />
+              <Ionicons name="navigate-outline" size={20} color={travelColors.teal} />
               <Text style={styles.quickActionText}>Chỉ đường</Text>
             </Pressable>
             <Pressable style={styles.quickAction} onPress={() => void toggleFavorite()}>
               <Ionicons
                 name={isFavorite ? "heart" : "heart-outline"}
                 size={21}
-                color={isFavorite ? "#dc2626" : "#0f766e"}
+                color={isFavorite ? travelColors.danger : travelColors.teal}
               />
               <Text style={[styles.quickActionText, isFavorite && styles.savedText]}>
                 {isFavorite ? "Đã lưu" : "Lưu"}
               </Text>
             </Pressable>
-            <Pressable style={styles.quickAction} onPress={() => void shareLocation()}>
-              <Ionicons name="share-outline" size={21} color="#0f766e" />
+            <Pressable style={[styles.quickAction, isPrivateLocation && styles.hidden]} onPress={() => void shareLocation()}>
+              <Ionicons name="share-outline" size={20} color={travelColors.teal} />
               <Text style={styles.quickActionText}>Chia sẻ</Text>
             </Pressable>
           </View>
 
           <View style={styles.tabHeader}>
-            {([
-              ["overview", "Tổng quan"],
-              ["reviews", "Đánh giá"],
-              ["about", "Giới thiệu"],
-            ] as const).map(([value, label]) => (
+            {detailTabs.map(([value, label]) => (
               <Pressable
                 key={value}
                 onPress={() => setActiveTab(value)}
@@ -489,7 +871,7 @@ export default function LocationDetailScreen() {
             <View style={styles.section}>
               <View style={styles.descriptionBlock}>
                 <Text style={styles.descriptionText}>
-                  {location.description || "Địa điểm chưa cập nhật phần giới thiệu."}
+                  {locationDescription}
                 </Text>
               </View>
 
@@ -506,13 +888,20 @@ export default function LocationDetailScreen() {
               <DetailInfoRow
                 icon="checkmark-circle-outline"
                 label="Trạng thái"
-                value={statusLabel(location.status)}
-                accent={location.status === "active"}
+                value={location.temp_close_type ? "Tạm thời đóng cửa" : statusLabel(location.status)}
+                accent={location.status === "active" && !location.temp_close_type}
+                danger={!!location.temp_close_type}
               />
               <DetailInfoRow
                 icon="time-outline"
                 label="Thời gian mở cửa - đóng cửa"
-                value={openingHoursLabel(location.opening_hours)}
+                value={location.temp_close_type ? (location.temp_close_until ? `Đóng đến ${(() => {
+                  const d = new Date(location.temp_close_until);
+                  if (isNaN(d.getTime())) return location.temp_close_until;
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                })()}` : "Đóng vô thời hạn") : openingHoursLabel(location.opening_hours)}
+                danger={!!location.temp_close_type}
               />
               <DetailInfoRow
                 icon="call-outline"
@@ -545,96 +934,228 @@ export default function LocationDetailScreen() {
                 />
               ) : null}
 
-              <View style={styles.voucherSection}>
-                <View style={styles.voucherHeading}>
-                  <View>
-                    <Text style={styles.voucherTitle}>Voucher & khuyến mãi</Text>
-                    <Text style={styles.voucherSubtitle}>
-                      Ưu đãi đang áp dụng tại địa điểm
-                    </Text>
+              {!isPrivateLocation ? (
+                <View style={styles.voucherSection}>
+                  <View style={styles.voucherHeading}>
+                    <View>
+                      <Text style={styles.voucherTitle}>Voucher & khuyến mãi</Text>
+                      <Text style={styles.voucherSubtitle}>
+                        Ưu đãi đang áp dụng tại địa điểm
+                      </Text>
+                    </View>
+                    <Ionicons name="ticket-outline" size={22} color={travelColors.coral} />
                   </View>
-                  <Ionicons name="ticket-outline" size={22} color="#e11d48" />
-                </View>
 
-                {vouchersLoading ? (
-                  <ActivityIndicator color="#e11d48" />
-                ) : vouchers.length === 0 ? (
-                  <Text style={styles.voucherEmpty}>
-                    Chưa có voucher cho địa điểm này.
-                  </Text>
-                ) : (
-                  vouchers.slice(0, 2).map((voucher) => {
-                    const claimed = Boolean(voucher.is_claimed);
-                    const isPercent = voucher.discount_type === "percent" || voucher.discount_type === "percentage";
-                    const discountLabel = isPercent
-                      ? `-${Number(voucher.discount_value)}%`
-                      : `-${(Number(voucher.discount_value) / 1000).toFixed(0)}k`;
+                  {vouchersLoading ? (
+                    <ActivityIndicator color={travelColors.coral} />
+                  ) : vouchers.length === 0 ? (
+                    <Text style={styles.voucherEmpty}>
+                      Chưa có voucher cho địa điểm này.
+                    </Text>
+                  ) : (
+                    vouchers
+                      .filter((v) => !(Boolean(v.is_claimed) || Number(v.claimed_count || 0) > 0))
+                      .slice(0, 2)
+                      .map((voucher) => {
+                        const claimed = Boolean(voucher.is_claimed) || Number(voucher.claimed_count || 0) > 0;
+                        const isPercent = voucher.discount_type === "percent" || voucher.discount_type === "percentage";
+                        const discountLabel = isPercent
+                          ? `-${Number(voucher.discount_value)}%`
+                          : `-${(Number(voucher.discount_value) / 1000).toFixed(0)}k`;
 
-                    return (
-                      <View key={voucher.voucher_id} style={styles.voucherTicket}>
-                        <View style={styles.voucherTicketStub}>
-                          <Text style={styles.voucherTicketDiscount}>
-                            {discountLabel}
-                          </Text>
-                          <Text style={styles.voucherTicketLabel}>
-                            GIẢM
-                          </Text>
-                        </View>
+                        const maxUsesPerUser = Number(voucher.max_uses_per_user || 1);
+                        const userUsed = Number(voucher.user_used_count || 0);
+                        const userRemaining = Math.max(0, maxUsesPerUser - userUsed);
+                        const systemRemaining = voucher.remaining != null ? Math.max(0, Number(voucher.remaining)) : 999999;
+                        const displayRemaining = Math.min(userRemaining, systemRemaining);
 
-                        <View style={styles.voucherDivider}>
-                          <View style={styles.voucherDividerDotTop} />
-                          <View style={styles.voucherDividerLine} />
-                          <View style={styles.voucherDividerDotBottom} />
-                        </View>
+                        const locationText = voucher.location_name || "Toàn hệ thống";
 
-                        <View style={styles.voucherTicketBody}>
-                          <View style={styles.voucherTicketTop}>
-                            <View style={styles.voucherTicketCopy}>
-                              <Text style={styles.voucherTicketName} numberOfLines={1}>
-                                {voucher.campaign_name || "Voucher đặc biệt"}
+                        return (
+                          <View
+                            key={voucher.voucher_id}
+                            className="bg-white rounded-2xl flex-row overflow-hidden border border-slate-100 mb-4 shadow-sm"
+                            style={{ elevation: 2, height: 140 }}
+                          >
+                            {/* Left Violet Stub */}
+                            <View className="relative w-20 bg-indigo-600 justify-center items-center p-2 select-none">
+                              <View className="absolute top-2 right-2 opacity-50">
+                                <Ionicons name="sparkles" size={10} color="#c084fc" />
+                              </View>
+                              <Text className="text-white font-black text-xl tracking-tight text-center">
+                                {discountLabel}
                               </Text>
-                              <Text style={styles.voucherTicketDescription} numberOfLines={1}>
-                                {voucher.campaign_description || "Khám phá ưu đãi đặc biệt."}
+                              <Text className="text-indigo-200 text-[8px] font-bold tracking-widest mt-0.5 uppercase">
+                                GIẢM GIÁ
                               </Text>
+                              <View className="absolute bottom-0 w-full h-6 flex-row items-end opacity-20 px-1 justify-between">
+                                <View className="w-[12%] h-[60%] bg-white rounded-t-sm" />
+                                <View className="w-[15%] h-[80%] bg-white rounded-t-sm" />
+                                <View className="w-[10%] h-[40%] bg-white rounded-t-sm" />
+                                <View className="w-[18%] h-[90%] bg-white rounded-t-sm" />
+                                <View className="w-[14%] h-[70%] bg-white rounded-t-sm" />
+                                <View className="w-[12%] h-[50%] bg-white rounded-t-sm" />
+                              </View>
                             </View>
 
-                            <Pressable
-                              style={[
-                                styles.voucherTicketButton,
-                                claimed && styles.voucherTicketButtonClaimed,
-                              ]}
-                              disabled={claimed || claimingVoucherId === voucher.voucher_id}
-                              onPress={() => void claimVoucher(voucher.voucher_id)}
-                            >
-                              <Text
-                                style={[
-                                  styles.voucherTicketButtonText,
-                                  claimed && styles.voucherTicketButtonTextClaimed,
-                                ]}
+                            {/* Perforated Separator 1 */}
+                            <View className="relative w-3 shrink-0 flex-col items-center justify-between py-1 bg-white">
+                              <View className="absolute -top-2 w-4 h-4 rounded-full bg-slate-100 border border-slate-200" />
+                              <View className="h-full border-l border-dashed border-slate-200" />
+                              <View className="absolute -bottom-2 w-4 h-4 rounded-full bg-slate-100 border border-slate-200" />
+                            </View>
+
+                            {/* Middle Info Block */}
+                            <View className="flex-1 p-3 pl-1.5 bg-white justify-between min-w-0">
+                              <View>
+                                <View className="flex-row items-center gap-1.5 mb-1 flex-wrap">
+                                  <View className="bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                                    <Text className="text-[8px] font-black text-indigo-700 uppercase tracking-wider">
+                                      MÃ GIẢM GIÁ
+                                    </Text>
+                                  </View>
+                                  <View className="bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full flex-row items-center gap-0.5">
+                                    <Ionicons name="time-outline" size={8} color="#059669" />
+                                    <Text className="text-[8px] font-bold text-emerald-600">
+                                      Còn {displayRemaining} vé
+                                    </Text>
+                                  </View>
+                                </View>
+
+                                <Text className="text-[13px] font-extrabold text-slate-800 leading-snug" numberOfLines={1}>
+                                  {voucher.campaign_name || "Voucher đặc biệt"} 🎉
+                                </Text>
+                                {voucher.campaign_description ? (
+                                  <Text className="text-[10px] text-slate-400 mt-0.5 leading-[13px]" numberOfLines={1}>
+                                    {voucher.campaign_description}
+                                  </Text>
+                                ) : null}
+                              </View>
+
+                              <View className="bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 flex-row items-center gap-1 my-0.5 self-start">
+                                <Ionicons name="card-outline" size={10} color="#6366f1" />
+                                <Text className="text-[9px] font-semibold text-slate-600">
+                                  Đơn tối thiểu: {Number(voucher.min_order_value) > 0 ? `${Number(voucher.min_order_value) >= 1000 ? (Number(voucher.min_order_value) / 1000).toFixed(0) + "k" : voucher.min_order_value}đ` : "0đ"}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Perforated Separator 2 */}
+                            <View className="relative w-3 shrink-0 flex-col items-center justify-between py-1 bg-white">
+                              <View className="absolute -top-2 w-4 h-4 rounded-full bg-slate-100 border border-slate-200" />
+                              <View className="h-full border-l border-dashed border-slate-200" />
+                              <View className="absolute -bottom-2 w-4 h-4 rounded-full bg-slate-100 border border-slate-200" />
+                            </View>
+
+                            {/* Right Metadata Block */}
+                            <View className="w-24 p-2 bg-slate-50/50 justify-between border-l border-transparent shrink-0">
+                              <View className="gap-1">
+                                <View className="flex-row items-start gap-1">
+                                  <Ionicons name="calendar-outline" size={9} color="#6366f1" className="mt-0.5" />
+                                  <View>
+                                    <Text className="text-[8px] font-bold text-slate-400 leading-none">NSD</Text>
+                                    <Text className="text-[9px] font-semibold text-slate-600 mt-0.5">{voucher.start_date ? new Date(voucher.start_date).toLocaleDateString("vi-VN") : "-"}</Text>
+                                  </View>
+                                </View>
+                                <View className="flex-row items-start gap-1">
+                                  <Ionicons name="calendar-outline" size={9} color="#6366f1" className="mt-0.5" />
+                                  <View>
+                                    <Text className="text-[8px] font-bold text-slate-400 leading-none">HSD</Text>
+                                    <Text className="text-[9px] font-semibold text-slate-600 mt-0.5">{voucher.end_date ? new Date(voucher.end_date).toLocaleDateString("vi-VN") : "-"}</Text>
+                                  </View>
+                                </View>
+                              </View>
+
+                              <Pressable
+                                className={`py-1.5 px-2 rounded-lg items-center ${claimed ? "bg-slate-100" : "bg-indigo-600 active:bg-indigo-700"}`}
+                                disabled={claimed || claimingVoucherId === voucher.voucher_id}
+                                onPress={() => void claimVoucher(voucher.voucher_id)}
                               >
-                                {claimed ? "Đã lưu" : claimingVoucherId === voucher.voucher_id ? "..." : "Lưu"}
-                              </Text>
-                            </Pressable>
-                          </View>
-
-                          <View style={styles.voucherTicketMetaRow}>
-                            <View>
-                              <Text style={styles.voucherTicketMeta}>
-                                Đơn tối thiểu: {Number(voucher.min_order_value) > 0 ? `${Number(voucher.min_order_value) >= 1000 ? (Number(voucher.min_order_value)/1000).toFixed(0) + "k" : voucher.min_order_value}đ` : "0đ"}
-                              </Text>
-                              <Text style={styles.voucherTicketDate}>
-                                HSD: {voucher.end_date ? new Date(voucher.end_date).toLocaleDateString("vi-VN") : "-"}
-                              </Text>
+                                <Text className={`text-[11px] font-bold ${claimed ? "text-slate-400" : "text-white"}`}>
+                                  {claimed ? "Đã lưu" : claimingVoucherId === voucher.voucher_id ? "..." : "Lưu"}
+                                </Text>
+                              </Pressable>
                             </View>
-                            <Text style={styles.voucherTicketRemaining}>
-                              Còn: {voucher.remaining ?? 0} vé
-                            </Text>
                           </View>
-                        </View>
-                      </View>
+                        );
+                      })
+                  )}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          {activeTab === "diary" && isPrivateLocation ? (
+            <View style={styles.diarySection}>
+              <View style={styles.diaryHeader}>
+                <View>
+                  <Text style={styles.diaryTitle}>Nhật ký vị trí</Text>
+                  <Text style={styles.diarySubtitle}>
+                    {diary?.created_at
+                      ? new Date(diary.created_at).toLocaleString("vi-VN")
+                      : "Ghi lại ghi chú và hình ảnh riêng tư"}
+                  </Text>
+                </View>
+                {diary?.diary_id ? (
+                  <Pressable style={styles.diaryDeleteButton} onPress={deletePrivateDiary}>
+                    <Ionicons name="trash-outline" size={18} color={travelColors.danger} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {diaryLoading ? (
+                <ActivityIndicator color={travelColors.teal} />
+              ) : null}
+
+              {diaryPreviewImages.length > 0 ? (
+                <View style={styles.diaryImageGrid}>
+                  {diaryPreviewImages.map((image, index) => {
+                    const isNewImage = newDiaryImages.includes(image);
+                    return (
+                      <DiaryPhoto
+                        key={`${image}-${index}`}
+                        image={image}
+                        index={index}
+                        onOpen={() => setZoomDiaryImage(image)}
+                        onRemove={
+                          isNewImage
+                            ? () => setNewDiaryImages((current) => current.filter((item) => item !== image))
+                            : undefined
+                        }
+                      />
                     );
-                  })
-                )}
+                  })}
+                </View>
+              ) : (
+                <View style={styles.diaryEmptyImage}>
+                  <Ionicons name="images-outline" size={28} color={travelColors.muted} />
+                  <Text style={styles.diaryEmptyText}>Chưa có ảnh nhật ký</Text>
+                </View>
+              )}
+
+              <TextInput
+                value={diaryNotes}
+                onChangeText={setDiaryNotes}
+                placeholder="Ghi chú về vị trí này..."
+                placeholderTextColor={travelColors.muted}
+                multiline
+                style={styles.diaryInput}
+              />
+
+              <View style={styles.diaryActions}>
+                <Pressable style={styles.diaryPickButton} onPress={() => void pickDiaryImages()}>
+                  <Ionicons name="image-outline" size={18} color={travelColors.teal} />
+                  <Text style={styles.diaryPickText}>Chọn ảnh</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.diarySaveButton, savingDiary && styles.actionButtonDisabled]}
+                  disabled={savingDiary}
+                  onPress={() => void savePrivateDiary()}
+                >
+                  <Text style={styles.diarySaveText}>
+                    {savingDiary ? "Đang lưu" : diary ? "Cập nhật" : "Lưu nhật ký"}
+                  </Text>
+                </Pressable>
               </View>
             </View>
           ) : null}
@@ -655,7 +1176,7 @@ export default function LocationDetailScreen() {
           {activeTab === "about" ? (
             <View style={styles.section}>
               <Text style={styles.aboutText}>
-                {location.description || "Địa điểm chưa cập nhật phần giới thiệu."}
+                {locationDescription}
               </Text>
               {location.website ? (
                 <InfoRow icon="globe-outline" text={location.website} />
@@ -665,82 +1186,105 @@ export default function LocationDetailScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Pressable
-          style={[
-            styles.actionButton,
-            !isLocationOpen(location.opening_hours) && styles.actionButtonDisabled
-          ]}
-          disabled={!isLocationOpen(location.opening_hours)}
-          onPress={() => {
-            const t = String(location.location_type || "").toLowerCase();
-            if (t === "restaurant" || t === "cafe") {
-              router.push(`/booking/table/0?locationId=${location.location_id}`);
-            } else if (t === "hotel" || t === "resort") {
-              router.push(`/booking/hotel/${location.location_id}`);
-            } else if (t === "tourist") {
-              router.push(`/booking/ticket/all?locationId=${location.location_id}`);
-            } else {
-              router.push(`/location/${location.location_id}/services`);
-            }
-          }}
-        >
-          <Text style={styles.actionButtonText}>
-            {(() => {
-              const t = String(location.location_type || "").toLowerCase();
-              if (t === "restaurant" || t === "cafe") return "Đặt bàn trước";
-              if (t === "hotel" || t === "resort") return "Đặt phòng";
-              if (t === "tourist") return "Mua vé";
-              return "Xem dịch vụ tại địa điểm";
-            })()}
-          </Text>
-        </Pressable>
-      </View>
-
-
-      <Pressable
-        style={{
-          position: "absolute",
-          right: 20,
-          bottom: Math.max(insets.bottom, 12) + 70,
-          width: 52,
-          height: 52,
-          borderRadius: 26,
-          backgroundColor: "#2563eb",
-          justifyContent: "center",
-          alignItems: "center",
-          shadowColor: "#2563eb",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.35,
-          shadowRadius: 6,
-          elevation: 8,
-          zIndex: 30,
-        }}
-        onPress={() => setIsChatOpen(true)}
-        accessibilityLabel="Chat với địa điểm"
+      <Modal
+        visible={Boolean(zoomDiaryImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoomDiaryImage(null)}
       >
-        <Ionicons name="chatbubbles" size={22} color="#ffffff" />
-        {unreadCount > 0 && (
-          <View style={{
+        <View style={styles.diaryZoomBackdrop}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setZoomDiaryImage(null)} />
+          <Pressable
+            style={[styles.diaryZoomClose, { top: Math.max(insets.top, 18) }]}
+            onPress={() => setZoomDiaryImage(null)}
+          >
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </Pressable>
+          {zoomDiaryImage ? <DiaryZoomImage image={zoomDiaryImage} /> : null}
+        </View>
+      </Modal>
+
+      {!isPrivateLocation ? (
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+          <Pressable
+            style={[
+              styles.actionButton,
+              (location.temp_close_type || !isLocationOpen(location.opening_hours)) && styles.actionButtonDisabled
+            ]}
+            disabled={!!location.temp_close_type || !isLocationOpen(location.opening_hours)}
+            onPress={() => {
+              const t = String(location.location_type || "").toLowerCase();
+              if (t === "restaurant" || t === "cafe") {
+                router.push(`/booking/table/0?locationId=${location.location_id}`);
+              } else if (t === "hotel" || t === "resort") {
+                router.push(`/booking/hotel/${location.location_id}`);
+              } else if (t === "tourist") {
+                router.push(`/booking/ticket/all?locationId=${location.location_id}`);
+              } else {
+                router.push(`/location/${location.location_id}/services`);
+              }
+            }}
+          >
+            <Text style={styles.actionButtonText}>
+              {location.temp_close_type ? "Địa điểm tạm thời đóng cửa" : (() => {
+                const t = String(location.location_type || "").toLowerCase();
+                if (t === "restaurant" || t === "cafe") return "Đặt bàn trước";
+                if (t === "hotel" || t === "resort") return "Đặt phòng";
+                if (t === "tourist") return "Mua vé";
+                return "Xem dịch vụ tại địa điểm";
+              })()}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+
+      {!isPrivateLocation ? (
+        <Pressable
+          style={{
             position: "absolute",
-            top: -2,
-            right: -2,
-            backgroundColor: "#ef4444",
-            borderRadius: 10,
-            width: 20,
-            height: 20,
+            right: 20,
+            bottom: Math.max(insets.bottom, 12) + 104,
+            width: 52,
+            height: 52,
+            borderRadius: 26,
+            backgroundColor: "#2563eb",
             justifyContent: "center",
             alignItems: "center",
-            borderWidth: 1.5,
-            borderColor: "#ffffff"
-          }}>
-            <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </Text>
-          </View>
-        )}
-      </Pressable>
+            shadowColor: "#2563eb",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.35,
+            shadowRadius: 6,
+            elevation: 8,
+            zIndex: 30,
+          }}
+          onPress={() => setIsChatOpen(true)}
+          accessibilityLabel="Chat với địa điểm"
+        >
+          <Ionicons name="chatbubbles" size={22} color="#ffffff" />
+          {unreadCount > 0 && (
+            <View style={{
+              position: "absolute",
+              top: -2,
+              right: -2,
+              backgroundColor: travelColors.danger,
+              borderRadius: 10,
+              width: 20,
+              height: 20,
+              justifyContent: "center",
+              alignItems: "center",
+              borderWidth: 1.5,
+              borderColor: "#ffffff"
+            }}>
+              <Text style={{ color: "#ffffff", fontSize: 10, fontWeight: "bold" }}>
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Text>
+            </View>
+          )}
+        </Pressable>
+      ) : null}
 
+      {!isPrivateLocation ? (
         <LocationChatModal
           locationId={location.location_id}
           userRole="user"
@@ -752,9 +1296,10 @@ export default function LocationDetailScreen() {
             setUnreadCount(0); // Đã xem
           }}
         />
-      </View>
-    );
-  }
+      ) : null}
+    </View>
+  );
+}
 
 function InfoRow({
   icon,
@@ -765,7 +1310,7 @@ function InfoRow({
 }) {
   return (
     <View style={styles.infoRow}>
-      <Ionicons name={icon} size={19} color="#64748b" />
+      <Ionicons name={icon} size={19} color={travelColors.muted} />
       <Text style={styles.infoText}>{text}</Text>
     </View>
   );
@@ -773,11 +1318,13 @@ function InfoRow({
 
 function DetailInfoRow({
   accent = false,
+  danger = false,
   icon,
   label,
   value,
 }: {
   accent?: boolean;
+  danger?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
@@ -785,11 +1332,19 @@ function DetailInfoRow({
   return (
     <View style={styles.detailInfoRow}>
       <View style={styles.detailInfoIcon}>
-        <Ionicons name={icon} size={18} color={accent ? "#0f766e" : "#64748b"} />
+        <Ionicons
+          name={icon}
+          size={18}
+          color={danger ? travelColors.danger : accent ? travelColors.teal : travelColors.muted}
+        />
       </View>
       <View style={styles.detailInfoContent}>
         <Text style={styles.detailInfoLabel}>{label}</Text>
-        <Text style={[styles.detailInfoValue, accent && styles.detailInfoAccent]}>
+        <Text style={[
+          styles.detailInfoValue,
+          accent && styles.detailInfoAccent,
+          danger && { color: "#dc2626", fontWeight: "700" }
+        ]}>
           {value}
         </Text>
       </View>
@@ -800,22 +1355,22 @@ function DetailInfoRow({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#eef2f3",
+    backgroundColor: travelColors.surface,
   },
   loadingScreen: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    backgroundColor: "#eef2f3",
+    backgroundColor: travelColors.surface,
     paddingHorizontal: 24,
   },
   loadingText: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 15,
   },
   errorTitle: {
-    color: "#0f172a",
+    color: travelColors.ink,
     fontWeight: "800",
     fontSize: 20,
   },
@@ -823,7 +1378,7 @@ const styles = StyleSheet.create({
     height: 44,
     paddingHorizontal: 24,
     justifyContent: "center",
-    backgroundColor: "#0f766e",
+    backgroundColor: travelColors.teal,
     borderRadius: 8,
   },
   retryText: {
@@ -839,9 +1394,27 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   coverFallback: {
-    backgroundColor: "#dbe4ea",
+    backgroundColor: travelColors.line,
     alignItems: "center",
     justifyContent: "center",
+  },
+  coverEditButton: {
+    position: "absolute",
+    right: 18,
+    bottom: 18,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    elevation: 4,
+  },
+  coverEditText: {
+    color: travelColors.teal,
+    fontSize: 12,
+    fontWeight: "800",
   },
   headerActions: {
     position: "absolute",
@@ -856,31 +1429,26 @@ const styles = StyleSheet.create({
   },
   weatherOverlay: {
     position: "absolute",
-    right: 14,
-    bottom: 34,
-    minWidth: 112,
+    right: 22,
+    minWidth: 100,
     maxWidth: 150,
-    minHeight: 48,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.94)",
-    borderWidth: 1,
-    borderColor: "rgba(186,230,253,0.9)",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    elevation: 5,
+    justifyContent: "flex-end",
+    gap: 6,
   },
   weatherOverlayTemperature: {
-    color: "#0c4a6e",
-    fontSize: 16,
-    fontWeight: "800",
+    color: "#111827",
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "right",
   },
   weatherOverlayDescription: {
     maxWidth: 88,
-    color: "#0369a1",
-    fontSize: 11,
+    color: "#374151",
+    fontSize: 13,
+    fontWeight: "bold",
+    textAlign: "right",
   },
   closedOverlay: {
     position: "absolute",
@@ -913,21 +1481,21 @@ const styles = StyleSheet.create({
     marginTop: -22,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
-    backgroundColor: "#ffffff",
+    backgroundColor: travelColors.card,
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 24,
   },
   typeBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#ccfbf1",
-    paddingHorizontal: 9,
+    backgroundColor: travelColors.tealSoft,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 999,
     marginBottom: 8,
   },
   typeBadgeText: {
-    color: "#0f766e",
+    color: travelColors.tealDark,
     fontSize: 12,
     fontWeight: "800",
   },
@@ -935,7 +1503,48 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 30,
     fontWeight: "800",
-    color: "#0f172a",
+    color: travelColors.ink,
+  },
+  renameBlock: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  renameInput: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
+    paddingHorizontal: 12,
+    color: travelColors.ink,
+    fontSize: 21,
+    fontWeight: "800",
+  },
+  renameButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: travelColors.tealSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  privateDetailBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 8,
+    borderRadius: 999,
+    backgroundColor: travelColors.tealSoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  privateDetailBadgeText: {
+    color: travelColors.tealDark,
+    fontSize: 12,
+    fontWeight: "800",
   },
   ratingRow: {
     flexDirection: "row",
@@ -944,12 +1553,12 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   ratingScore: {
-    color: "#334155",
+    color: travelColors.ink,
     fontWeight: "700",
     fontSize: 15,
   },
   reviewCount: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 13,
   },
   quickActions: {
@@ -959,28 +1568,28 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     flex: 1,
-    height: 46,
+    height: 42,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
-    backgroundColor: "#f8fafc",
-    borderRadius: 8,
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 5,
   },
   quickActionText: {
-    color: "#0f766e",
+    color: travelColors.tealDark,
     fontSize: 13,
     fontWeight: "700",
   },
   savedText: {
-    color: "#dc2626",
+    color: travelColors.danger,
   },
   tabHeader: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: travelColors.line,
     marginTop: 20,
     marginBottom: 18,
   },
@@ -991,27 +1600,27 @@ const styles = StyleSheet.create({
   },
   tabButtonActive: {
     borderBottomWidth: 2,
-    borderBottomColor: "#0f766e",
+    borderBottomColor: travelColors.teal,
   },
   tabText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#64748b",
+    color: travelColors.muted,
   },
   tabTextActive: {
-    color: "#0f766e",
+    color: travelColors.teal,
   },
   section: {
     gap: 9,
   },
   descriptionBlock: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 8,
+    backgroundColor: travelColors.surfaceSoft,
+    borderRadius: 10,
     padding: 14,
     marginBottom: 5,
   },
   descriptionText: {
-    color: "#334155",
+    color: travelColors.ink,
     fontSize: 14,
     lineHeight: 21,
   },
@@ -1022,7 +1631,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    color: "#334155",
+    color: travelColors.ink,
     fontSize: 14,
     lineHeight: 21,
   },
@@ -1031,14 +1640,14 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
     padding: 12,
-    borderRadius: 8,
-    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    backgroundColor: travelColors.surfaceSoft,
   },
   detailInfoIcon: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#ffffff",
+    backgroundColor: travelColors.card,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1046,23 +1655,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailInfoLabel: {
-    color: "#94a3b8",
+    color: travelColors.muted,
     fontSize: 11,
     fontWeight: "700",
     textTransform: "uppercase",
   },
   detailInfoValue: {
     marginTop: 3,
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 14,
     lineHeight: 20,
   },
   detailInfoAccent: {
-    color: "#0f766e",
+    color: travelColors.teal,
     fontWeight: "700",
   },
   aboutText: {
-    color: "#334155",
+    color: travelColors.ink,
     fontSize: 15,
     lineHeight: 23,
   },
@@ -1070,10 +1679,10 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 8,
     padding: 14,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ffe4e6",
-    backgroundColor: "#fff7f8",
+    borderColor: "#ffd8ce",
+    backgroundColor: travelColors.coralSoft,
   },
   voucherHeading: {
     flexDirection: "row",
@@ -1081,17 +1690,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   voucherTitle: {
-    color: "#0f172a",
+    color: travelColors.ink,
     fontSize: 16,
     fontWeight: "800",
   },
   voucherSubtitle: {
     marginTop: 2,
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 12,
   },
   voucherEmpty: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 13,
   },
   voucherItem: {
@@ -1108,13 +1717,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   voucherDiscount: {
-    color: "#be123c",
+    color: travelColors.coral,
     fontSize: 15,
     fontWeight: "800",
   },
   voucherName: {
     marginTop: 3,
-    color: "#475569",
+    color: travelColors.muted,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -1125,10 +1734,10 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#e11d48",
+    backgroundColor: travelColors.coral,
   },
   voucherButtonClaimed: {
-    backgroundColor: "#e2e8f0",
+    backgroundColor: travelColors.line,
   },
   voucherButtonText: {
     color: "#ffffff",
@@ -1136,7 +1745,162 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   voucherButtonTextClaimed: {
-    color: "#64748b",
+    color: travelColors.muted,
+  },
+  diarySection: {
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.card,
+    padding: 14,
+  },
+  diaryHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  diaryTitle: {
+    color: travelColors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  diarySubtitle: {
+    marginTop: 3,
+    color: travelColors.muted,
+    fontSize: 12,
+  },
+  diaryDeleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#fff1f2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  diaryImageGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  diaryPhotoFrame: {
+    width: "31.5%",
+    aspectRatio: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: travelColors.line,
+  },
+  diaryImage: {
+    width: "100%",
+    height: "100%",
+  },
+  diaryPhotoFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: travelColors.surfaceSoft,
+  },
+  diaryPhotoFallbackText: {
+    color: travelColors.muted,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  diaryRemovePhotoButton: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  diaryZoomBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.94)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  diaryZoomImage: {
+    width: "100%",
+    height: "82%",
+  },
+  diaryZoomClose: {
+    position: "absolute",
+    right: 18,
+    zIndex: 3,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(15, 23, 42, 0.74)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  diaryEmptyImage: {
+    minHeight: 110,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  diaryEmptyText: {
+    color: travelColors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  diaryInput: {
+    minHeight: 130,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
+    padding: 12,
+    color: travelColors.ink,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: "top",
+  },
+  diaryActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  diaryPickButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  diaryPickText: {
+    color: travelColors.tealDark,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  diarySaveButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: travelColors.teal,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  diarySaveText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "900",
   },
   voucherTicket: {
     minHeight: 105,
@@ -1144,7 +1908,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: travelColors.line,
     backgroundColor: "#ffffff",
     flexDirection: "row",
     elevation: 1,
@@ -1155,7 +1919,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#4f46e5",
+    backgroundColor: travelColors.purple,
   },
   voucherTicketDiscount: {
     color: "#ffffff",
@@ -1166,7 +1930,7 @@ const styles = StyleSheet.create({
   },
   voucherTicketLabel: {
     marginTop: 2,
-    color: "#c7d2fe",
+    color: "#ddd6fe",
     fontSize: 8,
     fontWeight: "800",
     letterSpacing: 0,
@@ -1185,7 +1949,7 @@ const styles = StyleSheet.create({
     width: 1,
     borderLeftWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#cbd5e1",
+    borderColor: travelColors.line,
   },
   voucherDividerDotTop: {
     width: 14,
@@ -1194,8 +1958,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 7,
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
   },
   voucherDividerDotBottom: {
     width: 14,
@@ -1204,8 +1968,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 7,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
+    borderColor: travelColors.line,
+    backgroundColor: travelColors.surfaceSoft,
   },
   voucherTicketBody: {
     flex: 1,
@@ -1226,14 +1990,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   voucherTicketName: {
-    color: "#1e293b",
+    color: travelColors.ink,
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "800",
   },
   voucherTicketDescription: {
     marginTop: 2,
-    color: "#94a3b8",
+    color: travelColors.muted,
     fontSize: 10,
     lineHeight: 14,
   },
@@ -1244,10 +2008,10 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#4f46e5",
+    backgroundColor: travelColors.purple,
   },
   voucherTicketButtonClaimed: {
-    backgroundColor: "#f1f5f9",
+    backgroundColor: travelColors.surfaceSoft,
   },
   voucherTicketButtonText: {
     color: "#ffffff",
@@ -1255,7 +2019,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   voucherTicketButtonTextClaimed: {
-    color: "#94a3b8",
+    color: travelColors.muted,
   },
   voucherTicketMetaRow: {
     marginTop: 8,
@@ -1265,14 +2029,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   voucherTicketMeta: {
-    color: "#64748b",
+    color: travelColors.muted,
     fontSize: 9,
     lineHeight: 13,
     fontWeight: "600",
   },
   voucherTicketDate: {
     marginTop: 2,
-    color: "#94a3b8",
+    color: travelColors.muted,
     fontSize: 8,
     lineHeight: 12,
   },
@@ -1281,8 +2045,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    color: "#059669",
-    backgroundColor: "#ecfdf5",
+    color: travelColors.tealDark,
+    backgroundColor: travelColors.tealSoft,
     fontSize: 9,
     fontWeight: "800",
   },
@@ -1291,21 +2055,21 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#ffffff",
+    backgroundColor: travelColors.card,
     paddingTop: 10,
     paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
+    borderTopColor: travelColors.line,
   },
   actionButton: {
-    height: 48,
-    backgroundColor: "#0f766e",
-    borderRadius: 8,
+    height: 50,
+    backgroundColor: travelColors.teal,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   actionButtonDisabled: {
-    backgroundColor: "#94a3b8",
+    backgroundColor: "#98a2b3",
   },
   actionButtonText: {
     color: "#ffffff",
@@ -1330,6 +2094,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563eb",
   },
   aiChatBubble: {
-    backgroundColor: "#0f766e",
+    backgroundColor: travelColors.purple,
+  },
+  hidden: {
+    display: "none",
   },
 });
