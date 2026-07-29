@@ -55,10 +55,10 @@
 
 | Thành Phần | Mô Tả | Công Nghệ |
 |------------|-------|-----------|
-| **[Website Dashboard](../website/README.md)** | Bảng quản trị Admin · Owner · User | React 19, Vite 7, Ant Design 6 |
-| **[Backend API](../backend/README.md)** | REST API, real-time engine, xử lý nghiệp vụ | Express 5, Node.js, MySQL |
-| **[AI Manager Bot](../ai-manager-bot/README.md)** | Microservice AI cho Admin & Owner | Python, FastAPI, Gemini, GPT |
-| **[Mobile App](../mobile/README.md)** | App du khách — khám phá & check-in | Expo SDK 54, React Native |
+| **[Website Dashboard](./website/README.md)** | Bảng quản trị Admin · Owner · User | React 19, Vite 7, Ant Design 6 |
+| **[Backend API](./backend/README.md)** | REST API, real-time engine, xử lý nghiệp vụ | Express 5, Node.js, MySQL |
+| **[AI Manager Bot](./ai-manager-bot/README.md)** | Microservice AI cho Admin & Owner | Python, FastAPI, Gemini, GPT |
+| **[Mobile App](./mobile/README.md)** | App du khách — khám phá & check-in | Expo SDK 54, React Native |
 
 ---
 
