@@ -304,12 +304,12 @@ cd mobile && cp .env.example .env && npm install && npm start
 
 | Phase | Description | Status |
 |:-----:|-------------|:------:|
-| **1** | Database Schema + Core Backend API (Auth, RBAC, Middleware) | ✅ |
-| **2** | Website Dashboard — Admin & Owner modules | ✅ |
-| **3** | Full DB Schema (62 tables) + Complete business logic | ✅ |
-| **4** | Mobile App — Auth, Home, Map, Booking & QR Wallet | ✅ |
-| **5** | Mobile App — Saved Locations, Diary, SOS & Vouchers | ✅ |
-| **6** | Mobile App — AI Chat, Location Chat & Itinerary Planner | ✅ |
+| **1** | **Backend System** — Core API, Auth, RBAC & Middleware | ✅ |
+| **2** | **Website Portals** — Admin Dashboard & Business Owner Modules | ✅ |
+| **3** | **Database & Logic** — 62 Tables & Complex Business Rules | ✅ |
+| **4** | **Mobile App (Core)** — Maps, Booking, QR Wallet & Front-office | ✅ |
+| **5** | **Mobile App (Social)** — Saved Locations, Diary, Vouchers & SOS | ✅ |
+| **6** | **AI Ecosystem** — Dual AI Chatbot, NLP & Smart Itinerary Planner | ✅ |
 
 | Module | Progress | Scope |
 |--------|:--------:|-------|
