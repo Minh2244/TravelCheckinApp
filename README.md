@@ -18,7 +18,6 @@
 [![Status](https://img.shields.io/badge/Status-✅_Completed-brightgreen)](.)<br>
 [![Platforms](https://img.shields.io/badge/Platforms-Web_·_Mobile_·_API-blueviolet)](.)<br>
 
-🇻🇳 [Phiên bản Tiếng Việt](./docs/README_VI.md)
 
 </div>
 
