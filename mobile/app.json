@@ -42,6 +42,18 @@
     },
     "experiments": {
       "typedRoutes": false
-    }
+    },
+    "extra": {
+      "router": {},
+      "expo-navigation-bar": {
+        "style": "dark",
+        "hidden": false,
+        "enforceContrast": false
+      },
+      "eas": {
+        "projectId": "f30225f4-1735-4399-a9f9-e3e11de9ae57"
+      }
+    },
+    "owner": "minh2244"
   }
 }

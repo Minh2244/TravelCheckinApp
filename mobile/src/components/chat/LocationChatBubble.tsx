@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Modal,
   View,
@@ -12,15 +12,20 @@ import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  DeviceEventEmitter,
+  InteractionManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { io, Socket } from "socket.io-client";
+import { io } from "socket.io-client";
 import { useAuthStore } from "../../modules/auth/store";
 import { showToast } from "../../modules/ui/toast-store";
+import { confirm } from "../../modules/ui/confirm-store";
 import { chatApi, LocationChatMessageItem } from "../../services/chat.api";
 import { resolveBackendUrl } from "../../lib/url";
+
+const INITIAL_MESSAGE_LIMIT = 10;
 
 interface LocationChatModalProps {
   locationId?: number | null;
@@ -29,6 +34,7 @@ interface LocationChatModalProps {
   locationImage?: string | null;
   visible: boolean;
   onClose: () => void;
+  onMarkedRead?: () => void;
 }
 
 export function LocationChatModal({
@@ -38,13 +44,17 @@ export function LocationChatModal({
   locationImage,
   visible,
   onClose,
+  onMarkedRead,
 }: LocationChatModalProps) {
   const [messages, setMessages] = useState<LocationChatMessageItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState("");
   const [selectedImage, setSelectedImage] = useState<{ uri: string; base64?: string | null } | null>(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const imageLoadingIdsRef = useRef<Set<number>>(new Set());
+  const loadedConversationKeyRef = useRef<string | null>(null);
+  const openedReadKeyRef = useRef<string | null>(null);
   
   const token = useAuthStore((state: any) => state.accessToken);
   const user = useAuthStore((state: any) => state.user);
@@ -54,19 +64,39 @@ export function LocationChatModal({
   // Since Mobile doesn't have sessions implemented yet, we will just use customerId = user?.user_id
   const customerId = user?.user_id;
 
+  const scrollToLatest = useCallback((animated = false) => {
+    InteractionManager.runAfterInteractions(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated });
+      }, 50);
+    });
+  }, []);
+
   const fetchHistory = useCallback(async () => {
     if (!activeLocationId || !customerId) return;
+    const conversationKey = `${activeLocationId}:${customerId}`;
+    if (loadedConversationKeyRef.current === conversationKey) return;
+
     try {
       setLoading(true);
-      const res = await chatApi.getHistory(activeLocationId, customerId);
+      const res = await chatApi.getHistory(activeLocationId, customerId, undefined, INITIAL_MESSAGE_LIMIT);
       if (res.success && Array.isArray(res.data)) {
         setMessages(res.data);
+        loadedConversationKeyRef.current = conversationKey;
+        scrollToLatest(false);
       }
     } catch (err) {
       console.error("[LocationChatModal] Fetch history error:", err);
     } finally {
       setLoading(false);
     }
+  }, [activeLocationId, customerId, scrollToLatest]);
+
+  useEffect(() => {
+    loadedConversationKeyRef.current = null;
+    openedReadKeyRef.current = null;
+    setMessages([]);
   }, [activeLocationId, customerId]);
 
   const loadMessageImage = useCallback(async (messageId: number) => {
@@ -90,14 +120,45 @@ export function LocationChatModal({
     }
   }, [activeLocationId]);
 
+  const markConversationRead = useCallback(async (force = false) => {
+    if (!activeLocationId) return;
+    const conversationKey = `${activeLocationId}:${customerId || ""}`;
+    if (!force && openedReadKeyRef.current === conversationKey) return;
+
+    try {
+      const res = await chatApi.markRead(activeLocationId, customerId);
+      if (res?.success) {
+        openedReadKeyRef.current = conversationKey;
+        onMarkedRead?.();
+        DeviceEventEmitter.emit("chat_unread_update", { location_id: activeLocationId });
+      }
+    } catch (err) {
+      console.error("[LocationChatModal] Mark read error:", err);
+    }
+  }, [activeLocationId, customerId, onMarkedRead]);
+
+  useEffect(() => {
+    if (!visible) {
+      openedReadKeyRef.current = null;
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !activeLocationId || messages.length === 0) return;
+
+    messages.forEach((message) => {
+      if (message.has_image && !message.image_data) {
+        void loadMessageImage(message.message_id);
+      }
+    });
+  }, [visible, activeLocationId, messages, loadMessageImage]);
+
   useEffect(() => {
     if (visible) {
       fetchHistory();
-      if (activeLocationId) {
-        chatApi.markRead(activeLocationId, customerId).catch(console.error);
-      }
+      void markConversationRead();
     }
-  }, [visible, fetchHistory, activeLocationId, customerId]);
+  }, [visible, fetchHistory, markConversationRead]);
 
   useEffect(() => {
     if (!activeLocationId || !token || !customerId || !visible) return;
@@ -129,15 +190,16 @@ export function LocationChatModal({
       if (msg.has_image) {
         void loadMessageImage(msg.message_id);
       }
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      if (Number(msg.sender_id) !== Number(user?.user_id)) {
+        void markConversationRead(true);
+      }
+      scrollToLatest(true);
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [activeLocationId, token, customerId, visible, loadMessageImage]);
+  }, [activeLocationId, token, customerId, visible, loadMessageImage, markConversationRead, scrollToLatest, user?.user_id]);
 
   const handleImagePick = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -172,14 +234,42 @@ export function LocationChatModal({
           if (prev.some((m) => m.message_id === res.data.message_id)) return prev;
           return [...prev, res.data];
         });
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+        scrollToLatest(true);
       }
     } catch (err) {
       console.error("Lỗi gửi tin nhắn:", err);
     }
   };
+
+  const handleClearHistory = useCallback(async () => {
+    if (!activeLocationId || clearingHistory || messages.length === 0) return;
+
+    const accepted = await confirm({
+      title: "Xóa tin nhắn?",
+      message: "Toàn bộ tin nhắn sẽ được xóa khỏi cuộc trò chuyện của bạn.",
+      confirmText: "Xóa",
+      cancelText: "Hủy",
+      destructive: true,
+    });
+    if (!accepted) return;
+
+    setClearingHistory(true);
+    try {
+      const res = await chatApi.clearHistory(activeLocationId, customerId);
+      if (res?.success) {
+        setMessages([]);
+        loadedConversationKeyRef.current = `${activeLocationId}:${customerId}`;
+        showToast("Đã xóa tin nhắn");
+      } else {
+        showToast("Không thể xóa tin nhắn");
+      }
+    } catch (err) {
+      console.error("[LocationChatModal] Clear history error:", err);
+      showToast("Không thể xóa tin nhắn");
+    } finally {
+      setClearingHistory(false);
+    }
+  }, [activeLocationId, clearingHistory, customerId, messages.length]);
 
   const formatTime = (dateStr: string) => {
     try {
@@ -231,7 +321,7 @@ export function LocationChatModal({
               </Text>
             </View>
           ) : null}
-          <Text style={{ fontSize: 10, color: "#94a3b8", marginTop: 2, marginHorizontal: 4 }}>
+          <Text style={[styles.messageTime, { marginTop: 2, marginHorizontal: 4 }]}>
             {formatTime(item.created_at)}
           </Text>
         </View>
@@ -254,7 +344,22 @@ export function LocationChatModal({
               {userRole === "user" ? "Chủ địa điểm" : "Khách hàng"}
             </Text>
           </View>
-          <View style={styles.headerBtn} />
+          <TouchableOpacity
+            onPress={handleClearHistory}
+            style={[styles.headerBtn, styles.headerBtnRight]}
+            disabled={clearingHistory || messages.length === 0}
+            accessibilityLabel="Xóa tin nhắn"
+          >
+            {clearingHistory ? (
+              <ActivityIndicator size="small" color="#0f172a" />
+            ) : (
+              <Ionicons
+                name="trash-outline"
+                size={22}
+                color={messages.length === 0 ? "#cbd5e1" : "#0f172a"}
+              />
+            )}
+          </TouchableOpacity>
         </View>
 
         <ImageBackground 
@@ -270,9 +375,10 @@ export function LocationChatModal({
               data={messages}
               keyExtractor={(item) => item.message_id.toString()}
               renderItem={renderMessage}
+              initialNumToRender={INITIAL_MESSAGE_LIMIT}
               contentContainerStyle={styles.listContent}
-              onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-              onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+              onContentSizeChange={() => scrollToLatest(false)}
+              onLayout={() => scrollToLatest(false)}
             />
           )}
         </ImageBackground>
@@ -351,6 +457,9 @@ const styles = StyleSheet.create({
   headerBtn: {
     width: 40,
     alignItems: "flex-start",
+  },
+  headerBtnRight: {
+    alignItems: "flex-end",
   },
   headerInfo: {
     flex: 1,
@@ -451,6 +560,10 @@ const styles = StyleSheet.create({
   },
   imagePlaceholderTextTheirs: {
     color: "#64748b",
+  },
+  messageTime: {
+    fontSize: 10,
+    color: "#94a3b8",
   },
   inputArea: {
     flexDirection: "row",
