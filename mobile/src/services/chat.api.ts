@@ -25,9 +25,9 @@ export interface LocationChatSessionItem {
 }
 
 export const chatApi = {
-  getHistory: async (locationId: number, customerId?: number, afterId?: number) => {
+  getHistory: async (locationId: number, customerId?: number, afterId?: number, limit?: number) => {
     const response = await api.get<any>(`/chat/location/${locationId}`, {
-      params: { customerId, afterId },
+      params: { customerId, afterId, limit },
     });
     return response.data;
   },
@@ -72,8 +72,20 @@ export const chatApi = {
     const response = await api.get<any>("/chat/unread-counts");
     return response.data;
   },
+  getUnreadCountsByLocation: async (locationId: number) => {
+    const response = await api.get<any>("/chat/unread-counts", {
+      params: { locationId },
+    });
+    return response.data;
+  },
   markRead: async (locationId: number, customerId?: number) => {
     const response = await api.post<any>(`/chat/location/${locationId}/mark-read`, { customerId });
+    return response.data;
+  },
+  clearHistory: async (locationId: number, customerId?: number) => {
+    const response = await api.delete<any>(`/chat/location/${locationId}/clear`, {
+      params: { customerId },
+    });
     return response.data;
   },
 };

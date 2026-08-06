@@ -303,7 +303,7 @@ export default function LocationDetailScreen() {
           user
             ? userApi.getFavorites().catch(() => ({ success: false, data: [] }))
             : Promise.resolve({ success: false, data: [] }),
-          chatApi.getUnreadCounts().catch(() => ({ success: false, userUnread: 0 })),
+          chatApi.getUnreadCountsByLocation(Number(id)).catch(() => ({ success: false, userUnread: 0 })),
         ]);
 
       setLocation(locationResponse.data);
@@ -327,7 +327,8 @@ export default function LocationDetailScreen() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener("chat_unread_update", () => {
-      chatApi.getUnreadCounts()
+      if (!id) return;
+      chatApi.getUnreadCountsByLocation(Number(id))
         .then((res) => {
           if (res.success) {
             setUnreadCount(res.userUnread || 0);
@@ -336,7 +337,7 @@ export default function LocationDetailScreen() {
         .catch(() => { });
     });
     return () => sub.remove();
-  }, []);
+  }, [id]);
 
   useEffect(() => {
     if (!id || !user || isPrivateLocation) {
@@ -1291,6 +1292,7 @@ export default function LocationDetailScreen() {
           locationName={location.location_name}
           locationImage={normalizeImages(location.images)[0] || null}
           visible={isChatOpen}
+          onMarkedRead={() => setUnreadCount(0)}
           onClose={() => {
             setIsChatOpen(false);
             setUnreadCount(0); // Đã xem
