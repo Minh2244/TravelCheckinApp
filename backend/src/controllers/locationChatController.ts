@@ -13,6 +13,11 @@ export const getLocationChatHistory = async (req: Request, res: Response): Promi
       req.query.includeImages === "1" || req.query.includeImages === "true";
     const unreadOnly =
       req.query.unreadOnly === "1" || req.query.unreadOnly === "true";
+    const rawLimit = req.query.limit !== undefined ? Number(req.query.limit) : undefined;
+    const messageLimit =
+      rawLimit !== undefined && Number.isFinite(rawLimit)
+        ? Math.min(Math.max(Math.floor(rawLimit), 1), 50)
+        : undefined;
     const imageSelect = includeImages
       ? "m.image_data, (m.image_data IS NOT NULL) AS has_image"
       : "NULL AS image_data, (m.image_data IS NOT NULL) AS has_image";
@@ -75,6 +80,19 @@ export const getLocationChatHistory = async (req: Request, res: Response): Promi
          ORDER BY m.created_at ASC`,
         [locationId, customerId, afterId]
       );
+    } else if (messageLimit) {
+      [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT 
+           m.message_id, m.location_id, m.customer_id, m.sender_id, m.sender_name, m.sender_role, m.content, ${imageSelect}, m.is_read, m.created_at,
+           u.avatar_url, u.avatar_path, u.avatar_source
+         FROM location_chat_messages m
+         LEFT JOIN users u ON u.user_id = m.customer_id
+         WHERE m.location_id = ? AND m.customer_id = ?${unreadClause}${deletedClause}
+         ORDER BY m.message_id DESC
+         LIMIT ?`,
+        [locationId, customerId, messageLimit]
+      );
+      rows.reverse();
     } else {
       [rows] = await pool.query<RowDataPacket[]>(
         `SELECT 
@@ -96,6 +114,9 @@ export const getLocationChatHistory = async (req: Request, res: Response): Promi
       if (afterClause) {
         params.push(afterId as number);
       }
+      if (!afterClause && messageLimit) {
+        params.push(messageLimit);
+      }
       [rows] = await pool.query<RowDataPacket[]>(
         `SELECT 
            m.message_id, m.location_id, m.customer_id, m.sender_id, m.sender_name, m.sender_role, m.content, ${imageSelect}, m.is_read, m.created_at,
@@ -103,9 +124,13 @@ export const getLocationChatHistory = async (req: Request, res: Response): Promi
          FROM location_chat_messages m
          LEFT JOIN users u ON u.user_id = ?
          WHERE m.location_id = ? AND (m.customer_id = ? OR m.sender_id = ?)${afterClause}${unreadClause}${deletedClause}
-         ORDER BY m.created_at ASC`,
+         ORDER BY ${!afterClause && messageLimit ? "m.message_id DESC" : "m.created_at ASC"}
+         ${!afterClause && messageLimit ? "LIMIT ?" : ""}`,
         params
       );
+      if (!afterClause && messageLimit) {
+        rows.reverse();
+      }
     }
 
     const formattedData = rows.map((row) => {
