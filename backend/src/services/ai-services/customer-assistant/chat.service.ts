@@ -133,6 +133,21 @@ const staticReplyForIntent = (intent: AiIntent): string | null => {
   }
 };
 
+const sanitizeAssistantMessage = (value: string): string =>
+  value
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/^\s*\*\s+/gm, "")
+    .replace(/\s+((?:\d+\.\s*)?Chỗ ở:)/gi, "\n$1")
+    .replace(/\s+((?:\d+\.\s*)?Ăn uống:)/gi, "\n$1")
+    .replace(/\s+((?:\d+\.\s*)?Tham quan:)/gi, "\n$1")
+    .replace(/\s+((?:\d+\.\s*)?Tổng ước tính:)/gi, "\n$1")
+    .replace(/\s+((?:\d+\.\s*)?Tổng chi phí ước tính:)/gi, "\n$1")
+    .replace(/\s+((?:\d+\.\s*)?Còn dư:)/gi, "\n$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 export const processChat = async (request: AiChatRequest): Promise<AiChatResponse> => {
   const { userId, prompt, conversationId, context } = request;
   let currentConversationId = conversationId;
@@ -245,7 +260,7 @@ Câu hỏi của người dùng:
 
       if (response.text) {
         const parsed = JSON.parse(response.text);
-        responseText = parsed.message;
+        responseText = sanitizeAssistantMessage(parsed.message || "");
         locationsResult = parsed.locations || [];
       }
     }
@@ -270,6 +285,43 @@ Câu hỏi của người dùng:
     }));
   }
 
+  if (searchContext.filters.includes_stay && candidates.length > 0) {
+    const chosenIds = new Set(locationsResult.map((location) => location.location_id));
+    const chosenHasStay = locationsResult.some((location) => {
+      const candidate = candidates.find((item) => item.location_id === location.location_id);
+      return candidate
+        ? ["hotel", "resort"].includes(String(candidate.location_type).toLowerCase())
+          || String(candidate.available_service_types || "").includes("room")
+        : false;
+    });
+
+    if (!chosenHasStay) {
+      const stayCandidate = candidates.find((candidate) =>
+        !chosenIds.has(candidate.location_id)
+        && (
+          ["hotel", "resort"].includes(String(candidate.location_type).toLowerCase())
+          || String(candidate.available_service_types || "").includes("room")
+        )
+      );
+
+      if (stayCandidate) {
+        locationsResult = [
+          {
+            location_id: stayCandidate.location_id,
+            reason: "Gợi ý chỗ ở phù hợp cho lịch trình có qua đêm.",
+          },
+          ...locationsResult,
+        ].slice(0, 5);
+
+        if (!/chỗ ở|cho o|khách sạn|khach san|lưu trú|luu tru|qua đêm|qua dem/i.test(responseText)) {
+          responseText += " Mình có kèm thêm một gợi ý chỗ ở để lịch trình qua đêm đầy đủ hơn.";
+        }
+      }
+    }
+  }
+
+  responseText = sanitizeAssistantMessage(responseText);
+
   const finalLocations: AiLocationCardData[] = [];
   
   if (locationsResult.length > 0) {
@@ -278,7 +330,12 @@ Câu hỏi của người dùng:
       const placeholders = validIds.map(() => "?").join(",");
       const [rows] = await pool.query<RowDataPacket[]>(
         `SELECT location_id, location_name, first_image, rating, total_reviews, address 
-         FROM locations WHERE status = 'active' AND location_id IN (${placeholders})`,
+         FROM locations
+         WHERE status = 'active'
+           AND deleted_at IS NULL
+           AND owner_id IS NOT NULL
+           AND source = 'owner'
+           AND location_id IN (${placeholders})`,
         validIds
       );
       

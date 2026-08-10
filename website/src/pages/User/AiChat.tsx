@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import UserLayout from "../../layouts/UserLayout";
 import aiApi from "../../api/aiApi";
 import type { AiChatHistoryItem } from "../../types/user.types";
+import { getAiLocationContext } from "../../utils/aiLocationContext";
 
 const AiChat = () => {
   const [history, setHistory] = useState<AiChatHistoryItem[]>([]);
@@ -31,7 +32,8 @@ const AiChat = () => {
     setLoading(true);
     setError(null);
     try {
-      await aiApi.chat({ prompt: prompt.trim() });
+      const context = await getAiLocationContext();
+      await aiApi.chat({ prompt: prompt.trim(), context });
       setPrompt("");
       const response = await aiApi.getHistory();
       setHistory(response.data ?? []);
@@ -98,7 +100,7 @@ const AiChat = () => {
               className="user-sub-card p-4 card-lift"
             >
               <p className="text-xs text-gray-500">{item.prompt}</p>
-              <p className="text-sm text-gray-900 mt-2">{item.response}</p>
+              <p className="text-sm text-gray-900 mt-2 whitespace-pre-line break-words">{item.response}</p>
               <p className="text-xs text-gray-400 mt-2">
                 {new Date(item.created_at).toLocaleString()}
               </p>

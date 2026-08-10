@@ -59,8 +59,12 @@ def rule_based_fallback_intent(text: str, role: str) -> dict[str, Any]:
     parameters = {}
     
     # 1. Báo cáo Doanh thu (Đã xử lý Role)
-    if any(k in norm_text for k in ["doanh thu", "bao cao", "thong ke", "doanh so"]):
-        intent = "get_dashboard_stats" if role == "admin" else "get_dashboard_stats"
+    if any(k in norm_text for k in ["doanh thu", "bao cao", "thong ke", "doanh so", "danh thu", "danh so"]):
+        export_terms = ["xuat file", "xuat excel", "tai file", "tai ve", "download", "export"]
+        if any(k in norm_text for k in export_terms):
+            intent = "export_revenue_report"
+        else:
+            intent = "get_dashboard_stats"
         # Bắt thời gian đơn giản
         if "hom nay" in norm_text:
             parameters["time_range"] = "today"
@@ -72,7 +76,7 @@ def rule_based_fallback_intent(text: str, role: str) -> dict[str, Any]:
             parameters["time_range"] = "this_year"
             
     # 2. Tạo Voucher (Voucher Draft)
-    elif re.search(r'tao\s+(?:ra\s+)?(?:\d+\s+)?(?:voucher|vocher|ma giam gia|ma khuyen mai)', norm_text) or any(k in norm_text for k in ["khuyen mai", "chuong trinh giam"]):
+    elif re.search(r'tao.*(?:voucher|vocher|ma giam gia|ma khuyen mai)', norm_text) or any(k in norm_text for k in ["khuyen mai", "chuong trinh giam"]):
         intent = "admin_create_system_voucher" if role == "admin" else "owner_voucher_draft"
         
         # Bóc tách % hoặc VND
@@ -124,6 +128,44 @@ def rule_based_fallback_intent(text: str, role: str) -> dict[str, Any]:
             sl_match = re.search(r'(so luong|gioi han|luot|lan dung)\s*(?:toi da\s*)?(\d+)', norm_text)
             if sl_match:
                 parameters["usage_limit"] = int(sl_match.group(2))
+                
+        # Tên chiến dịch / voucher (lấy nguyên dấu từ text.lower)
+        name_match = re.search(r't[eê]n\s+(?:voucher|vocher|chi[eê]n d[iị]ch|chuy[eê]n d[iị]ch)?\s*(?:l[aà]\s+)?([\w\s_\u00c0-\u1ef9]+?)(?=$|,|\.)', text.lower())
+        if name_match:
+            parameters["campaign_name"] = name_match.group(1).strip()
+            
+        # Tên quán/đối tác / chi nhánh
+        id_match = re.search(r'(?:id|m[aã]|m[aạ]ng)\s+(?:l[aà]\s+)?(\d+)', text.lower())
+        if id_match:
+            parameters["target_id"] = int(id_match.group(1))
+        else:
+            loc_match = re.search(r'(?:cho|t[ừư]|c[ủu]a)\s+(?:t[ấa]t c[ảa]\s+(?:c[aá]c\s+)?(?:đ[ịi]a đi[ểe]m|chi nh[aá]nh|qu[aá]n)\s+(?:t[ừư]|c[ủu]a)\s+)?(?:qu[aá]n\s+cafe\s+|qu[aá]n\s+|owner\s+|nh[aà]\s+h[aà]ng\s+|đ[ịi]a đi[ểe]m\s+|chi nh[aá]nh\s+)?([\w\s_\u00c0-\u1ef9]+?)(?=\s+voucher|\s+vocher|\s+giam|\s+gi[aả]m|\s+tang|\s+t[aặ]ng|,|\.|$)', text.lower())
+            if loc_match:
+                parameters["target_location_name"] = loc_match.group(1).strip()
+            
+        # Thời hạn (hạn 2 tháng, hạn 30 ngày)
+        duration_match = re.search(r'han\s+la\s+(\d+)\s+(thang|ngay|tuan)', norm_text)
+        if not duration_match:
+            duration_match = re.search(r'han\s+(\d+)\s+(thang|ngay|tuan)', norm_text)
+            
+        if duration_match:
+            try:
+                import datetime
+                num = int(duration_match.group(1))
+                unit = duration_match.group(2)
+                today = datetime.date.today()
+                
+                if unit == "thang":
+                    # Cộng đại khái 30 ngày mỗi tháng
+                    end_d = today + datetime.timedelta(days=num * 30)
+                elif unit == "tuan":
+                    end_d = today + datetime.timedelta(days=num * 7)
+                else: # ngay
+                    end_d = today + datetime.timedelta(days=num)
+                    
+                parameters["end_date"] = end_d.isoformat()
+            except Exception:
+                pass
             
     # 3. Quản lý Booking (Owner)
     elif role == "owner" and any(k in norm_text for k in ["huy don", "duyet don", "hoan thanh don"]):

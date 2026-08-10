@@ -8,6 +8,7 @@ import {
   Space,
   Spin,
   Tooltip,
+  message,
 } from "antd";
 import {
   BulbOutlined,
@@ -281,6 +282,19 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
           }, 1000);
           setOpen(false);
         } else if (clientAction.type === "event" && clientAction.event_name) {
+          if (clientAction.event_name === "trigger_export_report") {
+            const currentRole = pathname.startsWith("/admin") ? "admin" : "owner";
+            const targetDashboard = `/${currentRole}/dashboard`;
+            if (pathname !== targetDashboard) {
+              message.loading({ content: "Đang chuyển đến Dashboard để xuất báo cáo...", key: "export_redirect", duration: 0 });
+              navigate(targetDashboard);
+              setTimeout(() => {
+                message.destroy("export_redirect");
+                window.dispatchEvent(new CustomEvent(clientAction.event_name!, { detail: clientAction.data }));
+              }, 1000);
+              return;
+            }
+          }
           setTimeout(() => {
             window.dispatchEvent(new CustomEvent(clientAction.event_name!, { detail: clientAction.data }));
           }, 500);

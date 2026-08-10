@@ -95,8 +95,19 @@ export const classifyUserIntent = (prompt: string): IntentResult => {
     "do uong",
     "khach san",
     "luu tru",
+    "nha nghi",
+    "nha tro",
+    "cho o",
+    "noi o",
+    "qua dem",
+    "nghi dem",
     "du lich",
     "tham quan",
+    "di choi",
+    "cho choi",
+    "mua ve",
+    "ban ve",
+    "ve du lich",
     "chill",
     "song ao",
     "checkin",
@@ -105,8 +116,8 @@ export const classifyUserIntent = (prompt: string): IntentResult => {
   const moodNeedsSuggestion = hasAny(normalizedQuery, BORED_OR_LOW_MOOD_TERMS);
   const nearby = hasAny(normalizedQuery, ["gan day", "quanh day", "gan tui", "gan minh", "o day"]);
   const booking = hasAny(normalizedQuery, ["dat ban", "dat phong", "booking", "don dat", "huy don", "giu cho"]);
-  const ticket = hasAny(normalizedQuery, ["ve", "mua ve", "vi ve", "ma ve", "qr ve"]);
-  const hotel = hasAny(normalizedQuery, ["phong", "khach san", "luu tru", "check in", "checkout"]);
+  const ticket = hasAny(normalizedQuery, ["vi ve", "ma ve", "qr ve", "ve cua toi"]);
+  const hotel = hasAny(normalizedQuery, ["phong", "khach san", "luu tru", "nha nghi", "nha tro", "cho o", "noi o", "qua dem", "nghi dem", "check in", "checkout"]);
   const voucher = hasAny(normalizedQuery, ["voucher", "khuyen mai", "giam gia", "ma giam"]);
   const saved = hasAny(normalizedQuery, ["da luu", "yeu thich", "favorite", "luu dia diem"]);
   const itinerary = hasAny(normalizedQuery, ["lich trinh", "ke hoach", "di trong ngay", "cuoi tuan"]);

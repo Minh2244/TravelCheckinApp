@@ -6,6 +6,7 @@ import { formatDateTimeVi } from "../utils/formatDateVi";
 import type { UserNotificationItem } from "../types/user.types";
 import aiApi from "../api/aiApi";
 import type { AiChatHistoryItem } from "../types/user.types";
+import { getAiLocationContext } from "../utils/aiLocationContext";
 
 // Dùng để định nghĩa input cho layout user, giúp tái sử dụng UI thống nhất
 interface UserLayoutProps {
@@ -183,7 +184,8 @@ const UserLayout = ({
     setAiError(null);
     try {
       const conversationId = aiHistory.length > 0 ? aiHistory[aiHistory.length - 1].conversation_id : undefined;
-      await aiApi.chat({ prompt: promptText, conversationId });
+      const context = await getAiLocationContext();
+      await aiApi.chat({ prompt: promptText, conversationId, context });
       const res = await aiApi.getHistory();
       if (res.success) {
         setAiHistory(res.data || []);
@@ -977,7 +979,7 @@ const UserLayout = ({
                             <img src="/ai-avatar.png" className="w-6 h-6 rounded-full object-cover shadow-sm bg-slate-100" alt="AI" />
                             Trợ lý AI
                           </span>
-                          <div className={`rounded-2xl px-3.5 py-2.5 ${isAiChatExpanded ? 'text-sm' : 'text-xs'} leading-relaxed break-words font-medium shadow-sm bg-white text-slate-700 border border-slate-100 rounded-bl-none`}>
+                          <div className={`rounded-2xl px-3.5 py-2.5 ${isAiChatExpanded ? 'text-sm' : 'text-xs'} leading-relaxed break-words whitespace-pre-line font-medium shadow-sm bg-white text-slate-700 border border-slate-100 rounded-bl-none`}>
                             {item.response}
                           </div>
                           {/* Location Cards from Gemini */}

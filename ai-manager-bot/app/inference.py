@@ -17,6 +17,14 @@ def process_payload(payload: dict) -> dict:
         classification.confidence = llm_analysis.confidence or 0.9
         classification.entities = llm_analysis.entities
         
+    if classification.intent == "export_revenue_report":
+        ent = classification.entities
+        if ent.get("time_range") == "all" or not ent.get("start_date"):
+            import datetime
+            ent["start_date"] = "2020-01-01"
+            ent["end_date"] = datetime.date.today().isoformat()
+            ent["time_range"] = "all"
+            
     action_plan = build_action_plan(request, classification)
     
     if llm_analysis and hasattr(action_plan, "entities"):
@@ -29,9 +37,18 @@ def process_payload(payload: dict) -> dict:
             answer = "Sếp muốn xem dữ liệu trong khoảng thời gian nào? Ví dụ: hôm nay, tuần này, tháng này hoặc năm nay."
         else:
             if llm_analysis and llm_analysis.answer and len(llm_analysis.answer) > 5:
-                answer = llm_analysis.answer
+                try:
+                    missing = action_plan.summary.split(': ')[1]
+                    missing_vn = missing
+                    if missing == "discount_value": missing_vn = "mức giảm giá (giảm bao nhiêu VND hoặc %)"
+                    answer = f"{llm_analysis.answer}\n\n⚠️ Sếp bổ sung thêm thông tin **{missing_vn}** để hiện nút Thực thi nhé!"
+                except:
+                    answer = llm_analysis.answer
             else:
-                missing = action_plan.summary.split(': ')[1]
+                try:
+                    missing = action_plan.summary.split(': ')[1]
+                except:
+                    missing = "cần thiết"
                 answer = f"Để thực hiện, sếp vui lòng cung cấp thêm thông tin: {missing} nhé."
 
     response = BotResponse(

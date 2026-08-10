@@ -6674,8 +6674,15 @@ export const getOwnerVouchers = async (
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT v.*, l.location_name,
-              COALESCE(l.location_name, 'Tất cả') as location_name,
+      `SELECT v.*, 
+              COALESCE(
+                  l.location_name, 
+                  (SELECT GROUP_CONCAT(loc.location_name SEPARATOR ', ') 
+                   FROM voucher_locations vl 
+                   JOIN locations loc ON loc.location_id = vl.location_id 
+                   WHERE vl.voucher_id = v.voucher_id),
+                  'Tất cả'
+              ) as location_name,
               CASE WHEN v.end_date < NOW() THEN 'expired' ELSE v.status END as computed_status,
               'owner' as voucher_source
        FROM vouchers v

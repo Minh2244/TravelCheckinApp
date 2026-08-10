@@ -12,23 +12,23 @@ const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   },
   {
     prefix: "/owner/bookings",
-    actions: ["owner_view_bookings"],
+    actions: ["owner_view_bookings", "export_revenue_report", "owner_voucher_draft"],
   },
   {
     prefix: "/owner/commissions",
-    actions: ["view_commissions"],
+    actions: ["view_commissions", "export_revenue_report", "owner_voucher_draft"],
   },
   {
     prefix: "/owner/reviews",
-    actions: ["get_dashboard_stats", "owner_analyze_reviews", "owner_review_reply_draft", "owner_review_reply_publish"],
+    actions: ["get_dashboard_stats", "owner_analyze_reviews", "owner_review_reply_draft", "owner_review_reply_publish", "export_revenue_report", "owner_voucher_draft"],
   },
   {
     prefix: "/owner/vouchers",
-    actions: ["get_dashboard_stats", "owner_voucher_draft"],
+    actions: ["get_dashboard_stats", "owner_voucher_draft", "export_revenue_report"],
   },
   {
     prefix: "/owner/profile",
-    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_manage_employees", "owner_view_employees"],
+    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_manage_employees", "owner_view_employees", "export_revenue_report", "owner_voucher_draft"],
   },
 ];
 
@@ -39,39 +39,39 @@ const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   },
   {
     prefix: "/admin/users",
-    actions: ["get_dashboard_stats", "admin_user_lock", "admin_view_users", "admin_get_user_growth", "admin_send_push_notification"],
+    actions: ["get_dashboard_stats", "admin_user_lock", "admin_view_users", "admin_get_user_growth", "admin_send_push_notification", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/owners",
-    actions: ["get_dashboard_stats", "admin_location_review", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_location_review", "admin_user_lock", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/locations",
-    actions: ["get_dashboard_stats", "admin_get_top_locations", "admin_view_locations", "admin_location_review"],
+    actions: ["get_dashboard_stats", "admin_get_top_locations", "admin_view_locations", "admin_location_review", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/owner-services",
-    actions: ["get_dashboard_stats"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/reviews",
-    actions: ["get_dashboard_stats"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/vouchers",
-    actions: ["get_dashboard_stats", "admin_create_system_voucher"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/system-vouchers",
-    actions: ["get_dashboard_stats", "admin_create_system_voucher"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher"],
   },
   {
     prefix: "/admin/owner-vouchers",
-    actions: ["get_dashboard_stats"],
+    actions: ["get_dashboard_stats", "export_revenue_report"],
   },
   {
     prefix: "/admin/finance",
-    actions: ["get_dashboard_stats", "admin_user_lock"],
+    actions: ["get_dashboard_stats", "admin_user_lock", "export_revenue_report"],
   },
 ];
 

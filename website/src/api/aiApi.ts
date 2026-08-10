@@ -10,6 +10,14 @@ interface ApiResponse<T> {
 export interface AiChatPayload {
   prompt: string;
   conversationId?: number;
+  context?: {
+    current_location?: {
+      lat?: number;
+      lng?: number;
+      city?: string | null;
+      province?: string | null;
+    } | null;
+  } | null;
 }
 
 const aiApi = {

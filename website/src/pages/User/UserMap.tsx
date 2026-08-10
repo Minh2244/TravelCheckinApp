@@ -999,6 +999,41 @@ const UserMap = () => {
   const currentUserId = useMemo(() => getCurrentUserId(), []);
   const [favoriteLocationIds, setFavoriteLocationIds] = useState<number[]>([]);
   const [sidebarTab, setSidebarTab] = useState<"locations" | "detail" | "reviews">("locations");
+  const mapPanelRef = useRef<HTMLElement | null>(null);
+  const [mapPanelHeight, setMapPanelHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
+  useEffect(() => {
+    const syncPanelHeight = () => {
+      const panel = mapPanelRef.current;
+      if (!panel || window.innerWidth < 1280) {
+        setMapPanelHeight(null);
+        return;
+      }
+      setMapPanelHeight(Math.round(panel.getBoundingClientRect().height));
+    };
+
+    syncPanelHeight();
+
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(syncPanelHeight)
+        : null;
+    if (observer && mapPanelRef.current) {
+      observer.observe(mapPanelRef.current);
+    }
+
+    window.addEventListener("resize", syncPanelHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", syncPanelHeight);
+    };
+  }, []);
 
   const [focusCheckin, setFocusCheckin] = useState<FocusCheckinState | null>(
     null,
@@ -2487,8 +2522,34 @@ const UserMap = () => {
       title="Bản đồ"
       activeKey="/user/map"
     >
-      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-6">
-        <section className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
+      {feedback ? (
+        <div className="fixed right-6 top-24 z-[9999] max-w-sm pointer-events-none">
+          <div
+            className={`pointer-events-auto rounded-2xl border px-4 py-3 text-sm shadow-xl backdrop-blur-md ${feedback.type === "success"
+              ? "border-emerald-100 bg-emerald-50/95 text-emerald-700"
+              : "border-red-100 bg-red-50/95 text-red-700"
+              }`}
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-xs font-bold">
+                {feedback.type === "success" ? "✓" : "!"}
+              </span>
+              <p className="flex-1 leading-5">{feedback.message}</p>
+              <button
+                type="button"
+                className="ml-1 text-base leading-none opacity-60 hover:opacity-100"
+                onClick={() => setFeedback(null)}
+                aria-label="Đóng thông báo"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[1.5fr_1fr]">
+        <section ref={mapPanelRef} className="bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg p-6">
           <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -2986,8 +3047,9 @@ const UserMap = () => {
                                 type="button"
                                 className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                 onClick={() => {
-                                  setSelected(entry.item);
-                                  setPanelOpen(true);
+                                  navigate(
+                                    `/user/location/${entry.item.location_id}`,
+                                  );
                                 }}
                               >
                                 Xem chi tiết
@@ -3068,7 +3130,9 @@ const UserMap = () => {
                                 type="button"
                                 className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                 onClick={() => {
-                                  setPanelOpen(true);
+                                  navigate(
+                                    `/user/location/${selected.location_id}`,
+                                  );
                                 }}
                               >
                                 Xem chi tiết
@@ -3181,19 +3245,12 @@ const UserMap = () => {
             )
           ) : null}
 
-          {feedback ? (
-            <div
-              className={`mt-4 rounded-2xl px-4 py-3 text-sm ${feedback.type === "success"
-                ? "bg-emerald-50 text-emerald-600"
-                : "bg-red-50 text-red-600"
-                }`}
-            >
-              {feedback.message}
-            </div>
-          ) : null}
         </section>
 
-        <aside className="flex flex-col bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg overflow-hidden">
+        <aside
+          className="flex min-h-0 flex-col bg-white/90 backdrop-blur-md rounded-3xl border border-gray-200/60 shadow-lg overflow-hidden"
+          style={mapPanelHeight ? { height: mapPanelHeight, maxHeight: mapPanelHeight } : undefined}
+        >
           {/* Tab bar */}
           <div className="flex border-b border-gray-100">
             {(
@@ -3218,7 +3275,7 @@ const UserMap = () => {
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-auto p-5">
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 custom-scrollbar">
             {/* Banner GPS */}
             {locationDenied ? (
               <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 flex items-center gap-2">
@@ -5129,8 +5186,9 @@ const UserMap = () => {
                                     type="button"
                                     className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                     onClick={() => {
-                                      setSelected(entry.item);
-                                      setPanelOpen(true);
+                                      navigate(
+                                        `/user/location/${entry.item.location_id}`,
+                                      );
                                     }}
                                   >
                                     Xem chi tiết
@@ -5213,7 +5271,9 @@ const UserMap = () => {
                                     type="button"
                                     className="rounded-full bg-teal-600 px-3 py-1 text-xs text-white"
                                     onClick={() => {
-                                      setPanelOpen(true);
+                                      navigate(
+                                        `/user/location/${selected.location_id}`,
+                                      );
                                     }}
                                   >
                                     Xem chi tiết

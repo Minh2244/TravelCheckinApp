@@ -61,13 +61,29 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         const end_date = ents.end_date || ents.expiry_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const min_order_value = Number(ents.min_order_value ?? 0);
         const campaign_name = ents.campaign_name || ents.title || 'Voucher từ AI';
-        const apply_to_service_type = ents.apply_to_service_type || 'all';
-        const apply_to_location_type = ents.apply_to_location_type || 'all';
+        const valid_service_types = ['room', 'food', 'ticket', 'all'];
+        const apply_to_service_type = valid_service_types.includes(ents.apply_to_service_type) ? ents.apply_to_service_type : 'all';
+        const valid_location_types = ['hotel', 'restaurant', 'tourist', 'cafe', 'resort', 'all'];
+        const apply_to_location_type = valid_location_types.includes(ents.apply_to_location_type) ? ents.apply_to_location_type : 'all';
         const max_discount_amount = Number(ents.max_discount_amount ?? 0) || null;
         const usage_limit = ents.usage_limit !== undefined ? Number(ents.usage_limit) : 100;
-        const target_group = ents.target_group || 'all';
+        const valid_target_groups = ['all', 'loyal'];
+        const target_group = valid_target_groups.includes(ents.target_group) ? ents.target_group : 'all';
         const max_uses_per_user = ents.max_uses_per_user !== undefined ? Number(ents.max_uses_per_user) : 1;
         const quantity = ents.quantity !== undefined ? Number(ents.quantity) : 1;
+
+        const target_location_name = ents.target_location_name ? String(ents.target_location_name) : null;
+        let targetLocationIds: number[] = [];
+        if (target_location_name) {
+            const likeName = `%${target_location_name}%`;
+            const [locs] = await pool.query<any[]>("SELECT location_id FROM locations WHERE owner_id = ? AND location_name LIKE ?", [actor_user_id, likeName]);
+            if (locs.length > 0) {
+                targetLocationIds = locs.map(r => r.location_id);
+            } else {
+                resultData = { success: false, message: `Không tìm thấy địa điểm nào tên "${target_location_name}" của sếp.` };
+                break;
+            }
+        }
 
         const generatedCodes: string[] = [];
         for (let i = 0; i < quantity; i++) {
@@ -78,12 +94,20 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
           let success = false;
           while (!success && attempt < 3) {
             try {
-              await pool.query(
+              const [res] = await pool.query<any>(
                 `INSERT INTO vouchers
                   (owner_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date, status, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
                 [actor_user_id, currentCode, currentName, discount_type, discount_value, min_order_value, start_date, end_date, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group]
               );
+              const insertId = res.insertId;
+              
+              if (targetLocationIds.length > 0) {
+                  const valuesSql = targetLocationIds.map(() => "(?, ?)").join(", ");
+                  const flatParams = targetLocationIds.flatMap((id) => [insertId, id]);
+                  await pool.query(`INSERT INTO voucher_locations (voucher_id, location_id) VALUES ${valuesSql}`, flatParams);
+              }
+
               generatedCodes.push(currentCode);
               success = true;
             } catch (err: any) {
@@ -124,13 +148,49 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         const end_date = ents.end_date || ents.expiry_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const min_order_value = Number(ents.min_order_value ?? 0);
         const campaign_name = ents.campaign_name || ents.title || 'Voucher Toàn Hệ Thống';
-        const apply_to_service_type = ents.apply_to_service_type || 'all';
-        const apply_to_location_type = ents.apply_to_location_type || 'all';
+        const valid_service_types = ['room', 'food', 'ticket', 'all'];
+        const apply_to_service_type = valid_service_types.includes(ents.apply_to_service_type) ? ents.apply_to_service_type : 'all';
+        const valid_location_types = ['hotel', 'restaurant', 'tourist', 'cafe', 'resort', 'all'];
+        const apply_to_location_type = valid_location_types.includes(ents.apply_to_location_type) ? ents.apply_to_location_type : 'all';
         const max_discount_amount = Number(ents.max_discount_amount ?? 0) || null;
         const usage_limit = ents.usage_limit !== undefined ? Number(ents.usage_limit) : 100;
-        const target_group = ents.target_group || 'all';
+        const valid_target_groups = ['all', 'loyal'];
+        const target_group = valid_target_groups.includes(ents.target_group) ? ents.target_group : 'all';
         const max_uses_per_user = ents.max_uses_per_user !== undefined ? Number(ents.max_uses_per_user) : 1;
         const quantity = ents.quantity !== undefined ? Number(ents.quantity) : 1;
+
+        const target_id = ents.target_id ? Number(ents.target_id) : null;
+        const target_location_name = ents.target_location_name ? String(ents.target_location_name) : null;
+        let targetLocationIds: number[] = [];
+        
+        if (target_id) {
+            const [locs] = await pool.query<any[]>("SELECT location_id FROM locations WHERE owner_id = ?", [target_id]);
+            if (locs.length > 0) {
+                targetLocationIds = locs.map(r => r.location_id);
+            } else {
+                const [locs2] = await pool.query<any[]>("SELECT location_id FROM locations WHERE location_id = ?", [target_id]);
+                if (locs2.length > 0) {
+                    targetLocationIds = locs2.map(r => r.location_id);
+                } else {
+                    resultData = { success: false, message: `Không tìm thấy owner hoặc địa điểm nào có ID là ${target_id}.` };
+                    break;
+                }
+            }
+        } else if (target_location_name) {
+            const likeName = `%${target_location_name}%`;
+            const [locs] = await pool.query<any[]>("SELECT location_id FROM locations WHERE location_name LIKE ?", [likeName]);
+            if (locs.length > 0) {
+                targetLocationIds = locs.map(r => r.location_id);
+            } else {
+                const [locs2] = await pool.query<any[]>("SELECT l.location_id FROM locations l JOIN users u ON l.owner_id = u.user_id WHERE u.full_name LIKE ? AND u.role = 'owner'", [likeName]);
+                if (locs2.length > 0) {
+                    targetLocationIds = locs2.map(r => r.location_id);
+                } else {
+                    resultData = { success: false, message: `Không tìm thấy địa điểm hoặc owner nào tên "${target_location_name}".` };
+                    break;
+                }
+            }
+        }
 
         const generatedCodes: string[] = [];
         for (let i = 0; i < quantity; i++) {
@@ -141,12 +201,20 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
           let success = false;
           while (!success && attempt < 3) {
             try {
-              await pool.query(
+              const [res] = await pool.query<any>(
                 `INSERT INTO vouchers 
                   (owner_id, code, campaign_name, discount_type, discount_value, min_order_value, start_date, end_date, status, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`,
                 [actor_user_id, currentCode, currentName, discount_type, discount_value, min_order_value, start_date, end_date, apply_to_service_type, apply_to_location_type, max_discount_amount, usage_limit, max_uses_per_user, target_group]
               );
+              const insertId = res.insertId;
+              
+              if (targetLocationIds.length > 0) {
+                  const valuesSql = targetLocationIds.map(() => "(?, ?)").join(", ");
+                  const flatParams = targetLocationIds.flatMap((id) => [insertId, id]);
+                  await pool.query(`INSERT INTO voucher_locations (voucher_id, location_id) VALUES ${valuesSql}`, flatParams);
+              }
+
               generatedCodes.push(currentCode);
               success = true;
             } catch (err: any) {

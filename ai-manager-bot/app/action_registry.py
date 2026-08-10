@@ -167,6 +167,7 @@ REGISTRY: List[ActionDefinition] = [
                 "usage_limit": {"type": "integer", "description": "Giới hạn tổng số lượt sử dụng voucher"},
                 "max_uses_per_user": {"type": "integer", "description": "Giới hạn số lần dùng tối đa cho mỗi user"},
                 "target_group": {"type": "string", "enum": ["all", "loyal"], "description": "Đối tượng khách hàng áp dụng"},
+                "target_location_name": {"type": "string", "description": "Tên địa điểm/chi nhánh cụ thể muốn áp dụng voucher này (nếu có)"},
                 "quantity": {"type": "integer", "description": "Số lượng voucher riêng biệt cần tạo (nếu tạo hàng loạt)"}
             },
             "required": ["discount_value"]
@@ -271,7 +272,9 @@ REGISTRY: List[ActionDefinition] = [
                 "usage_limit": {"type": "integer", "description": "Tổng số lượt dùng của một mã voucher"},
                 "max_uses_per_user": {"type": "integer", "description": "Giới hạn số lần dùng tối đa cho mỗi user"},
                 "target_group": {"type": "string", "enum": ["all", "loyal"]},
-                "quantity": {"type": "integer", "description": "Số lượng mã voucher độc lập cần tạo"}
+                "quantity": {"type": "integer", "description": "Số lượng mã voucher độc lập cần tạo"},
+                "target_location_name": {"type": "string", "description": "Tên quán hoặc chủ cơ sở cụ thể mà voucher này hướng tới (nếu có)"},
+                "target_id": {"type": "integer", "description": "ID của quán hoặc chủ cơ sở cụ thể (nếu có)"}
             },
             "required": ["discount_value"]
         }

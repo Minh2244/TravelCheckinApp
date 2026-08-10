@@ -342,14 +342,20 @@ def _intent_result(intent: str, parameters: dict, answer: str, confidence: float
     }
 
 
-def _local_owner_intent_fallback(request_data: dict) -> dict | None:
+def _local_owner_intent_fallback(request_data: dict, force_fallback: bool = False) -> dict | None:
     """Handle safety-critical and common owner intents without depending on Gemini."""
+    import re
     role = request_data.get("role", "")
-    if role != "owner":
+    if role != "owner" and not force_fallback:
         return None
 
     raw_text = str(request_data.get("text") or "")
     text = _strip_accents(raw_text.lower())
+    
+    if not force_fallback:
+        # Nhường Gemini xử lý voucher/khuyến mãi trong điều kiện mạng bình thường
+        if any(w in text for w in ("voucher", "vocher", "khuyen mai", "ma giam gia")):
+            return None
     
     # NLP Rule-based Fallback
     fallback_res = rule_based_fallback_intent(raw_text, role)
@@ -362,7 +368,6 @@ def _local_owner_intent_fallback(request_data: dict) -> dict | None:
         # Draw Mini-chart if it's revenue intent and context has data
         if fallback_res["intent"] in ("get_dashboard_stats", "owner_get_order_stats"):
             ctx = request_data.get("screen_context", "")
-            import re
             rev_match = re.search(r'revenue["\']?\s*:\s*(\d+)', str(ctx).lower())
             if rev_match:
                 rev = int(rev_match.group(1))
@@ -374,7 +379,10 @@ def _local_owner_intent_fallback(request_data: dict) -> dict | None:
                 fallback_res["answer"] = "📊 Báo cáo Doanh thu:\n• Đang trích xuất biểu đồ...\nSếp xem chi tiết ở bảng bên dưới nhé."
                 
         # Format voucher draft answer if it's voucher creation
-        if fallback_res["intent"] == "owner_voucher_draft":
+        if fallback_res["intent"] in ("owner_voucher_draft", "admin_create_system_voucher"):
+            parsed = _parse_voucher_params_from_text(raw_text)
+            if parsed:
+                fallback_res["parameters"].update(parsed)
             params = fallback_res["parameters"]
             lines = ["📋 Bản nháp Voucher (NLP Fallback):"]
             if params.get("apply_to_service_type") and params.get("apply_to_service_type") != "all":
@@ -386,14 +394,35 @@ def _local_owner_intent_fallback(request_data: dict) -> dict | None:
                     lines.append(f"• Giảm tối đa: {_money_text(params['max_discount_amount'])}")
             elif params.get("discount_value"):
                 lines.append(f"• Giảm giá: {_money_text(params['discount_value'])}")
+            if params.get("campaign_name"):
+                lines.append(f"• Tên chiến dịch: {params['campaign_name']}")
+            if params.get("target_id"):
+                lines.append(f"• ID áp dụng: {params['target_id']}")
+            elif params.get("target_location_name"):
+                lines.append(f"• Áp dụng cho: {params['target_location_name']}")
             if params.get("usage_limit"):
                 lines.append(f"• Tổng số lượng: {params['usage_limit']} lượt")
             if params.get("target_group") == "loyal":
                 lines.append(f"• Đối tượng: Khách hàng thân thiết")
             lines.append("Sếp xem và bấm [Đồng ý & Thực thi] nhé.")
             fallback_res["answer"] = "\n".join(lines)
+
+        # Add answer for export_revenue_report
+        if fallback_res["intent"] == "export_revenue_report":
+            params = fallback_res.get("parameters", {})
+            if params.get("start_date") and params.get("end_date"):
+                from datetime import datetime
+                try:
+                    s = datetime.strptime(params["start_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    e = datetime.strptime(params["end_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    fallback_res["answer"] = f"📥 Mình sẽ xuất file báo cáo doanh thu từ {s} đến {e} cho sếp."
+                except Exception:
+                    fallback_res["answer"] = "📥 Mình sẽ xuất file báo cáo doanh thu cho sếp."
+            else:
+                fallback_res["answer"] = "📥 Mình sẽ xuất file báo cáo doanh thu cho sếp."
             
         return fallback_res
+
 
     params: dict = {}
 
@@ -467,54 +496,6 @@ def _local_owner_intent_fallback(request_data: dict) -> dict | None:
             f"📋 Bản nháp Quản lý Đơn hàng:\n• Hành động: {booking_action.upper()}\n• ID Đơn: {booking_id or 'Chưa rõ'}\nSếp xem và bấm [Đồng ý & Thực thi] nhé.",
             0.95,
         )
-
-    if "voucher" in text or "khuyen mai" in text or "uu dai" in text or re.search(r"\bgiam\b", text):
-        # Parse date trước (từ text gốc), sau đó parse voucher params
-        parsed_dates = _parse_date_from_text(raw_text)
-        voucher_params = _parse_voucher_params_from_text(raw_text)
-        
-        # Merge: voucher_params có thể đã có start_date/end_date từ random generator
-        # Nhưng parsed_dates từ user input ("2 tuần") được ưu tiên hơn
-        params.update(voucher_params)
-        if parsed_dates:
-            params.update(parsed_dates)  # Override random dates với user-specified dates
-        
-        if params.get("time_range") and not params.get("start_date") and not params.get("end_date"):
-            params.update(_date_range_from_time_range(str(params["time_range"])))
-        
-        discount = params.get("discount_value")
-        discount_type = params.get("discount_type", "amount")
-        lines = ["📋 Bản nháp Voucher:"]
-        if params.get("code"):
-            lines.append(f"• Mã: {params['code']}")
-        if params.get("campaign_name"):
-            lines.append(f"• Chiến dịch: {params['campaign_name']}")
-            
-        if params.get("apply_to_service_type") and params.get("apply_to_service_type") != "all":
-            service_map = {"room": "Phòng Khách Sạn", "food": "Ăn uống/Nhà hàng", "ticket": "Vé/Tour"}
-            lines.append(f"• Dịch vụ áp dụng: {service_map.get(params['apply_to_service_type'], params['apply_to_service_type'])}")
-            
-        if discount:
-            if discount_type == "percent":
-                lines.append(f"• Giảm giá: {int(discount)}%")
-                if params.get("max_discount_amount"):
-                    lines.append(f"• Giảm tối đa: {_money_text(int(params['max_discount_amount']))}")
-            else:
-                lines.append(f"• Giảm giá: {_money_text(int(discount))}")
-        if params.get("min_order_value") and int(params.get("min_order_value", 0)) > 0:
-            lines.append(f"• Đơn tối thiểu: {_money_text(int(params['min_order_value']))}")
-        if params.get("quantity"):
-            lines.append(f"• Sẽ tạo {params['quantity']} mã voucher riêng biệt")
-        if params.get("usage_limit"):
-            lines.append(f"• Số lượt dùng mỗi mã: {params['usage_limit']} lượt")
-        if params.get("target_group") == "loyal":
-            lines.append(f"• Đối tượng: Khách hàng thân thiết")
-        if params.get("start_date") and params.get("end_date"):
-            lines.append(f"• Hiệu lực: {_display_date(params['start_date'])} đến {_display_date(params['end_date'])}")
-        elif params.get("time_range"):
-            lines.append(f"• Thời gian: {_time_range_label(params['time_range'])}")
-        lines.append("Sếp xem và bấm [Đồng ý & Thực thi] nếu muốn tạo voucher nhé.")
-        return _intent_result("owner_voucher_draft", params, "\n".join(lines))
 
     if "nhan vien" in text:
         if "mo khoa" in text or "unlock" in text:
@@ -641,7 +622,7 @@ def call_gemini_intent_service(request_data: dict) -> dict:
 
     settings = get_settings()
     api_key = random.choice(settings.gemini_api_keys) if settings.gemini_api_keys else ""
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options={'timeout': 28000})
     role = request_data.get("role", "")
     text_norm = _strip_accents(str(request_data.get("text") or "").lower())
     booking_words = ("booking", "don", "đơn", "dat cho", "đặt chỗ", "dat ban", "đặt bàn")
@@ -771,6 +752,14 @@ def call_gemini_intent_service(request_data: dict) -> dict:
                     "discount_value": {"type": "integer", "description": "Giá trị giảm giá (nếu có)"},
                     "status": {"type": "string", "description": "Trạng thái booking: pending, confirmed, cancelled, completed"},
                     "location_name": {"type": "string", "description": "Tên địa điểm nếu có"},
+                    "campaign_name": {"type": "string", "description": "Tên chiến dịch khuyến mãi (nếu có)"},
+                    "code": {"type": "string", "description": "Mã giảm giá (nếu có)"},
+                    "min_order_value": {"type": "integer", "description": "Giá trị đơn hàng tối thiểu"},
+                    "quantity": {"type": "integer", "description": "Số lượng voucher cần tạo"},
+                    "usage_limit": {"type": "integer", "description": "Giới hạn sử dụng voucher"},
+                    "max_discount_amount": {"type": "integer", "description": "Số tiền giảm tối đa"},
+                    "apply_to_service_type": {"type": "string", "description": "Loại dịch vụ áp dụng"},
+                    "target_group": {"type": "string", "description": "Đối tượng áp dụng"},
                 },
             },
             "answer": {"type": "string", "description": "Câu trả lời thân thiện dành cho người dùng (KHÔNG tự bịa số liệu)"}
@@ -889,5 +878,12 @@ def call_gemini_intent_service(request_data: dict) -> dict:
         elif "403" in error_msg or "denied" in error_msg.lower():
             safe_key = api_key[:15] + "..." if api_key else "không xác định"
             user_msg = f"CẢNH BÁO: API Key ({safe_key}) đã bị Google khóa (Lỗi 403). Sếp vui lòng xóa key này khỏi file .env nhé!"
+            
+        # Thử NLP Fallback nếu gọi Gemini thất bại (để cứu vãn các tác vụ thiết yếu như tạo voucher)
+        if "403" not in error_msg and "denied" not in error_msg.lower():
+            fb = _local_owner_intent_fallback(request_data, force_fallback=True)
+            if fb and fb.get("intent") != "unknown":
+                print(f"[Gemini Timeout Fallback] intent={fb.get('intent')}")
+                return fb
             
         return {"intent": "unknown", "confidence": 0, "answer": user_msg, "error": error_msg}
