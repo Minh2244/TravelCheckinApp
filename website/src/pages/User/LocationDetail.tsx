@@ -549,6 +549,12 @@ const LocationDetail = () => {
     try {
       await userApi.claimVoucher(voucherId);
       flashAction("Đã lưu voucher vào kho của bạn");
+      // Hide the voucher after 5 seconds
+      setTimeout(() => {
+        setLocationVoucherList((prev) =>
+          prev.filter((v: any) => v.voucher_id !== voucherId)
+        );
+      }, 5000);
     } catch (error: any) {
       // Rollback nếu lỗi
       setLocationVoucherList((prev) =>

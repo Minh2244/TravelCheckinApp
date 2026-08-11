@@ -6715,7 +6715,8 @@ export const getOwnerVouchers = async (
            AND v.owner_deleted_at IS NULL
            AND v.status = 'active'
            AND (
-             (vl.location_id IS NOT NULL AND loc.location_id IS NOT NULL)
+             v.apply_to_location_type = 'all'
+             OR (vl.location_id IS NOT NULL AND loc.location_id IS NOT NULL)
              OR (v.location_id IS NOT NULL AND EXISTS (
                SELECT 1 FROM locations l2 WHERE l2.location_id = v.location_id AND l2.owner_id = ?
              ))
@@ -6742,9 +6743,14 @@ export const getOwnerVouchers = async (
            WHERE u.role = 'admin'
              AND v.owner_deleted_at IS NULL
              AND v.status = 'active'
-             AND v.location_id IS NOT NULL
-             AND EXISTS (
-               SELECT 1 FROM locations l2 WHERE l2.location_id = v.location_id AND l2.owner_id = ?
+             AND (
+               v.apply_to_location_type = 'all'
+               OR (
+                 v.location_id IS NOT NULL
+                 AND EXISTS (
+                   SELECT 1 FROM locations l2 WHERE l2.location_id = v.location_id AND l2.owner_id = ?
+                 )
+               )
              )
            ORDER BY v.created_at DESC`,
           [auth.userId],
