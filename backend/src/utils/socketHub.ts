@@ -25,49 +25,59 @@ export const initSocketHub = (io: Server) => {
     let sessionId: string | undefined;
     let userRole: string | undefined;
     
+    let authPromise = Promise.resolve();
+
     const rawToken = String(socket.handshake.auth?.token || "");
     if (rawToken) {
-      try {
-        const decoded = jwt.verify(
-          rawToken,
-          process.env.JWT_SECRET || "your-secret-key",
-        ) as SocketAuthPayload;
-        
-        userId = Number(decoded.userId);
-        sessionId = String(decoded.sessionId || "");
-        userRole = String(decoded.role || "");
-        
-        if (Number.isFinite(userId) && sessionId) {
-          const activeSessionId = await getActiveSessionId(userId);
-          if (activeSessionId === sessionId) {
-            // Gán data TRƯỚC để có thể dùng khi so sánh
-            socket.data.userId = userId;
-            socket.data.sessionId = sessionId;
+      authPromise = (async () => {
+        try {
+          const decoded = jwt.verify(
+            rawToken,
+            process.env.JWT_SECRET || "your-secret-key",
+          ) as SocketAuthPayload;
+          
+          userId = Number(decoded.userId);
+          sessionId = String(decoded.sessionId || "");
+          userRole = String(decoded.role || "");
+          
+          if (Number.isFinite(userId) && sessionId) {
+            const activeSessionId = await getActiveSessionId(userId);
+            if (activeSessionId === sessionId) {
+              // Gán data TRƯỚC để có thể dùng khi so sánh
+              socket.data.userId = userId;
+              socket.data.sessionId = sessionId;
 
-            const existingSockets = socketsByUserId.get(userId) ?? new Set<Socket>();
-            // Chỉ revoke các socket cũ có sessionId KHÁC (tức là đăng nhập từ thiết bị/session khác)
-            // KHÔNG revoke socket cùng sessionId (chỉ là tab mới / navigate trong app)
-            if (existingSockets.size > 0) {
-              for (const existing of Array.from(existingSockets)) {
-                if (existing.data?.sessionId && existing.data.sessionId !== sessionId) {
-                  console.log(`[socketHub] Revoking old socket ${existing.id} (session ${String(existing.data.sessionId)}) for user ${userId}`);
-                  revokeSocket(existing, "Tài khoản đang được đăng nhập tại nơi khác.");
-                  existingSockets.delete(existing);
+              const existingSockets = socketsByUserId.get(userId) ?? new Set<Socket>();
+              // Chỉ revoke các socket có sessionId KHÁC
+              if (existingSockets.size > 0) {
+                for (const existing of Array.from(existingSockets)) {
+                  if (existing.data?.sessionId && existing.data.sessionId !== sessionId) {
+                    console.log(`[socketHub] Revoking old socket ${existing.id} (session ${String(existing.data.sessionId)}) for user ${userId}`);
+                    revokeSocket(existing, "Tài khoản đang được đăng nhập tại nơi khác.");
+                    existingSockets.delete(existing);
+                  }
                 }
               }
-            }
 
-            existingSockets.add(socket);
-            socketsByUserId.set(userId, existingSockets);
-            console.log(`[socketHub] User ${userId} authenticated successfully via handshake token. Socket ID: ${socket.id}`);
+              existingSockets.add(socket);
+              socketsByUserId.set(userId, existingSockets);
+              console.log(`[socketHub] User ${userId} authenticated successfully via handshake token. Socket ID: ${socket.id}`);
+            } else {
+              // Token hop le nhung session da bi revoke
+              userId = undefined;
+              userRole = undefined;
+            }
           }
+        } catch {
+          // invalid token, just don't authenticate them
+          userId = undefined;
+          userRole = undefined;
         }
-      } catch {
-        // invalid token, just don't authenticate them
-      }
+      })();
     }
 
     const canManageLocation = async (locationId: number): Promise<boolean> => {
+      await authPromise;
       if (!userId || !Number.isFinite(locationId)) return false;
       const [rows] = await pool.query(
         `SELECT 1
@@ -89,6 +99,7 @@ export const initSocketHub = (io: Server) => {
     };
 
     socket.on("join_location_room", async (payload: { locationId: number; customerId?: number }) => {
+      await authPromise;
       if (!userId) return;
       const locationId = Number(payload?.locationId);
       const requestedCustomerId = Number(payload?.customerId || userId);
@@ -100,6 +111,7 @@ export const initSocketHub = (io: Server) => {
     });
 
     socket.on("join_location_owner_room", async (payload: { locationId: number }) => {
+      await authPromise;
       if (!userId) return;
       const locationId = Number(payload?.locationId);
       if (!Number.isFinite(locationId) || !(await canManageLocation(locationId))) {
@@ -110,7 +122,8 @@ export const initSocketHub = (io: Server) => {
       void socket.join(room);
     });
 
-    socket.on("join_location_public", (payload: { locationId: number }) => {
+    socket.on("join_location_public", async (payload: { locationId: number }) => {
+      await authPromise;
       const { locationId } = payload;
       const room = `location_${locationId}_public`;
       void socket.join(room);

@@ -640,7 +640,13 @@ function OwnerChatWindow({
   // Cuộn tin nhắn xuống dưới cùng
   useEffect(() => {
     if (scrollRef.current && !isFetchingMore) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight + 1000;
+          }
+        }, 150);
+      });
     }
   }, [messages, isFetchingMore]);
 

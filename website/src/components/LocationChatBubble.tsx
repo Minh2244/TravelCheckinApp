@@ -133,11 +133,14 @@ const LocationChatBubble = ({
   // Cuộn tin nhắn xuống dưới cùng
   useEffect(() => {
     if (scrollRef.current && !isFetchingMore) {
-      setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      }, 50);
+      // Đảm bảo DOM cập nhật hoàn toàn trước khi đo chiều cao
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight + 1000; // Force scroll to bottom
+          }
+        }, 150);
+      });
     }
   }, [messages, isOpen, isFetchingMore]);
 
