@@ -2847,8 +2847,8 @@ const BookingPage = () => {
                   className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-100"
                   onClick={() => {
                     const target = Number.isFinite(Number(locationIdNum))
-                      ? `/user/tickets?locationId=${Number(locationIdNum)}`
-                      : "/user/tickets";
+                      ? `/user/ticket-pass?locationId=${Number(locationIdNum)}`
+                      : "/user/ticket-pass";
                     navigate(target);
                   }}
                 >
@@ -4510,8 +4510,8 @@ const BookingPage = () => {
                                                 const target = Number.isFinite(
                                                   Number(locationIdNum),
                                                 )
-                                                  ? `/user/tickets?locationId=${Number(locationIdNum)}`
-                                                  : "/user/tickets";
+                                                  ? `/user/ticket-pass?locationId=${Number(locationIdNum)}`
+                                                  : "/user/ticket-pass";
                                                 navigate(target);
                                               }}
                                             >

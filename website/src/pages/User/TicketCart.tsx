@@ -856,7 +856,7 @@ const TicketCart = ({ isEmbedded }: { isEmbedded?: boolean }) => {
 
   if (isEmbedded) return content;
   return (
-    <UserLayout title="Giỏ vé" activeKey="/user/tickets">
+    <UserLayout title="Vỏ vé du lịch" subtitle="" activeKey="/user/ticket-pass">
       {content}
     </UserLayout>
   );

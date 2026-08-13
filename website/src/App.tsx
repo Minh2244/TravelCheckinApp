@@ -55,6 +55,7 @@ const UserBookingReminders = lazy(
   () => import("./pages/User/BookingReminders"),
 );
 const UserMyTickets = lazy(() => import("./pages/User/MyTickets"));
+const UserTicketPass = lazy(() => import("./pages/User/TicketCart"));
 const UserTablePass = lazy(() => import("./pages/User/TableBookingPass"));
 const UserRoomPass = lazy(() => import("./pages/User/RoomBookingPass"));
 const UserItineraries = lazy(() => import("./pages/User/Itineraries"));
@@ -387,14 +388,22 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/user/tickets"
-            element={
-              <ProtectedRoute allowedRoles={["user"]}>
-                <UserMyTickets />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/user/ticket-pass"
+              element={
+                <ProtectedRoute allowedRoles={["user"]}>
+                  <UserTicketPass />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user/tickets"
+              element={
+                <ProtectedRoute allowedRoles={["user"]}>
+                  <UserMyTickets />
+                </ProtectedRoute>
+              }
+            />
           <Route
             path="/user/table-pass"
             element={

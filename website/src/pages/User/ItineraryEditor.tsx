@@ -142,14 +142,24 @@ const ItineraryEditor = () => {
   const [pickedLat, setPickedLat] = useState<number | null>(null);
   const [pickedLng, setPickedLng] = useState<number | null>(null);
 
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
   const addFromSystem = (loc: LocationOption) => {
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", custom_lat: null, custom_lng: null, time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
+    if (editingItemId) {
+      setItems((prev) => prev.map((i) => i.tempId === editingItemId ? { ...i, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", custom_lat: null, custom_lng: null, time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name } : i));
+    } else {
+      setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: loc.location_id, custom_name: "", custom_address: loc.address || "", custom_lat: null, custom_lng: null, time: addTime, note: addNote, estimated_cost: addCost, location_name: loc.name || loc.location_name }]);
+    }
     closeModal();
   };
 
   const addCustom = () => {
-    if (!customName.trim()) return;
-    setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: null, custom_name: customName.trim(), custom_address: customAddress.trim(), custom_lat: pickedLat, custom_lng: pickedLng, time: addTime, note: addNote, estimated_cost: addCost }]);
+    if (!customName.trim() && !customAddress.trim()) return;
+    if (editingItemId) {
+      setItems((prev) => prev.map((i) => i.tempId === editingItemId ? { ...i, location_id: null, custom_name: customName.trim(), custom_address: customAddress.trim(), custom_lat: pickedLat, custom_lng: pickedLng, time: addTime, note: addNote, estimated_cost: addCost, location_name: undefined } : i));
+    } else {
+      setItems((prev) => [...prev, { tempId: newTempId(), day_number: activeDay, sort_order: prev.filter((i) => i.day_number === activeDay).length, location_id: null, custom_name: customName.trim(), custom_address: customAddress.trim(), custom_lat: pickedLat, custom_lng: pickedLng, time: addTime, note: addNote, estimated_cost: addCost }]);
+    }
     closeModal();
   };
 
@@ -166,23 +176,42 @@ const ItineraryEditor = () => {
     setAddCost("");
     setPickedLat(null);
     setPickedLng(null);
+    setEditingItemId(null);
   };
 
-  const removeItem = (tempId: string) => setItems((prev) => prev.filter((i) => i.tempId !== tempId));
+  const openEditModal = (item: ItineraryItemForm) => {
+    setEditingItemId(item.tempId);
+    setCustomName(item.custom_name || item.location_name || "");
+    setCustomAddress(item.custom_address || "");
+    setAddTime(item.time || "");
+    setAddNote(item.note || "");
+    setAddCost(item.estimated_cost?.toString() || "");
+    setPickedLat(item.custom_lat ?? null);
+    setPickedLng(item.custom_lng ?? null);
+    setShowAddModal(true);
+  };
+
+  const removeItem = async (tempId: string) => {
+    const newItems = items.filter((i) => i.tempId !== tempId);
+    setItems(newItems);
+    if (isEdit) {
+      await handleSave(newItems, false);
+    }
+  };
 
   const updateItem = (tempId: string, field: keyof ItineraryItemForm, value: string) =>
     setItems((prev) => prev.map((i) => (i.tempId === tempId ? { ...i, [field]: value } : i)));
 
-  const handleSave = async () => {
+  const handleSave = async (itemsToSave = items, doNavigate = true) => {
     if (!title.trim()) { alert("Tên lịch trình không được để trống"); return; }
     if (!startDate || !endDate) { alert("Vui lòng chọn ngày bắt đầu và kết thúc"); return; }
     if (new Date(startDate) > new Date(endDate)) { alert("Ngày kết thúc phải sau ngày bắt đầu"); return; }
     try {
       setSaving(true);
-      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: items.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, custom_lat: item.custom_lat ?? undefined, custom_lng: item.custom_lng ?? undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined })) };
+      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: itemsToSave.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, custom_lat: item.custom_lat ?? undefined, custom_lng: item.custom_lng ?? undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined })) };
       if (isEdit) await userApi.updateItinerary(Number(id), payload);
       else await userApi.createItinerary(payload);
-      navigate("/user/itineraries");
+      if (doNavigate) navigate("/user/itineraries");
     } catch (err) { alert(getErrorMessage(err, "Không thể lưu lịch trình")); } finally { setSaving(false); }
   };
 
@@ -254,7 +283,7 @@ const ItineraryEditor = () => {
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
             className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
@@ -440,12 +469,21 @@ const ItineraryEditor = () => {
                           🚀 Bắt đầu
                         </button>
                       )}
+                      {/* Nút sửa */}
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-all"
+                        title="Sửa địa điểm"
+                      >
+                        ✏️ Sửa
+                      </button>
                       {/* Nút xóa */}
                       <button
                         onClick={() => removeItem(item.tempId)}
-                        className="rounded-lg p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors opacity-0 group-hover:opacity-100"
+                        className="rounded-lg px-2 py-1 text-xs font-semibold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-all"
+                        title="Xóa địa điểm"
                       >
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        ❌ Xóa
                       </button>
                     </div>
                   </div>
@@ -474,7 +512,7 @@ const ItineraryEditor = () => {
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
-                <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">THÊM ĐỊA ĐIỂM</span>
+                <span className="text-[10px] font-extrabold tracking-widest text-indigo-600 uppercase">{editingItemId ? "SỬA ĐỊA ĐIỂM" : "THÊM ĐỊA ĐIỂM"}</span>
                 <h3 className="text-lg font-black text-slate-800 font-heading">Ngày {activeDay}</h3>
               </div>
               <button onClick={closeModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
@@ -482,7 +520,7 @@ const ItineraryEditor = () => {
               </button>
             </div>
 
-            <div className="flex flex-col md:flex-row">
+            <div className="flex flex-col md:flex-row h-full">
               {/* Bản đồ bên trái - dùng LocationPickerMap */}
               <div className="w-full md:w-1/2 h-[400px] md:h-[500px]">
                 <LocationPickerMap
@@ -508,7 +546,7 @@ const ItineraryEditor = () => {
               <div className="w-full md:w-1/2 p-6 overflow-auto max-h-[500px]">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="flex-1 h-px bg-slate-100" />
-                  <span className="text-xs font-bold text-slate-500">✨ Thêm địa điểm tự do</span>
+                  <span className="text-xs font-bold text-slate-500">✨ {editingItemId ? "Sửa địa điểm tự do" : "Thêm địa điểm tự do"}</span>
                   <div className="flex-1 h-px bg-slate-100" />
                 </div>
 
@@ -540,11 +578,24 @@ const ItineraryEditor = () => {
 
                 <button
                   onClick={addCustom}
-                  disabled={!customName.trim()}
+                  disabled={!customName.trim() && !customAddress.trim()}
                   className="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                  Thêm địa điểm tự do
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    {editingItemId ? (
+                      <>
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                      </>
+                    ) : (
+                      <>
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </>
+                    )}
+                  </svg>
+                  {editingItemId ? "Lưu thay đổi" : "Thêm địa điểm tự do"}
                 </button>
               </div>
             </div>

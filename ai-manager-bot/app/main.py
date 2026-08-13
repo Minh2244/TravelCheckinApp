@@ -32,8 +32,12 @@ def health() -> dict:
         "service": "ai-manager-bot",
         "mode": "sandbox",
         "llm_provider": settings.llm_provider,
-        "llm_enabled": settings.openai_enabled,
-        "model": settings.openai_model if settings.openai_enabled else None,
+        "llm_enabled": settings.enabled,
+        "gemini_enabled": settings.gemini_enabled,
+        "gemini_key_count": len(settings.gemini_api_keys),
+        "openai_configured": settings.openai_configured,
+        "openai_model": settings.openai_model if settings.openai_configured else None,
+        "model": "gemini-2.5-flash" if settings.gemini_enabled else settings.openai_model if settings.openai_enabled else None,
     }
 
 

@@ -8,7 +8,7 @@ export interface ActionRegistryContext {
 const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/owner/dashboard",
-    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_get_top_locations", "export_revenue_report", "owner_analyze_reviews", "owner_voucher_draft", "owner_get_order_stats", "owner_get_top_services", "owner_manage_employees", "owner_view_employees", "owner_view_bookings", "view_commissions"],
+    actions: ["get_dashboard_stats", "owner_get_revenue_structure", "owner_get_top_locations", "owner_get_cancellation_stats", "owner_get_top_customers", "owner_get_business_recommendations", "export_revenue_report", "owner_analyze_reviews", "owner_voucher_draft", "owner_get_order_stats", "owner_get_top_services", "owner_manage_employees", "owner_view_employees", "owner_view_bookings", "view_commissions"],
   },
   {
     prefix: "/owner/bookings",
@@ -35,7 +35,7 @@ const OWNER_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
 const ADMIN_ACTIONS_BY_ROUTE: Array<{ prefix: string; actions: string[] }> = [
   {
     prefix: "/admin/dashboard",
-    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher", "admin_get_user_growth", "admin_get_owners", "admin_view_users", "admin_get_top_locations", "admin_view_locations", "admin_view_sos_alerts", "admin_send_push_notification", "admin_user_lock", "admin_location_review"],
+    actions: ["get_dashboard_stats", "export_revenue_report", "admin_create_system_voucher", "admin_get_user_growth", "admin_get_owners", "admin_view_users", "admin_get_top_locations", "admin_get_cancellation_stats", "admin_get_top_services", "admin_get_top_customers", "admin_get_business_recommendations", "admin_view_locations", "admin_view_sos_alerts", "admin_send_push_notification", "admin_user_lock", "admin_location_review"],
   },
   {
     prefix: "/admin/users",

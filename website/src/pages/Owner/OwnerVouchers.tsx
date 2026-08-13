@@ -18,6 +18,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Segmented,
   Row,
   Space,
   Table,
@@ -35,6 +36,7 @@ import { asRecord, getErrorMessage } from "../../utils/safe";
 
 type ServiceScope = "all" | "room" | "food" | "ticket" | "other";
 type VoucherStatus = "active" | "inactive" | "expired";
+type VoucherTabKey = "owner" | "system";
 
 type LocationType =
   | "hotel"
@@ -113,6 +115,7 @@ const OwnerVouchers = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [searchAdmin, setSearchAdmin] = useState("");
+  const [voucherTab, setVoucherTab] = useState<VoucherTabKey>("owner");
 
   const watchCode = Form.useWatch("code", form);
   const watchCampaignName = Form.useWatch("campaign_name", form);
@@ -386,56 +389,72 @@ const OwnerVouchers = () => {
     return [...result].sort((a, b) => b.voucher_id - a.voucher_id);
   }, [adminVouchers, searchAdmin]);
 
+  const systemVoucherStats = useMemo(() => {
+    const list = adminVouchers || [];
+    return {
+      total: list.length,
+      active: list.filter(
+        (row) => String(row.computed_status || row.status || "inactive") === "active",
+      ).length,
+      totalUses: list.reduce(
+        (sum, row) => sum + Number(row.used_count || 0),
+        0,
+      ),
+    };
+  }, [adminVouchers]);
+
   const columns: ColumnsType<OwnerVoucherRow> = useMemo(
     () => [
       {
-        title: "Số thứ tự",
-        width: 90,
+        title: "STT",
+        width: 52,
         align: "center",
-        render: (_: any, __: any, index: number) => filteredItems.length - index,
+        render: (_: unknown, __: OwnerVoucherRow, index: number) =>
+          filteredItems.length - index,
       },
       {
-        title: "Mã voucher",
-        dataIndex: "code",
-        width: 110,
-        render: (code: string) => (
-          <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
-            {code}
-          </span>
+        title: "Voucher",
+        width: 230,
+        render: (_: unknown, row) => (
+          <div className="min-w-0">
+            <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
+              {row.code}
+            </span>
+            <div className="mt-1 font-semibold text-slate-800 truncate">
+              {row.campaign_name}
+            </div>
+            {row.campaign_description && (
+              <div className="text-xs text-slate-500 truncate">
+                {row.campaign_description}
+              </div>
+            )}
+          </div>
         ),
       },
       {
-        title: "Tên voucher",
-        dataIndex: "campaign_name",
-        width: 200,
-        render: (v: string, row) => (
-          <div>
-            <div className="font-semibold text-slate-800">{v}</div>
-            {row.campaign_description && (
-              <div className="text-xs text-slate-500">{row.campaign_description}</div>
-            )}
-          </div>
-        )
-      },
-      {
-        title: "Phạm vi",
-        width: 90,
-        align: "center",
-        render: (_: unknown, row) =>
-          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
-      },
-      {
-        title: "Địa điểm",
-        dataIndex: "location_name",
-        width: 130,
-        render: (v: unknown, row) => {
-          if (typeof v === "string" && v.trim()) return v;
-          return row.location_id != null ? "" : "Tất cả";
+        title: "Áp dụng",
+        width: 170,
+        render: (_: unknown, row) => {
+          const location =
+            typeof row.location_name === "string" && row.location_name.trim()
+              ? row.location_name
+              : row.location_id != null
+                ? ""
+                : "Tất cả";
+
+          return (
+            <div className="min-w-0">
+              <div className="font-medium text-slate-700">
+                {scopeLabel[(row.apply_to_service_type || "all") as ServiceScope]}
+              </div>
+              <div className="text-xs text-slate-500 truncate">{location}</div>
+            </div>
+          );
         },
       },
       {
         title: "Giảm",
-        width: 100,
+        width: 84,
         align: "center",
         render: (_: unknown, row) => {
           const val = Number(row.discount_value || 0);
@@ -455,7 +474,7 @@ const OwnerVouchers = () => {
       },
       {
         title: "Đã dùng",
-        width: 100,
+        width: 84,
         align: "center",
         render: (_: unknown, row) => {
           const used = Number(row.used_count || 0);
@@ -464,7 +483,7 @@ const OwnerVouchers = () => {
           return (
             <div className="flex flex-col items-center justify-center w-full">
               <span className="font-semibold text-slate-700 text-xs">{used}/{limit}</span>
-              <div className="w-16 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-14 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
                 <div
                   className="bg-sky-500 h-full rounded-full"
                   style={{ width: `${Math.min(percent, 100)}%` }}
@@ -477,7 +496,7 @@ const OwnerVouchers = () => {
       {
         title: "Trạng thái",
         dataIndex: "computed_status",
-        width: 100,
+        width: 104,
         align: "center",
         render: (s: string) => {
           const statusText = s === "active" ? "Còn hạn" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
@@ -495,21 +514,21 @@ const OwnerVouchers = () => {
       },
       {
         title: "Hiệu lực",
-        width: 150,
+        width: 104,
         align: "center",
         render: (_: unknown, row) => (
-          <div className="text-xs text-gray-600">
-            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
-            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
+          <div className="text-xs text-gray-600 leading-5 whitespace-nowrap">
+            <div>{row.start_date ? dayjs(row.start_date).format("DD/MM/YYYY") : ""}</div>
+            <div>{row.end_date ? dayjs(row.end_date).format("DD/MM/YYYY") : ""}</div>
           </div>
         ),
       },
       {
         title: "Hành động",
-        width: 190,
+        width: 168,
         align: "center",
         render: (_: unknown, row) => (
-          <Space>
+          <Space size={4}>
             <Button
               size="small"
               shape="round"
@@ -566,53 +585,53 @@ const OwnerVouchers = () => {
   const adminColumns: ColumnsType<any> = useMemo(
     () => [
       {
-        title: "Số thứ tự",
-        width: 90,
+        title: "STT",
+        width: 52,
         align: "center",
-        render: (_: any, __: any, index: number) => filteredAdminItems.length - index,
+        render: (_: unknown, __: any, index: number) =>
+          filteredAdminItems.length - index,
       },
       {
-        title: "Mã voucher",
-        dataIndex: "code",
-        width: 110,
-        render: (code: string) => (
-          <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
-            {code}
-          </span>
+        title: "Voucher",
+        width: 260,
+        render: (_: unknown, row: any) => (
+          <div className="min-w-0">
+            <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
+              {row.code}
+            </span>
+            <div className="mt-1 font-semibold text-slate-800 truncate">
+              {row.campaign_name}
+            </div>
+            {row.campaign_description && (
+              <div className="text-xs text-slate-500 truncate">
+                {row.campaign_description}
+              </div>
+            )}
+          </div>
         ),
       },
       {
-        title: "Tên voucher",
-        dataIndex: "campaign_name",
-        width: 200,
-        render: (v: string, row: any) => (
-          <div>
-            <div className="font-semibold text-slate-800">{v}</div>
-            {row.campaign_description && (
-              <div className="text-xs text-slate-500">{row.campaign_description}</div>
-            )}
-          </div>
-        )
-      },
-      {
-        title: "Phạm vi",
-        width: 90,
-        align: "center",
-        render: (_: unknown, row: any) =>
-          scopeLabel[(row.apply_to_service_type || "all") as ServiceScope],
-      },
-      {
-        title: "Địa điểm",
-        dataIndex: "location_name",
-        width: 130,
-        render: (v: unknown) => {
-          if (typeof v === "string" && v.trim()) return v;
-          return "Tất cả";
+        title: "Áp dụng",
+        width: 190,
+        render: (_: unknown, row: any) => {
+          const location =
+            typeof row.location_name === "string" && row.location_name.trim()
+              ? row.location_name
+              : "Tất cả";
+
+          return (
+            <div className="min-w-0">
+              <div className="font-medium text-slate-700">
+                {scopeLabel[(row.apply_to_service_type || "all") as ServiceScope]}
+              </div>
+              <div className="text-xs text-slate-500 truncate">{location}</div>
+            </div>
+          );
         },
       },
       {
         title: "Giảm",
-        width: 100,
+        width: 84,
         align: "center",
         render: (_: unknown, row: any) => {
           const val = Number(row.discount_value || 0);
@@ -632,7 +651,7 @@ const OwnerVouchers = () => {
       },
       {
         title: "Đã dùng",
-        width: 100,
+        width: 84,
         align: "center",
         render: (_: unknown, row: any) => {
           const used = Number(row.used_count || 0);
@@ -641,7 +660,7 @@ const OwnerVouchers = () => {
           return (
             <div className="flex flex-col items-center justify-center w-full">
               <span className="font-semibold text-slate-700 text-xs">{used}/{limit}</span>
-              <div className="w-16 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="w-14 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
                 <div
                   className="bg-sky-500 h-full rounded-full"
                   style={{ width: `${Math.min(percent, 100)}%` }}
@@ -654,7 +673,7 @@ const OwnerVouchers = () => {
       {
         title: "Trạng thái",
         dataIndex: "computed_status",
-        width: 100,
+        width: 104,
         align: "center",
         render: (s: string) => {
           const statusText = s === "active" ? "Còn hạn" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
@@ -672,12 +691,12 @@ const OwnerVouchers = () => {
       },
       {
         title: "Hiệu lực",
-        width: 150,
+        width: 104,
         align: "center",
         render: (_: unknown, row: any) => (
-          <div className="text-xs text-gray-600">
-            <div>{row.start_date ? formatDateTimeVi(row.start_date) : ""}</div>
-            <div>{row.end_date ? formatDateTimeVi(row.end_date) : ""}</div>
+          <div className="text-xs text-gray-600 leading-5 whitespace-nowrap">
+            <div>{row.start_date ? dayjs(row.start_date).format("DD/MM/YYYY") : ""}</div>
+            <div>{row.end_date ? dayjs(row.end_date).format("DD/MM/YYYY") : ""}</div>
           </div>
         ),
       },
@@ -748,20 +767,30 @@ const OwnerVouchers = () => {
       <Card
         title={
           <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-extrabold text-xl">
-            Voucher của tôi
+            Voucher
           </span>
         }
         loading={loading}
         extra={
           <Space>
-            <Button onClick={() => refreshVouchers(false)}>Tải lại</Button>
-            <Button type="primary" onClick={onCreate}>
-              Tạo voucher
-            </Button>
+            <Segmented
+              className="!rounded-lg !bg-blue-50 !p-1 [&_.ant-segmented-item]:!rounded-md [&_.ant-segmented-item]:!px-2 [&_.ant-segmented-item-label]:!font-semibold [&_.ant-segmented-item-label]:!text-slate-600 [&_.ant-segmented-item-selected]:!bg-white [&_.ant-segmented-item-selected]:!shadow-sm [&_.ant-segmented-item-selected_.ant-segmented-item-label]:!text-blue-600 [&_.ant-segmented-thumb]:!rounded-md"
+              value={voucherTab}
+              onChange={(v) => setVoucherTab(v as VoucherTabKey)}
+              options={[
+                { label: "Voucher của tôi", value: "owner" },
+                { label: "Voucher hệ thống", value: "system" },
+              ]}
+            />
+            {voucherTab === "owner" ? (
+              <Button type="primary" onClick={onCreate}>
+                Tạo voucher
+              </Button>
+            ) : null}
           </Space>
         }
       >
-        {stats && (
+        {voucherTab === "owner" && stats && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
             <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
               <div className="text-xs text-blue-100 font-semibold uppercase tracking-wider">Tổng số voucher</div>
@@ -778,69 +807,88 @@ const OwnerVouchers = () => {
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-          <Space>
-            <Input
-              allowClear
-              placeholder="Tìm theo code / tên voucher / địa điểm..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 320 }}
-            />
-            <Select
-              value={statusFilter}
-              onChange={(v) => setStatusFilter(v)}
-              style={{ width: 160 }}
-              options={[
-                { value: "all", label: "Tất cả" },
-                { value: "computed_active", label: "Còn hạn" },
-                { value: "computed_expired", label: "Hết hạn" },
-              ]}
-            />
-          </Space>
-        </div>
+        {voucherTab === "system" && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+            <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-blue-100 font-semibold uppercase tracking-wider">Tổng voucher hệ thống</div>
+              <div className="mt-2 text-3xl font-extrabold">{systemVoucherStats.total}</div>
+            </div>
+            <div className="rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-emerald-100 font-semibold uppercase tracking-wider">Đang hoạt động</div>
+              <div className="mt-2 text-3xl font-extrabold">{systemVoucherStats.active}</div>
+            </div>
+            <div className="rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-violet-100 font-semibold uppercase tracking-wider">Đã sử dụng</div>
+              <div className="mt-2 text-3xl font-extrabold">{systemVoucherStats.totalUses} lượt</div>
+            </div>
+          </div>
+        )}
 
-        <Table
-          size="middle"
-          loading={loading}
-          rowKey="voucher_id"
-          dataSource={filteredItems}
-          columns={columns}
-          pagination={false}
-          scroll={{ x: "max-content", y: 480 }}
-        />
-      </Card>
+        {voucherTab === "owner" ? (
+          <>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <Space>
+                <Input
+                  allowClear
+                  placeholder="Tìm theo code / tên voucher / địa điểm..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  style={{ width: 320 }}
+                />
+                <Select
+                  value={statusFilter}
+                  onChange={(v) => setStatusFilter(v)}
+                  style={{ width: 160 }}
+                  options={[
+                    { value: "all", label: "Tất cả" },
+                    { value: "computed_active", label: "Còn hạn" },
+                    { value: "computed_expired", label: "Hết hạn" },
+                  ]}
+                />
+                <Button onClick={() => refreshVouchers(false)}>Tải lại</Button>
+              </Space>
+            </div>
 
-      <Card
-        title={
-          <span className="bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent font-extrabold text-xl">
-            Voucher nổi bật từ hệ thống
-          </span>
-        }
-        className="mt-6 shadow-sm border-slate-100"
-        loading={loading}
-      >
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-          <Space>
-            <Input
-              allowClear
-              placeholder="Tìm theo code hoặc tên voucher..."
-              value={searchAdmin}
-              onChange={(e) => setSearchAdmin(e.target.value)}
-              style={{ width: 320 }}
+            <Table
+              size="middle"
+              tableLayout="fixed"
+              className="[&_.ant-table-cell]:!px-2 [&_.ant-table-cell]:!py-3"
+              loading={loading}
+              rowKey="voucher_id"
+              dataSource={filteredItems}
+              columns={columns}
+              pagination={false}
+              scroll={{ y: 480 }}
             />
-          </Space>
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <Space>
+                <Input
+                  allowClear
+                  placeholder="Tìm theo code hoặc tên voucher..."
+                  value={searchAdmin}
+                  onChange={(e) => setSearchAdmin(e.target.value)}
+                  style={{ width: 320 }}
+                />
+                <Button onClick={() => refreshVouchers(false)}>Tải lại</Button>
+              </Space>
+            </div>
 
-        <Table
-          size="middle"
-          loading={loading}
-          rowKey="voucher_id"
-          dataSource={filteredAdminItems}
-          columns={adminColumns}
-          pagination={false}
-          scroll={{ x: "max-content", y: 480 }}
-        />
+            <Table
+              size="middle"
+              tableLayout="fixed"
+              className="[&_.ant-table-cell]:!px-2 [&_.ant-table-cell]:!py-3"
+              loading={loading}
+              rowKey="voucher_id"
+              dataSource={filteredAdminItems}
+              columns={adminColumns}
+              pagination={false}
+              scroll={{ y: 480 }}
+            />
+          </>
+        )}
       </Card>
 
       <Modal

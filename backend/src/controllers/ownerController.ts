@@ -3289,7 +3289,11 @@ export const updateOwnerLocation = async (
     const allowedFields: Array<
       [string, (v: any) => any, { sensitive?: boolean; json?: boolean }?]
     > = [
-        ["location_name", (v) => (typeof v === "string" ? v.trim() : undefined)],
+        [
+          "location_name",
+          (v) => (typeof v === "string" ? v.trim() : undefined),
+          { sensitive: true },
+        ],
         ["description", (v) => v ?? null],
         [
           "address",
@@ -3308,7 +3312,7 @@ export const updateOwnerLocation = async (
           { sensitive: true },
         ],
         ["images", (v) => (Array.isArray(v) ? v : undefined), { json: true }],
-        ["opening_hours", (v) => v ?? undefined, { json: true }],
+        ["opening_hours", (v) => v ?? undefined, { json: true, sensitive: true }],
         ["phone", (v) => v ?? null],
         ["email", (v) => v ?? null],
         ["website", (v) => v ?? null],

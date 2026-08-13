@@ -1,6 +1,7 @@
 import pool from "../../config/database";
-import { ownerGetOrderStats, ownerGetRevenueStructure, ownerGetTopServices, ownerAnalyzeReviews } from "./ownerAiService";
-import { adminGetUserGrowth, adminGetOwnersStats, adminGetRevenueStats, adminGetTopLocations, adminViewLocations, adminViewSosAlerts, adminSendPushNotification, adminAdjustCommissionRate } from "./adminAiService";
+import { ownerGetOrderStats, ownerGetRevenueStructure, ownerGetTopServices, ownerAnalyzeReviews, ownerGetCancellationStats, ownerGetTopCustomers, ownerGetBusinessRecommendations } from "./ownerAiService";
+import { adminGetUserGrowth, adminGetOwnersStats, adminGetRevenueStats, adminGetTopLocations, adminViewLocations, adminViewSosAlerts, adminSendPushNotification, adminAdjustCommissionRate, adminGetCancellationStats, adminGetTopServices, adminGetTopCustomers, adminGetBusinessRecommendations } from "./adminAiService";
+import { formatMonthlyRevenueComment } from "./revenueInsight";
 
 export interface ExecuteActionPayload {
   command_id: string;
@@ -493,6 +494,10 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
                 msg += `- ${vnMonths[row.m] || `Tháng ${row.m}`}: ${t.toLocaleString('vi-VN')} đ\n`;
               }
               msg += `\n=> 💰 **Tổng cộng ${months.map(m => vnMonths[m]).join(" + ")}: ${grandTotal.toLocaleString('vi-VN')} đ**`;
+              msg += `\n\n${formatMonthlyRevenueComment(
+                months,
+                rows.map((row) => ({ month: Number(row.m), total: Number(row.total || 0) }))
+              )}`;
             }
             // Trường hợp 2: Query theo start_date/end_date cụ thể
             else if (start_date_param && end_date_param) {
@@ -598,6 +603,52 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         break;
       }
 
+      case "admin_get_cancellation_stats": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        let msg = await adminGetCancellationStats(time_range, months, start_date, end_date);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_get_top_services": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        const limit = Number(ents.limit) || 5;
+        let msg = await adminGetTopServices(time_range, months, start_date, end_date, limit);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_get_top_customers": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        const limit = Number(ents.limit) || 5;
+        let msg = await adminGetTopCustomers(time_range, months, start_date, end_date, limit);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "admin_get_business_recommendations": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        let msg = await adminGetBusinessRecommendations(time_range, months, start_date, end_date);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
       case "admin_view_locations": {
         let msg = await adminViewLocations();
         resultData = { success: true, message: msg };
@@ -639,6 +690,17 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
         resultData = { success: true, message: msg };
         break;
       }
+
+      case "owner_get_cancellation_stats": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        let msg = await ownerGetCancellationStats(actor_user_id, time_range, months, start_date, end_date);
+        resultData = { success: true, message: msg };
+        break;
+      }
       
       case "owner_get_revenue_structure": {
         const ents = action_plan.entities as any || {};
@@ -659,6 +721,29 @@ export async function executeManagerAiAction(payload: ExecuteActionPayload): Pro
           const start_date = ents.start_date;
           const end_date = ents.end_date;
           let msg = await ownerGetTopServices(actor_user_id, time_range, location_name, months, start_date, end_date);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "owner_get_top_customers": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        const limit = Number(ents.limit) || 5;
+        let msg = await ownerGetTopCustomers(actor_user_id, time_range, months, start_date, end_date, limit);
+        resultData = { success: true, message: msg };
+        break;
+      }
+
+      case "owner_get_business_recommendations": {
+        const ents = action_plan.entities as any || {};
+        const time_range = ents.time_range || "this_month";
+        const months: number[] = Array.isArray(ents.months) ? ents.months.map(Number) : [];
+        const start_date = ents.start_date as string | undefined;
+        const end_date = ents.end_date as string | undefined;
+        let msg = await ownerGetBusinessRecommendations(actor_user_id, time_range, months, start_date, end_date);
         resultData = { success: true, message: msg };
         break;
       }

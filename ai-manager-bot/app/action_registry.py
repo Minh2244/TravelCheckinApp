@@ -107,6 +107,53 @@ REGISTRY: List[ActionDefinition] = [
             } }
     ),
 
+    ActionDefinition(
+        name="owner_get_cancellation_stats",
+        description="Thong ke so don huy va ty le huy don cua owner theo thoi gian.",
+        roles=["owner"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="owner_get_top_customers",
+        description="Thong ke top khach hang chi tieu nhieu nhat tai cac dia diem cua owner.",
+        roles=["owner"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "limit": {"type": "integer"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="owner_get_business_recommendations",
+        description="Phan tich doanh thu, ty le huy, dia diem yeu va dich vu tot de dua ra khuyen nghi van hanh/voucher cho owner.",
+        roles=["owner"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"}
+            }
+        }
+    ),
+
     # ==========================================
     # DÀNH RIÊNG CHO OWNER (PHASE 2 - VẬN HÀNH)
     # ==========================================
@@ -325,6 +372,68 @@ REGISTRY: List[ActionDefinition] = [
                 "start_date": {"type": "string"},
                 "end_date": {"type": "string"},
                 "limit": {"type": "integer", "description": "Số lượng top địa điểm cần lấy. Mặc định 3."}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_cancellation_stats",
+        description="Thong ke so don huy va ty le huy don toan he thong theo thoi gian.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_top_services",
+        description="Thong ke top dich vu duoc su dung hoac ban nhieu nhat tren toan he thong.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "limit": {"type": "integer"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_top_customers",
+        description="Thong ke top nguoi dung hoac khach hang chi tieu nhieu nhat tren he thong.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "limit": {"type": "integer"}
+            }
+        }
+    ),
+    ActionDefinition(
+        name="admin_get_business_recommendations",
+        description="Phan tich doanh thu, ty le huy, dia diem yeu va dich vu tot de dua ra khuyen nghi van hanh/voucher toan he thong.",
+        roles=["admin"],
+        requires_confirmation=False,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "time_range": {"type": "string", "enum": ["today", "this_week", "this_month", "this_year", "all"]},
+                "months": {"type": "array", "items": {"type": "integer"}},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"}
             }
         }
     ),

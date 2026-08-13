@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   CalendarOutlined,
+  DeleteOutlined,
+  EditOutlined,
   GiftOutlined,
   GlobalOutlined,
   InfoCircleOutlined,
@@ -85,6 +87,7 @@ interface OwnerVoucherRow {
   location_count?: number | null;
   code: string;
   campaign_name?: string | null;
+  campaign_description?: string | null;
   discount_type: DiscountType;
   discount_value: number;
   apply_to_service_type: ServiceScope;
@@ -138,6 +141,76 @@ const toDayjs = (value?: string | null): Dayjs | null => {
   const d = dayjs(value);
   return d.isValid() ? d : null;
 };
+
+const renderCodeBadge = (code: string) => (
+  <span className="font-mono bg-sky-50 text-sky-700 border border-sky-100 px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap">
+    {code}
+  </span>
+);
+
+const renderDiscountBadge = (type: DiscountType, value: number) => {
+  const val = Number(value || 0);
+  if (type === "percent") {
+    return (
+      <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+        {val % 1 === 0 ? val : val.toFixed(0)}%
+      </span>
+    );
+  }
+
+  return (
+    <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
+      {val.toLocaleString("vi-VN")}đ
+    </span>
+  );
+};
+
+const renderUsedProgress = (usedValue: number, limitValue: number) => {
+  const used = Number(usedValue || 0);
+  const limit = Number(limitValue || 0);
+  const percent = limit > 0 ? (used / limit) * 100 : 0;
+
+  return (
+    <div className="flex flex-col items-center justify-center w-full">
+      <span className="font-semibold text-slate-700 text-xs">
+        {used}/{limit}
+      </span>
+      <div className="w-16 bg-slate-100 rounded-full h-1 mt-1 overflow-hidden">
+        <div
+          className="bg-sky-500 h-full rounded-full"
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const renderStatusPill = (status: VoucherStatus) => {
+  const statusLabel =
+    status === "active"
+      ? "Đang hoạt động"
+      : status === "inactive"
+        ? "Tạm tắt"
+        : "Hết hạn";
+
+  return (
+    <Tag
+      color={statusColor[status]}
+      className="rounded-full px-2.5 font-semibold text-xs border-0"
+    >
+      {statusLabel}
+    </Tag>
+  );
+};
+
+const renderLocationSummary = (
+  locationName?: string | null,
+  locationCount?: number | null,
+) =>
+  locationName ||
+  (Number(locationCount || 0) > 0
+    ? `${Number(locationCount || 0)} địa điểm`
+    : "Tất cả");
 
 const AdminVouchers = () => {
   const location = useLocation();
@@ -508,61 +581,6 @@ const AdminVouchers = () => {
     setModalOpen(true);
   };
 
-  const openOwnerEdit = async (row: OwnerVoucherRow) => {
-    setEditing(null);
-    setEditingOwner(row);
-    form.resetFields();
-    form.setFieldsValue({
-      ...row,
-      location_scope: "all",
-      location_id: row.location_id ?? null,
-      location_ids: [],
-      max_discount_amount: row.max_discount_amount ?? undefined,
-      max_uses_per_user: row.max_uses_per_user ?? 1,
-      start_date: toDayjs(row.start_date),
-      end_date: toDayjs(row.end_date),
-      // owner voucher is not directly controlled via this form
-      status: row.status,
-    });
-
-    await fetchOwnerLocationsForVoucher(
-      row.owner_id,
-      row.apply_to_service_type || "all",
-    );
-
-    try {
-      const locRes = await adminApi.getVoucherLocations(row.voucher_id);
-      const data = locRes?.data as
-        | { location_scope?: LocationScopeMode; location_ids?: number[] }
-        | undefined;
-      const scope = (data?.location_scope || "all") as LocationScopeMode;
-      const ids = Array.isArray(data?.location_ids) ? data?.location_ids : [];
-      if (scope === "single") {
-        form.setFieldsValue({
-          location_scope: "single",
-          location_id: ids[0] ?? row.location_id ?? null,
-          location_ids: [],
-        });
-      } else if (scope === "multiple") {
-        form.setFieldsValue({
-          location_scope: "multiple",
-          location_id: null,
-          location_ids: ids,
-        });
-      } else {
-        form.setFieldsValue({
-          location_scope: "all",
-          location_id: null,
-          location_ids: [],
-        });
-      }
-    } catch {
-      // ignore
-    }
-
-    setModalOpen(true);
-  };
-
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
@@ -657,89 +675,82 @@ const AdminVouchers = () => {
     }
   };
 
-  const reviewOwnerVoucher = async (
-    voucherId: number,
-    action: "activate" | "deactivate",
-  ) => {
-    try {
-      const res = await adminApi.reviewOwnerVoucher(voucherId, { action });
-      if (res?.success) {
-        message.success(res?.message || "Đã cập nhật voucher");
-        fetchOwnerVouchers();
-      }
-    } catch (err: unknown) {
-      message.error(getErrorMessage(err, "Không thể cập nhật voucher"));
-    }
-  };
-
-  const handleDeleteOwnerVoucher = async (voucherId: number) => {
-    try {
-      const res = await adminApi.deleteOwnerVoucher(voucherId);
-      message.success(res?.message || "Đã xóa voucher của owner");
-      fetchOwnerVouchers();
-    } catch (err: unknown) {
-      message.error(getErrorMessage(err, "Không thể xóa voucher"));
-    }
-  };
-
   const sysColumns: ColumnsType<SystemVoucher> = [
-    { title: "Code", dataIndex: "code", key: "code", width: 130 },
     {
-      title: "Tên voucher",
-      dataIndex: "campaign_name",
-      key: "campaign_name",
+      title: "STT",
+      key: "index",
+      width: 52,
+      align: "center",
+      render: (_: unknown, __: SystemVoucher, index: number) => {
+        const offset = (sysPagination.current - 1) * sysPagination.pageSize;
+        return Number(sysPagination.total || 0) > 0
+          ? Math.max(sysPagination.total - offset - index, 1)
+          : sysData.length - index;
+      },
     },
     {
-      title: "Phạm vi",
-      key: "scope",
-      width: 120,
-      render: (_, r) => scopeLabel[r.apply_to_service_type || "all"],
+      title: "Voucher",
+      key: "voucher",
+      width: 230,
+      render: (_, r) => (
+        <div className="min-w-0">
+          {renderCodeBadge(r.code)}
+          <div className="mt-1 font-semibold text-slate-800 truncate">
+            {r.campaign_name || "Voucher hệ thống"}
+          </div>
+          {r.campaign_description ? (
+            <div className="text-xs text-slate-500 truncate">
+              {r.campaign_description}
+            </div>
+          ) : null}
+        </div>
+      ),
     },
     {
-      title: "Địa điểm",
-      key: "location",
-      render: (_, r) =>
-        r.location_name ||
-        (Number(r.location_count || 0) > 0
-          ? `${Number(r.location_count || 0)} địa điểm`
-          : "Tất cả"),
+      title: "Áp dụng",
+      key: "apply",
+      width: 190,
+      render: (_, r) => (
+        <div className="min-w-0">
+          <div className="font-medium text-slate-700">
+            {scopeLabel[r.apply_to_service_type || "all"]}
+          </div>
+          <div className="text-xs text-slate-500 truncate">
+            {renderLocationSummary(r.location_name, r.location_count)}
+          </div>
+        </div>
+      ),
     },
     {
       title: "Giảm",
       key: "discount",
-      width: 120,
-      render: (_, r) => {
-        if (r.discount_type === "percent") {
-          const val = Number(r.discount_value);
-          return `${val % 1 === 0 ? val : val.toFixed(0)}%`;
-        }
-        return `${Number(r.discount_value || 0).toLocaleString("vi-VN")}đ`;
-      },
+      width: 84,
+      align: "center",
+      render: (_, r) => renderDiscountBadge(r.discount_type, r.discount_value),
     },
     {
       title: "Đã dùng",
       key: "used",
-      width: 120,
-      render: (_, r) =>
-        `${Number(r.used_count || 0)}/${Number(r.usage_limit || 0)} vé`,
+      width: 84,
+      align: "center",
+      render: (_, r) => renderUsedProgress(r.used_count, r.usage_limit),
     },
     {
       title: "Trạng thái",
       dataIndex: "status",
       key: "status",
-      width: 130,
-      render: (_: VoucherStatus, r) => {
-        const s = (r.computed_status || r.status) as VoucherStatus;
-        const statusLabel = s === "active" ? "Đang hoạt động" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
-        return <Tag color={statusColor[s]}>{statusLabel}</Tag>;
-      },
+      width: 104,
+      align: "center",
+      render: (_: VoucherStatus, r) =>
+        renderStatusPill((r.computed_status || r.status) as VoucherStatus),
     },
     {
       title: "Hiệu lực",
       key: "time",
-      width: 220,
+      width: 104,
+      align: "center",
       render: (_, r) => (
-        <div className="text-xs text-gray-600">
+        <div className="text-xs text-gray-600 leading-5 whitespace-nowrap">
           <div>{formatDateVi(r.start_date)}</div>
           <div>{formatDateVi(r.end_date)}</div>
         </div>
@@ -748,21 +759,41 @@ const AdminVouchers = () => {
     {
       title: "Hành động",
       key: "actions",
-      width: 220,
+      width: 82,
+      align: "center",
       render: (_, r) => (
-        <Space>
-          <Button size="small" onClick={() => openEdit(r)}>
-            Sửa
-          </Button>
+        <Space size={4} className="whitespace-nowrap">
+          <Button
+            size="small"
+            shape="circle"
+            icon={<EditOutlined />}
+            title="Sửa"
+            style={{
+              color: "#2563eb",
+              borderColor: "#bfdbfe",
+              backgroundColor: "#eff6ff",
+              fontWeight: 600,
+            }}
+            onClick={() => openEdit(r)}
+          />
           <Popconfirm
             title="Xóa voucher này?"
             okText="Xóa"
             cancelText="Hủy"
             onConfirm={() => handleDeleteSystemVoucher(r.voucher_id)}
           >
-            <Button size="small" danger>
-              Xóa
-            </Button>
+            <Button
+              size="small"
+              shape="circle"
+              icon={<DeleteOutlined />}
+              title="Xóa"
+              style={{
+                color: "#dc2626",
+                borderColor: "#fecaca",
+                backgroundColor: "#fef2f2",
+                fontWeight: 600,
+              }}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -770,112 +801,97 @@ const AdminVouchers = () => {
   ];
 
   const ownColumns: ColumnsType<OwnerVoucherRow> = [
-    { title: "ID", dataIndex: "voucher_id", key: "voucher_id", width: 80 },
-    { title: "Code", dataIndex: "code", key: "code", width: 140 },
     {
-      title: "Owner",
-      key: "owner",
+      title: "STT",
+      key: "index",
+      width: 52,
+      align: "center",
+      render: (_: unknown, __: OwnerVoucherRow, index: number) => {
+        const offset = (ownPagination.current - 1) * ownPagination.pageSize;
+        return Number(ownPagination.total || 0) > 0
+          ? Math.max(ownPagination.total - offset - index, 1)
+          : ownData.length - index;
+      },
+    },
+    {
+      title: "Voucher",
+      key: "voucher",
+      width: 220,
       render: (_, r) => (
-        <div>
-          <div className="font-medium">{r.owner_name || `#${r.owner_id}`}</div>
-          <div className="text-xs text-gray-500">{r.owner_email || ""}</div>
+        <div className="min-w-0">
+          {renderCodeBadge(r.code)}
+          <div className="mt-1 font-semibold text-slate-800 truncate">
+            {r.campaign_name || "Voucher Owner"}
+          </div>
+          {r.campaign_description ? (
+            <div className="text-xs text-slate-500 truncate">
+              {r.campaign_description}
+            </div>
+          ) : null}
         </div>
       ),
     },
     {
-      title: "Phạm vi",
-      key: "scope",
-      width: 160,
-      render: (_, r) => scopeLabel[r.apply_to_service_type || "all"],
+      title: "Owner",
+      key: "owner",
+      width: 170,
+      render: (_, r) => (
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-800 truncate">
+            {r.owner_name || `#${r.owner_id}`}
+          </div>
+          <div className="text-xs text-slate-500 truncate">{r.owner_email || ""}</div>
+        </div>
+      ),
     },
     {
-      title: "Địa điểm",
-      key: "location",
-      render: (_, r) =>
-        r.location_name ||
-        (Number(r.location_count || 0) > 0
-          ? `${Number(r.location_count || 0)} địa điểm`
-          : "Tất cả"),
+      title: "Áp dụng",
+      key: "apply",
+      width: 170,
+      render: (_, r) => (
+        <div className="min-w-0">
+          <div className="font-medium text-slate-700">
+            {scopeLabel[r.apply_to_service_type || "all"]}
+          </div>
+          <div className="text-xs text-slate-500 truncate">
+            {renderLocationSummary(r.location_name, r.location_count)}
+          </div>
+        </div>
+      ),
     },
     {
       title: "Giảm",
       key: "discount",
-      width: 120,
-      render: (_, r) => {
-        if (r.discount_type === "percent") {
-          const val = Number(r.discount_value);
-          return `${val % 1 === 0 ? val : val.toFixed(0)}%`;
-        }
-        return `${Number(r.discount_value || 0).toLocaleString("vi-VN")}đ`;
-      },
+      width: 84,
+      align: "center",
+      render: (_, r) => renderDiscountBadge(r.discount_type, r.discount_value),
     },
     {
       title: "Đã dùng",
       key: "used",
-      width: 120,
-      render: (_, r) =>
-        `${Number(r.used_count || 0)}/${Number(r.usage_limit || 0)} vé`,
+      width: 84,
+      align: "center",
+      render: (_, r) => renderUsedProgress(r.used_count, r.usage_limit),
     },
     {
       title: "Trạng thái",
       key: "status",
-      width: 140,
-      render: (_: VoucherStatus, r) => {
-        const s = (r.computed_status || r.status) as VoucherStatus;
-        const statusLabelVi = s === "active" ? "Đang hoạt động" : s === "inactive" ? "Tạm tắt" : "Hết hạn";
-        return <Tag color={statusColor[s]}>{statusLabelVi}</Tag>;
-      },
+      width: 104,
+      align: "center",
+      render: (_: VoucherStatus, r) =>
+        renderStatusPill((r.computed_status || r.status) as VoucherStatus),
     },
     {
       title: "Hiệu lực",
       key: "time",
-      width: 220,
+      width: 104,
+      align: "center",
       render: (_, r) => (
-        <div className="text-xs text-gray-600">
+        <div className="text-xs text-gray-600 leading-5 whitespace-nowrap">
           <div>{formatDateVi(r.start_date)}</div>
           <div>{formatDateVi(r.end_date)}</div>
         </div>
       ),
-    },
-    {
-      title: "Hành động",
-      key: "actions",
-      width: 220,
-      render: (_, r) => {
-        const effective = (r.computed_status || r.status) as VoucherStatus;
-        const isActive = effective === "active";
-
-        return (
-          <Space>
-            <Popconfirm
-              title={isActive ? "Tạm tắt voucher này?" : "Bật voucher này?"}
-              okText={isActive ? "Tạm tắt" : "Bật"}
-              cancelText="Hủy"
-              onConfirm={() => reviewOwnerVoucher(r.voucher_id, isActive ? "deactivate" : "activate")}
-            >
-              <Button size="small">
-                {isActive ? "Tạm tắt" : "Bật"}
-              </Button>
-            </Popconfirm>
-
-            <Button size="small" onClick={() => openOwnerEdit(r)}>
-              Sửa
-            </Button>
-
-            <Popconfirm
-              title="Xóa voucher này?"
-              description="Xóa sẽ ẩn khỏi danh sách (xóa mềm)."
-              okText="Xóa"
-              cancelText="Hủy"
-              onConfirm={() => handleDeleteOwnerVoucher(r.voucher_id)}
-            >
-              <Button size="small" danger>
-                Xóa
-              </Button>
-            </Popconfirm>
-          </Space>
-        );
-      },
     },
   ];
 
@@ -886,6 +902,7 @@ const AdminVouchers = () => {
         extra={
           <Space>
             <Segmented
+              className="!rounded-lg !bg-rose-50 !p-1 [&_.ant-segmented-item]:!rounded-md [&_.ant-segmented-item]:!px-2 [&_.ant-segmented-item-label]:!font-semibold [&_.ant-segmented-item-label]:!text-slate-600 [&_.ant-segmented-item-selected]:!bg-white [&_.ant-segmented-item-selected]:!shadow-sm [&_.ant-segmented-item-selected_.ant-segmented-item-label]:!text-rose-600 [&_.ant-segmented-thumb]:!rounded-md"
               value={tab}
               onChange={(v) => setTab(v as TabKey)}
               options={[
@@ -901,36 +918,44 @@ const AdminVouchers = () => {
           </Space>
         }
       >
-        {tab === "system" && sysStats && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-6">
-            <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-4">
-              <div className="text-xs text-slate-500 font-medium">Tổng voucher hệ thống</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">{Number(sysStats.total || 0)}</div>
+        {tab === "system" && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+            <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-rose-100 font-semibold uppercase tracking-wider">Tổng voucher hệ thống</div>
+              <div className="mt-2 text-3xl font-extrabold">{Number(sysStats?.total || sysPagination.total || 0)}</div>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50 p-4">
-              <div className="text-xs text-emerald-600 font-medium">Đang hoạt động</div>
-              <div className="mt-1 text-2xl font-bold text-emerald-700">{Number(sysStats.active_count || 0)}</div>
+            <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-cyan-100 font-semibold uppercase tracking-wider">Đang hoạt động</div>
+              <div className="mt-2 text-3xl font-extrabold">
+                {Number(sysStats?.active_count || sysData.filter((v) => (v.computed_status || v.status) === "active").length || 0)}
+              </div>
             </div>
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-4">
-              <div className="text-xs text-blue-600 font-medium">Tổng lượt dùng</div>
-              <div className="mt-1 text-2xl font-bold text-blue-700">{Number(sysStats.total_uses || 0)}</div>
+            <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-amber-100 font-semibold uppercase tracking-wider">Tổng lượt dùng</div>
+              <div className="mt-2 text-3xl font-extrabold">
+                {Number(sysStats?.total_uses || sysData.reduce((acc, v) => acc + (v.used_count || 0), 0) || 0)} lượt
+              </div>
             </div>
           </div>
         )}
 
-        {tab === "owner" && ownStats && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-6">
-            <div className="rounded-2xl border border-slate-100 bg-gradient-to-br from-white to-slate-50 p-4">
-              <div className="text-xs text-slate-500 font-medium">Tổng voucher owner</div>
-              <div className="mt-1 text-2xl font-bold text-slate-900">{Number(ownStats.total || 0)}</div>
+        {tab === "owner" && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+            <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-rose-100 font-semibold uppercase tracking-wider">Tổng voucher owner</div>
+              <div className="mt-2 text-3xl font-extrabold">{Number(ownStats?.total || ownPagination.total || 0)}</div>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50 p-4">
-              <div className="text-xs text-emerald-600 font-medium">Đang hoạt động</div>
-              <div className="mt-1 text-2xl font-bold text-emerald-700">{Number(ownStats.active_count || 0)}</div>
+            <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-cyan-100 font-semibold uppercase tracking-wider">Đang hoạt động</div>
+              <div className="mt-2 text-3xl font-extrabold">
+                {Number(ownStats?.active_count || ownData.filter((v) => (v.computed_status || v.status) === "active").length || 0)}
+              </div>
             </div>
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-4">
-              <div className="text-xs text-blue-600 font-medium">Tổng lượt dùng</div>
-              <div className="mt-1 text-2xl font-bold text-blue-700">{Number(ownStats.total_uses || 0)}</div>
+            <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 p-5 shadow-md border-0 text-white transition-all duration-300 hover:scale-[1.02]">
+              <div className="text-xs text-amber-100 font-semibold uppercase tracking-wider">Tổng lượt dùng</div>
+              <div className="mt-2 text-3xl font-extrabold">
+                {Number(ownStats?.total_uses || ownData.reduce((acc, v) => acc + (v.used_count || 0), 0) || 0)} lượt
+              </div>
             </div>
           </div>
         )}
@@ -970,6 +995,9 @@ const AdminVouchers = () => {
             </div>
 
             <Table
+              size="middle"
+              tableLayout="fixed"
+              className="[&_.ant-table-cell]:!px-1.5 [&_.ant-table-cell]:!py-3"
               loading={sysLoading}
               rowKey="voucher_id"
               dataSource={sysData}
@@ -1013,6 +1041,9 @@ const AdminVouchers = () => {
             </div>
 
             <Table
+              size="middle"
+              tableLayout="fixed"
+              className="[&_.ant-table-cell]:!px-1.5 [&_.ant-table-cell]:!py-3"
               loading={ownLoading}
               rowKey="voucher_id"
               dataSource={ownData}
@@ -1427,8 +1458,8 @@ const AdminVouchers = () => {
                   >
                     {({ getFieldValue }) =>
                       getFieldValue("target_group") === "loyal" ? (
-                        <Form.Item 
-                          name="loyalty_min_spend" 
+                        <Form.Item
+                          name="loyalty_min_spend"
                           label="Chi tiêu tối thiểu (VNĐ)"
                           rules={[{ transform: (v) => v === '' || v === null ? undefined : Number(v), type: 'number', min: 0, message: 'Phải >= 0' }]}
                         >

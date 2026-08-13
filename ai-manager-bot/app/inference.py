@@ -19,7 +19,24 @@ def process_payload(payload: dict) -> dict:
         
     if classification.intent == "export_revenue_report":
         ent = classification.entities
-        if ent.get("time_range") == "all" or not ent.get("start_date"):
+        months = ent.get("months") if isinstance(ent.get("months"), list) else []
+        if months and not ent.get("start_date"):
+            import calendar
+            import datetime
+            year = datetime.date.today().year
+            clean_months = sorted({
+                int(month)
+                for month in months
+                if str(month).isdigit() and 1 <= int(month) <= 12
+            })
+            if clean_months:
+                first_month = clean_months[0]
+                last_month = clean_months[-1]
+                last_day = calendar.monthrange(year, last_month)[1]
+                ent["months"] = clean_months
+                ent["start_date"] = f"{year}-{first_month:02d}-01"
+                ent["end_date"] = f"{year}-{last_month:02d}-{last_day:02d}"
+        if ent.get("time_range") == "all" or (not ent.get("start_date") and not ent.get("months")):
             import datetime
             ent["start_date"] = "2020-01-01"
             ent["end_date"] = datetime.date.today().isoformat()
@@ -63,8 +80,8 @@ def process_payload(payload: dict) -> dict:
         warnings=action_plan.warnings,
         llm={
             "enabled": True,
-            "provider": "gemini",
-            "model": "gemini-2.5-flash",
+            "provider": llm_analysis.provider if llm_analysis else None,
+            "model": llm_analysis.model if llm_analysis else None,
             "used": True,
             "error": llm_analysis.error if llm_analysis else None,
         },

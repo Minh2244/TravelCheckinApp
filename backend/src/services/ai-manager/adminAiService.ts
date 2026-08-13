@@ -1,5 +1,31 @@
 import pool from "../../config/database";
 import { periodFilter } from "./ownerAiService";
+import { formatMonthlyRevenueComment } from "./revenueInsight";
+
+function previousPeriodCondition(timeRange: string, dateColumn: string): { condition: string; label: string } | null {
+  switch (timeRange) {
+    case "today":
+      return { condition: `DATE(${dateColumn}) = CURRENT_DATE() - INTERVAL 1 DAY`, label: "hôm qua" };
+    case "this_week":
+      return { condition: `YEARWEEK(${dateColumn}, 1) = YEARWEEK(CURRENT_DATE() - INTERVAL 1 WEEK, 1)`, label: "tuần trước" };
+    case "this_month":
+      return { condition: `MONTH(${dateColumn}) = MONTH(CURRENT_DATE() - INTERVAL 1 MONTH) AND YEAR(${dateColumn}) = YEAR(CURRENT_DATE() - INTERVAL 1 MONTH)`, label: "tháng trước" };
+    case "this_year":
+      return { condition: `YEAR(${dateColumn}) = YEAR(CURRENT_DATE()) - 1`, label: "năm trước" };
+    default:
+      return null;
+  }
+}
+
+function revenueDeltaText(current: number, previous: number | null): string {
+  if (previous === null) return "Chưa có kỳ so sánh phù hợp.";
+  if (previous <= 0 && current <= 0) return "Chưa có doanh thu ở cả hai kỳ.";
+  if (previous <= 0) return "Kỳ trước chưa có doanh thu nên chưa tính được phần trăm tăng trưởng.";
+  const diff = current - previous;
+  const percent = (diff / previous) * 100;
+  const direction = diff >= 0 ? "tăng" : "giảm";
+  return `${direction} ${Math.abs(percent).toFixed(1)}% so với kỳ trước (${Math.abs(diff).toLocaleString("vi-VN")} đ).`;
+}
 
 export async function adminGetUserGrowth(time_range: string, months: number[], start_date?: string, end_date?: string): Promise<string> {
   try {
@@ -178,6 +204,10 @@ export async function adminGetRevenueStats(time_range: string, months: number[],
         msg += `- ${vnMonths[row.m] || `Tháng ${row.m}`}: ${t.toLocaleString('vi-VN')} đ\n`;
       }
       msg += `\n=> 💰 **Tổng cộng ${months.map(m => vnMonths[m]).join(" + ")}: ${grandTotal.toLocaleString('vi-VN')} đ**`;
+      msg += `\n\n${formatMonthlyRevenueComment(
+        months,
+        rows.map((row) => ({ month: Number(row.m), total: Number(row.total || 0) }))
+      )}`;
     } else if (start_date && end_date) {
       const [rows] = await pool.query<any[]>(
         `SELECT COALESCE(SUM(amount), 0) as total 
@@ -234,6 +264,237 @@ export async function adminGetRevenueStats(time_range: string, months: number[],
     return msg;
   } catch (e: any) {
     return "Đã xảy ra lỗi khi tính toán dữ liệu: " + e.message;
+  }
+}
+
+export async function adminGetCancellationStats(time_range: string, months: number[] = [], start_date?: string, end_date?: string): Promise<string> {
+  try {
+    const period = periodFilter("created_at", time_range, months, start_date, end_date);
+    const [posRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total_orders,
+              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders
+       FROM pos_orders
+       WHERE ${period.condition}`,
+      period.params
+    );
+    const [bookingRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total_orders,
+              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders
+       FROM hotel_stays
+       WHERE ${period.condition}`,
+      period.params
+    );
+
+    const posTotal = Number(posRows[0]?.total_orders || 0);
+    const posCancelled = Number(posRows[0]?.cancelled_orders || 0);
+    const bookingTotal = Number(bookingRows[0]?.total_orders || 0);
+    const bookingCancelled = Number(bookingRows[0]?.cancelled_orders || 0);
+    const totalOrders = posTotal + bookingTotal;
+    const totalCancelled = posCancelled + bookingCancelled;
+    const rate = totalOrders > 0 ? ((totalCancelled / totalOrders) * 100).toFixed(1) : "0.0";
+
+    let msg = `📉 **Tỷ lệ hủy đơn toàn hệ thống ${period.label}**\n\n`;
+    if (totalOrders === 0) return msg + "Chưa có đơn nào trong khoảng thời gian này.";
+    msg += `- **Tổng đơn:** ${totalOrders} đơn\n`;
+    msg += `- **Đơn hủy:** ${totalCancelled} đơn\n`;
+    msg += `- **Tỷ lệ hủy:** ${rate}%\n\n`;
+    msg += `Chi tiết:\n`;
+    msg += `- POS/tại quầy: ${posCancelled}/${posTotal} đơn hủy\n`;
+    msg += `- Booking/lưu trú: ${bookingCancelled}/${bookingTotal} đơn hủy`;
+    return msg;
+  } catch (e: any) {
+    return "Đã xảy ra lỗi khi tính tỷ lệ hủy đơn: " + e.message;
+  }
+}
+
+export async function adminGetTopServices(time_range: string, months: number[] = [], start_date?: string, end_date?: string, limit: number = 5): Promise<string> {
+  try {
+    const period = periodFilter("oi.created_at", time_range, months, start_date, end_date);
+    const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 20);
+    const [rows] = await pool.query<any[]>(
+      `SELECT s.service_name,
+              l.location_name,
+              u.full_name as owner_name,
+              SUM(oi.quantity) as total_sold,
+              COALESCE(SUM(oi.line_total), 0) as total_revenue
+       FROM pos_order_items oi
+       JOIN pos_orders o ON oi.order_id = o.order_id
+       JOIN services s ON oi.service_id = s.service_id
+       JOIN locations l ON o.location_id = l.location_id
+       LEFT JOIN users u ON l.owner_id = u.user_id
+       WHERE o.status IN ('paid', 'completed')
+         AND ${period.condition}
+       GROUP BY s.service_id, s.service_name, l.location_name, u.full_name
+       ORDER BY total_sold DESC, total_revenue DESC
+       LIMIT ?`,
+      [...period.params, safeLimit]
+    );
+
+    let msg = `🏆 **Top ${safeLimit} dịch vụ được dùng nhiều nhất toàn hệ thống ${period.label}**\n\n`;
+    if (rows.length === 0) return msg + "Chưa có dịch vụ nào được bán ra trong khoảng thời gian này.";
+    rows.forEach((row, index) => {
+      msg += `${index + 1}. **${row.service_name}** - ${Number(row.total_sold || 0)} lượt\n`;
+      msg += `   - Doanh thu: ${Number(row.total_revenue || 0).toLocaleString('vi-VN')} đ\n`;
+      msg += `   - Địa điểm: ${row.location_name || "N/A"}${row.owner_name ? ` | Owner: ${row.owner_name}` : ""}\n`;
+    });
+    return msg;
+  } catch (e: any) {
+    return "Đã xảy ra lỗi khi thống kê top dịch vụ: " + e.message;
+  }
+}
+
+export async function adminGetTopCustomers(time_range: string, months: number[] = [], start_date?: string, end_date?: string, limit: number = 5): Promise<string> {
+  try {
+    const period = periodFilter("p.payment_time", time_range, months, start_date, end_date);
+    const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 20);
+    const [rows] = await pool.query<any[]>(
+      `SELECT u.user_id,
+              u.full_name,
+              u.email,
+              COUNT(p.payment_id) as total_payments,
+              COALESCE(SUM(p.amount), 0) as total_spent
+       FROM payments p
+       JOIN users u ON p.user_id = u.user_id
+       WHERE p.status = 'completed'
+         AND p.user_id IS NOT NULL
+         AND ${period.condition}
+       GROUP BY u.user_id, u.full_name, u.email
+       ORDER BY total_spent DESC
+       LIMIT ?`,
+      [...period.params, safeLimit]
+    );
+
+    let msg = `🏅 **Top ${safeLimit} khách hàng chi tiêu cao nhất toàn hệ thống ${period.label}**\n\n`;
+    if (rows.length === 0) return msg + "Chưa có dữ liệu chi tiêu của khách hàng trong khoảng thời gian này.";
+    rows.forEach((row, index) => {
+      const name = row.full_name || "Khách hàng";
+      const email = row.email ? ` (${row.email})` : "";
+      msg += `${index + 1}. **${name}**${email}\n`;
+      msg += `   - Chi tiêu: ${Number(row.total_spent || 0).toLocaleString('vi-VN')} đ\n`;
+      msg += `   - Số giao dịch: ${Number(row.total_payments || 0)}\n`;
+    });
+    return msg;
+  } catch (e: any) {
+    return "Đã xảy ra lỗi khi thống kê top khách hàng: " + e.message;
+  }
+}
+
+export async function adminGetBusinessRecommendations(time_range: string, months: number[] = [], start_date?: string, end_date?: string): Promise<string> {
+  try {
+    const revenuePeriod = periodFilter("p.payment_time", time_range, months, start_date, end_date);
+    const orderPeriod = periodFilter("created_at", time_range, months, start_date, end_date);
+
+    const [revenueRows] = await pool.query<any[]>(
+      `SELECT COALESCE(SUM(p.amount), 0) as total
+       FROM payments p
+       WHERE p.status = 'completed'
+         AND ${revenuePeriod.condition}`,
+      revenuePeriod.params
+    );
+    const currentRevenue = Number(revenueRows[0]?.total || 0);
+
+    let previousRevenue: number | null = null;
+    const previous = !months.length && !start_date && !end_date ? previousPeriodCondition(time_range, "p.payment_time") : null;
+    if (previous) {
+      const [prevRows] = await pool.query<any[]>(
+        `SELECT COALESCE(SUM(p.amount), 0) as total
+         FROM payments p
+         WHERE p.status = 'completed'
+           AND ${previous.condition}`
+      );
+      previousRevenue = Number(prevRows[0]?.total || 0);
+    }
+
+    const [posRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total_orders,
+              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders
+       FROM pos_orders
+       WHERE ${orderPeriod.condition}`,
+      orderPeriod.params
+    );
+    const [bookingRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total_orders,
+              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders
+       FROM hotel_stays
+       WHERE ${orderPeriod.condition}`,
+      orderPeriod.params
+    );
+    const totalOrders = Number(posRows[0]?.total_orders || 0) + Number(bookingRows[0]?.total_orders || 0);
+    const cancelledOrders = Number(posRows[0]?.cancelled_orders || 0) + Number(bookingRows[0]?.cancelled_orders || 0);
+    const cancelRate = totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+
+    const [weakRows] = await pool.query<any[]>(
+      `SELECT l.location_id,
+              l.location_name,
+              u.full_name as owner_name,
+              COALESCE(SUM(CASE WHEN p.status = 'completed' AND ${revenuePeriod.condition} THEN p.amount ELSE 0 END), 0) as total_revenue
+       FROM locations l
+       LEFT JOIN users u ON l.owner_id = u.user_id
+       LEFT JOIN payments p ON p.location_id = l.location_id
+       GROUP BY l.location_id, l.location_name, u.full_name
+       ORDER BY total_revenue ASC
+       LIMIT 1`,
+      revenuePeriod.params
+    );
+
+    const servicePeriod = periodFilter("oi.created_at", time_range, months, start_date, end_date);
+    const [serviceRows] = await pool.query<any[]>(
+      `SELECT s.service_name,
+              l.location_name,
+              SUM(oi.quantity) as total_sold,
+              COALESCE(SUM(oi.line_total), 0) as total_revenue
+       FROM pos_order_items oi
+       JOIN pos_orders o ON oi.order_id = o.order_id
+       JOIN services s ON oi.service_id = s.service_id
+       JOIN locations l ON o.location_id = l.location_id
+       WHERE o.status IN ('paid', 'completed')
+         AND ${servicePeriod.condition}
+       GROUP BY s.service_id, s.service_name, l.location_name
+       ORDER BY total_sold DESC, total_revenue DESC
+       LIMIT 1`,
+      servicePeriod.params
+    );
+
+    const weakLocation = weakRows[0];
+    const topService = serviceRows[0];
+    const previousLabel = previous ? previous.label : "kỳ trước";
+    const revenueText = revenueDeltaText(currentRevenue, previousRevenue);
+    const recommendations: string[] = [];
+
+    if (previousRevenue !== null && previousRevenue > 0 && currentRevenue < previousRevenue * 0.9) {
+      recommendations.push(`Doanh thu toàn hệ thống đang giảm so với ${previousLabel}. Có thể chuẩn bị voucher hệ thống ngắn hạn để kích cầu.`);
+    }
+    if (cancelRate >= 15) {
+      recommendations.push(`Tỷ lệ hủy ${cancelRate.toFixed(1)}% khá cao. Nên rà soát nhóm địa điểm có hủy nhiều và kiểm tra quy trình xác nhận đơn.`);
+    }
+    if (weakLocation) {
+      const name = weakLocation.location_name || "địa điểm doanh thu thấp";
+      const ownerName = weakLocation.owner_name ? ` của owner ${weakLocation.owner_name}` : "";
+      recommendations.push(`Địa điểm cần chú ý: **${name}**${ownerName}. Có thể gợi ý owner tạo voucher riêng hoặc admin tạo voucher hỗ trợ theo địa điểm.`);
+    }
+    if (topService) {
+      recommendations.push(`Dịch vụ nổi bật: **${topService.service_name}** tại ${topService.location_name || "một địa điểm"} (${Number(topService.total_sold || 0)} lượt). Có thể đẩy chiến dịch theo dịch vụ đang có nhu cầu tốt.`);
+    }
+    if (recommendations.length === 0) {
+      recommendations.push("Chưa có tín hiệu bất thường lớn. Nên tiếp tục theo dõi doanh thu, tỷ lệ hủy và top dịch vụ trước khi mở chiến dịch mới.");
+    }
+
+    let msg = `🧠 **Khuyến nghị AI toàn hệ thống ${revenuePeriod.label}**\n\n`;
+    msg += `**Chỉ số chính**\n`;
+    msg += `- Doanh thu: ${currentRevenue.toLocaleString("vi-VN")} đ\n`;
+    if (previousRevenue !== null) msg += `- Doanh thu ${previousLabel}: ${previousRevenue.toLocaleString("vi-VN")} đ\n`;
+    msg += `- Xu hướng doanh thu: ${revenueText}\n`;
+    msg += `- Tổng đơn: ${totalOrders} đơn\n`;
+    msg += `- Đơn hủy: ${cancelledOrders} đơn\n`;
+    msg += `- Tỷ lệ hủy: ${cancelRate.toFixed(1)}%\n\n`;
+    msg += `**Đề xuất**\n`;
+    recommendations.forEach((item, index) => {
+      msg += `${index + 1}. ${item}\n`;
+    });
+    msg += `\nAI chỉ đề xuất. Voucher hệ thống hoặc thao tác ghi dữ liệu vẫn cần admin xác nhận bản nháp.`;
+    return msg;
+  } catch (e: any) {
+    return "Đã xảy ra lỗi khi tạo khuyến nghị AI: " + e.message;
   }
 }
 

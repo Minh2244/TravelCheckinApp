@@ -6,6 +6,7 @@ from google import genai
 from google.genai import types
 from .settings import get_settings
 from .action_registry import REGISTRY
+from .text_normalizer import normalize_text
 import urllib.request
 import urllib.error
 from .nlp_fallback import rule_based_fallback_intent
@@ -289,6 +290,35 @@ def _parse_months_from_text(text: str) -> list:
                 months.append(month_num)
     return months
 
+def _parse_months_smart(text: str) -> list[int]:
+    text_ascii = _strip_accents(str(text or "").lower())
+    months: list[int] = []
+    for n in re.findall(r'\b(?:thang|t)\s*(\d{1,2})\b', text_ascii):
+        month_num = int(n)
+        if 1 <= month_num <= 12 and month_num not in months:
+            months.append(month_num)
+    compact_match = re.search(r'\bthang\s+((?:\d{1,2}\s*){2,})\b', text_ascii)
+    if compact_match:
+        for n in re.findall(r'\d{1,2}', compact_match.group(1)):
+            month_num = int(n)
+            if 1 <= month_num <= 12 and month_num not in months:
+                months.append(month_num)
+    if not months and any(term in text_ascii for term in ("doanh thu", "dt", "so sanh", "nhan xet", "ti le", "ty le")):
+        compact_numbers = re.findall(r'(?<!\d)(\d{1,2})(?!\d)', text_ascii)
+        if 2 <= len(compact_numbers) <= 6:
+            parsed = [int(n) for n in compact_numbers if 1 <= int(n) <= 12]
+            if len(parsed) == len(compact_numbers):
+                months.extend(n for n in parsed if n not in months)
+    if months:
+        first_pos = text_ascii.find(str(months[0]))
+        tail = text_ascii[first_pos:] if first_pos >= 0 else text_ascii
+        for n in re.findall(r'(?:va|,|&|den|\s)\s*(?:thang|t)?\s*(\d{1,2})\b', tail):
+            month_num = int(n)
+            if 1 <= month_num <= 12 and month_num not in months:
+                months.append(month_num)
+    months.sort()
+    return months
+
 
 def _time_range_label(time_range: str) -> str:
     return {
@@ -342,6 +372,271 @@ def _intent_result(intent: str, parameters: dict, answer: str, confidence: float
     }
 
 
+def _format_date_text(value: str) -> str:
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", str(value or ""))
+    return f"{m.group(3)}/{m.group(2)}/{m.group(1)}" if m else str(value or "")
+
+
+def _capability_answer(role: str, route: str) -> str:
+    if role == "admin":
+        return (
+            "Mình là trợ lý AI Admin. Mình có thể đọc tổng quan hệ thống, doanh thu, "
+            "người dùng, owner, địa điểm, SOS, voucher và hỗ trợ tạo voucher hệ thống khi sếp xác nhận. "
+            "Những việc nhạy cảm như chuyển tiền, xóa dữ liệu hoặc thao tác ngoài màn hiện tại thì mình sẽ không tự làm."
+        )
+    return (
+        "Mình là trợ lý AI Owner. Mình có thể đọc doanh thu, đơn đặt chỗ, hoa hồng, "
+        "cơ cấu doanh thu, dịch vụ bán chạy, đánh giá, nhân viên và hỗ trợ tạo voucher khi sếp xác nhận. "
+        "Mình không tự chuyển tiền, không tạo/sửa địa điểm hoặc xử lý vận hành nhạy cảm ngoài phạm vi được phép."
+    )
+
+
+def _natural_chat_answer(request_data: dict) -> dict | None:
+    raw_text = str(request_data.get("text") or "").strip()
+    text = _strip_accents(raw_text.lower())
+    role = str(request_data.get("role") or "")
+    route = str(request_data.get("route") or "")
+    if not text:
+        return None
+
+    capability_terms = (
+        "ban co the lam gi",
+        "ban lam duoc gi",
+        "lam duoc gi",
+        "giup duoc gi",
+        "chuc nang",
+        "huong dan",
+        "help",
+    )
+    if any(term in text for term in capability_terms):
+        return _intent_result("general_chat", {}, _capability_answer(role, route), 0.98)
+
+    action_terms = (
+        "doanh thu",
+        "bao cao",
+        "thong ke",
+        "voucher",
+        "vocher",
+        "khuyen mai",
+        "xuat file",
+        "download",
+        "booking",
+        "don",
+        "hoa hong",
+        "review",
+        "danh gia",
+        "nhan vien",
+        "user",
+        "owner",
+        "dia diem",
+        "sos",
+        "goi y",
+        "khuyen nghi",
+        "de xuat",
+        "tu van",
+        "nen lam gi",
+        "kich cau",
+        "khoa",
+        "mo khoa",
+    )
+    if any(term in text for term in action_terms):
+        return None
+
+    thanks_terms = ("cam on", "thanks", "thank", "ok", "oke", "duoc roi", "roai", "roi nha")
+    if any(term == text or term in text for term in thanks_terms):
+        return _intent_result(
+            "general_chat",
+            {},
+            "Dạ được sếp. Khi nào cần xem số liệu, tạo voucher hoặc hỏi nhanh màn hiện tại thì cứ nhắn mình.",
+            0.96,
+        )
+
+    greeting_terms = ("chao", "hello", "hi ", "hi", "alo", "hey")
+    if any(text == term or text.startswith(term + " ") for term in greeting_terms):
+        label = "Admin" if role == "admin" else "Owner"
+        return _intent_result(
+            "general_chat",
+            {},
+            f"Chào sếp. Mình là trợ lý AI {label}, sẵn sàng đọc dữ liệu và hỗ trợ thao tác an toàn trên màn này.",
+            0.96,
+        )
+
+    mood_terms = ("met", "cang", "roi qua", "e qua", "vui qua", "on khong", "sao roi")
+    if any(term in text for term in mood_terms):
+        if role == "admin":
+            answer = (
+                "Mình ở đây nè sếp. Nếu sếp muốn kiểm tra nhanh tình hình hệ thống, "
+                "mình có thể xem doanh thu, SOS, user mới hoặc voucher đang chạy."
+            )
+        else:
+            answer = (
+                "Mình ở đây nè sếp. Nếu hôm nay vận hành hơi căng, mình có thể xem nhanh doanh thu, "
+                "đơn đặt chỗ, đánh giá hoặc gợi ý một voucher kéo khách."
+            )
+        return _intent_result("general_chat", {}, answer, 0.88)
+
+    if len(text.split()) <= 5:
+        return _intent_result(
+            "general_chat",
+            {},
+            "Mình nghe sếp. Sếp muốn mình xem số liệu, tạo voucher, hay hỗ trợ màn hiện tại ạ?",
+            0.72,
+        )
+
+    return None
+
+
+def _attach_llm_meta(result: dict, provider: str, model: str | None = None, error: str | None = None) -> dict:
+    result["_llm_provider"] = provider
+    if model:
+        result["_llm_model"] = model
+    if error:
+        result["_llm_error"] = error
+    return result
+
+
+def _action_is_available(request_data: dict, action_key: str) -> bool:
+    available = request_data.get("available_actions") or []
+    return not available or action_key in available
+
+
+def _analytics_params_from_text(raw_text: str, default_time_range: str = "this_month") -> dict:
+    params: dict = {}
+    time_range = _parse_time_range_from_text(raw_text)
+    months = _parse_months_smart(raw_text)
+    if months:
+        params["months"] = months
+    elif time_range:
+        params["time_range"] = time_range
+    else:
+        parsed_dates = _parse_date_from_text(raw_text)
+        if parsed_dates:
+            params.update(parsed_dates)
+        else:
+            params["time_range"] = default_time_range
+
+    text_norm = normalize_text(raw_text)
+    limit_match = re.search(r'\btop\s*(\d{1,2})\b', text_norm)
+    if limit_match:
+        params["limit"] = max(1, min(int(limit_match.group(1)), 20))
+    return params
+
+
+def _analytics_intent_fallback(request_data: dict) -> dict | None:
+    role = request_data.get("role", "")
+    route = str(request_data.get("route") or "")
+    raw_text = str(request_data.get("text") or "")
+    text_norm = normalize_text(raw_text)
+    text_ascii = _strip_accents(raw_text.lower())
+    params = _analytics_params_from_text(raw_text)
+
+    export_terms = ("xuat file", "tai file", "tai ve", "download", "export", "xuat excel")
+    revenue_report_terms = ("doanh thu", "doanh so", "bao cao", "revenue", "dt")
+    if any(term in text_norm for term in export_terms) and any(term in text_norm for term in revenue_report_terms):
+        if _action_is_available(request_data, "export_revenue_report"):
+            return _intent_result(
+                "export_revenue_report",
+                params,
+                "Mình sẽ xuất file báo cáo doanh thu theo khoảng thời gian sếp vừa nêu.",
+                0.99,
+            )
+
+    has_recommendation = any(term in text_norm for term in (
+        "khuyen nghi",
+        "goi y",
+        "de xuat",
+        "nen lam gi",
+        "nen tao voucher",
+        "tu van",
+        "phan tich roi",
+        "dua ra y kien",
+        "y kien",
+        "chien dich",
+        "kich cau",
+    ))
+    if has_recommendation and (
+        any(term in text_norm for term in ("doanh thu", "ty le huy", "don huy", "voucher", "dia diem", "dich vu", "van hanh", "kinh doanh"))
+        or "dashboard" in route
+    ):
+        action = "admin_get_business_recommendations" if role == "admin" else "owner_get_business_recommendations"
+        if _action_is_available(request_data, action):
+            return _intent_result(
+                action,
+                params,
+                "Mình sẽ phân tích doanh thu, tỷ lệ hủy và hiệu suất để đưa ra khuyến nghị an toàn.",
+                0.98,
+            )
+
+    has_order = any(term in text_norm for term in ("don", "booking", "dat cho", "dat phong", "dat ban"))
+    has_cancel = any(term in text_norm for term in ("huy", "cancel", "cancelled", "ty le huy", "so don huy"))
+    if has_cancel and (has_order or "ty le huy" in text_norm or "so don huy" in text_norm):
+        action = "admin_get_cancellation_stats" if role == "admin" else "owner_get_cancellation_stats"
+        if _action_is_available(request_data, action):
+            return _intent_result(
+                action,
+                params,
+                "Mình sẽ tính số đơn hủy và tỷ lệ hủy theo dữ liệu thật trong hệ thống.",
+                0.97,
+            )
+
+    has_top = any(term in text_norm for term in ("top", "nhieu nhat", "cao nhat", "ban chay", "chay nhat", "su dung nhieu", "dung nhieu"))
+    has_service = any(term in text_norm for term in ("dich vu", "mon", "san pham", "ve", "phong"))
+    if has_service and has_top:
+        action = "admin_get_top_services" if role == "admin" else "owner_get_top_services"
+        if _action_is_available(request_data, action):
+            return _intent_result(
+                action,
+                params,
+                "Mình sẽ xếp hạng dịch vụ được dùng nhiều nhất theo dữ liệu bán hàng.",
+                0.96,
+            )
+
+    has_customer = any(term in text_norm for term in ("khach", "khach hang", "nguoi dung", "user"))
+    has_spending = any(term in text_norm for term in ("chi tieu", "tieu nhieu", "mua nhieu", "tra nhieu", "xai tien", "tieu tien"))
+    if has_customer and (has_spending or has_top):
+        action = "admin_get_top_customers" if role == "admin" else "owner_get_top_customers"
+        if _action_is_available(request_data, action):
+            return _intent_result(
+                action,
+                params,
+                "Mình sẽ lấy top khách hàng chi tiêu cao nhất từ giao dịch đã hoàn tất.",
+                0.96,
+            )
+
+    has_location = any(term in text_norm for term in ("dia diem", "chi nhanh", "co so", "location", "cua hang"))
+    if has_location and has_top:
+        action = "admin_get_top_locations" if role == "admin" else "owner_get_top_locations"
+        if _action_is_available(request_data, action):
+            return _intent_result(
+                action,
+                params,
+                "Mình sẽ xếp hạng địa điểm theo doanh thu và số đơn.",
+                0.95,
+            )
+
+    if "so sanh" in text_norm and any(term in text_norm for term in ("doanh thu", "doanh so", "revenue")):
+        if _action_is_available(request_data, "get_dashboard_stats"):
+            if not params.get("months") and not params.get("start_date"):
+                params["time_range"] = params.get("time_range") or "this_month"
+            return _intent_result(
+                "get_dashboard_stats",
+                params,
+                "Mình sẽ so sánh doanh thu theo khoảng thời gian sếp vừa nêu.",
+                0.94,
+            )
+
+    if "doanh thu" in text_norm and any(term in text_ascii for term in ("thang", "hom nay", "tuan nay", "nam nay")):
+        if _action_is_available(request_data, "get_dashboard_stats"):
+            return _intent_result(
+                "get_dashboard_stats",
+                params,
+                "Mình sẽ lấy doanh thu theo khoảng thời gian sếp vừa nêu.",
+                0.9,
+            )
+
+    return None
+
+
 def _local_owner_intent_fallback(request_data: dict, force_fallback: bool = False) -> dict | None:
     """Handle safety-critical and common owner intents without depending on Gemini."""
     import re
@@ -378,13 +673,16 @@ def _local_owner_intent_fallback(request_data: dict, force_fallback: bool = Fals
             else:
                 fallback_res["answer"] = "📊 Báo cáo Doanh thu:\n• Đang trích xuất biểu đồ...\nSếp xem chi tiết ở bảng bên dưới nhé."
                 
+        if fallback_res["intent"] in ("get_dashboard_stats", "owner_get_order_stats"):
+            fallback_res["answer"] = "📊 Mình sẽ lấy báo cáo từ dữ liệu backend. Nếu thiếu dữ liệu, mình sẽ báo rõ thay vì tự ước lượng."
+
         # Format voucher draft answer if it's voucher creation
         if fallback_res["intent"] in ("owner_voucher_draft", "admin_create_system_voucher"):
             parsed = _parse_voucher_params_from_text(raw_text)
             if parsed:
                 fallback_res["parameters"].update(parsed)
             params = fallback_res["parameters"]
-            lines = ["📋 Bản nháp Voucher (NLP Fallback):"]
+            lines = ["📋 Bản nháp Voucher:"]
             if params.get("apply_to_service_type") and params.get("apply_to_service_type") != "all":
                 service_map = {"room": "Phòng Khách Sạn", "food": "Ăn uống/Nhà hàng", "ticket": "Vé/Tour"}
                 lines.append(f"• Dịch vụ áp dụng: {service_map.get(params['apply_to_service_type'], params['apply_to_service_type'])}")
@@ -394,6 +692,10 @@ def _local_owner_intent_fallback(request_data: dict, force_fallback: bool = Fals
                     lines.append(f"• Giảm tối đa: {_money_text(params['max_discount_amount'])}")
             elif params.get("discount_value"):
                 lines.append(f"• Giảm giá: {_money_text(params['discount_value'])}")
+            if params.get("start_date") and params.get("end_date"):
+                lines.append(f"• Hiệu lực: {_format_date_text(params['start_date'])} → {_format_date_text(params['end_date'])}")
+            elif params.get("end_date"):
+                lines.append(f"• Hết hạn: {_format_date_text(params['end_date'])}")
             if params.get("campaign_name"):
                 lines.append(f"• Tên chiến dịch: {params['campaign_name']}")
             if params.get("target_id"):
@@ -614,13 +916,173 @@ def _local_owner_intent_fallback(request_data: dict, force_fallback: bool = Fals
     return None
 
 
+def _postprocess_llm_intent_result(result: dict, request_data: dict) -> dict:
+    STATS_INTENTS = {
+        'get_dashboard_stats', 'owner_analyze_reviews', 'owner_get_order_stats', 'owner_get_cancellation_stats',
+        'owner_get_revenue_structure', 'owner_get_top_locations', 'owner_get_top_services', 'owner_get_top_customers',
+        'owner_get_business_recommendations', 'owner_manage_employees',
+        'owner_view_employees', 'owner_view_bookings', 'view_commissions', 'export_revenue_report',
+        'admin_get_user_growth', 'admin_get_owners', 'admin_get_top_locations', 'admin_get_cancellation_stats',
+        'admin_get_top_services', 'admin_get_top_customers', 'admin_get_business_recommendations',
+    }
+    if result.get('intent') in STATS_INTENTS:
+        params = result.get('parameters') or {}
+        user_text = request_data.get('text', '')
+
+        if not params.get('time_range'):
+            parsed_time_range = _parse_time_range_from_text(user_text)
+            if parsed_time_range:
+                params['time_range'] = parsed_time_range
+                result['parameters'] = params
+
+        if not params.get('months') and not params.get('start_date'):
+            parsed_dates = _parse_date_from_text(user_text)
+            if parsed_dates:
+                user_text_for_parse = _strip_accents(str(user_text or "").lower())
+                all_months = re.findall(r'thang\s*(\d{1,2})', user_text_for_parse, re.IGNORECASE)
+                months_list = []
+                for m in all_months:
+                    v = int(m)
+                    if 1 <= v <= 12:
+                        months_list.append(v)
+                if months_list:
+                    extra = re.findall(r'(?:va|,|den)\s*(\d{1,2})(?!\s*ngay)(?:\s|$)', user_text_for_parse, re.IGNORECASE)
+                    for m in extra:
+                        v = int(m)
+                        if 1 <= v <= 12 and v not in months_list:
+                            months_list.append(v)
+                if months_list:
+                    months_list.sort()
+                    params['months'] = months_list
+                params.update(parsed_dates)
+                result['parameters'] = params
+                print(f"[Date Fallback] intent={result.get('intent')} parsed: months={params.get('months')} dates={parsed_dates}")
+
+    if result.get('intent') in ('owner_voucher_draft', 'admin_create_system_voucher'):
+        params = result.get('parameters') or {}
+        parsed = _parse_voucher_params_from_text(request_data.get('text', ''))
+        if parsed:
+            for k, v in parsed.items():
+                if not params.get(k):
+                    params[k] = v
+            result['parameters'] = params
+            print(f"[Voucher Fallback] Parsed from text: {parsed}")
+        if not params.get('end_date') and not params.get('expiry_date'):
+            parsed_dates = _parse_date_from_text(request_data.get('text', ''))
+            if parsed_dates:
+                params.update(parsed_dates)
+                result['parameters'] = params
+
+    return result
+
+
+def _openai_intent_fallback(request_data: dict, gemini_error: str | None = None) -> dict | None:
+    settings = get_settings()
+    if not settings.openai_configured:
+        return None
+
+    role = request_data.get("role", "")
+    allowed_actions = [a for a in REGISTRY if role in a.roles]
+
+    import datetime
+    now = datetime.datetime.now()
+    current_date = now.strftime("%Y-%m-%d")
+    current_year = str(now.year)
+    with open("app/prompts/system_prompt.txt", "r", encoding="utf-8") as f:
+        system_instruction = f.read()
+    system_instruction = system_instruction.replace("{YEAR}", current_year)
+    system_instruction += (
+        f"\n\n[HỆ THỐNG] Hôm nay là ngày: {current_date}. Năm hiện tại: {current_year}."
+        "\nBạn đang là fallback sau Gemini. Chỉ trả về JSON object hợp lệ, không markdown."
+        "\nJSON bắt buộc có: intent, confidence, parameters, answer."
+    )
+    if gemini_error:
+        system_instruction += "\nKhông nhắc lỗi Gemini với người dùng; chỉ xử lý yêu cầu bình thường."
+
+    actions_desc = []
+    for action in allowed_actions:
+        desc = f"- {action.name}: {action.description}"
+        if action.parameters_schema:
+            desc += f" (Params: {list(action.parameters_schema['properties'].keys())})"
+        actions_desc.append(desc)
+
+    prompt_context = request_data.copy()
+    prompt_context["available_actions"] = actions_desc
+
+    body = {
+        "model": settings.openai_model,
+        "messages": [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False)},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }
+    req = urllib.request.Request(
+        settings.openai_base_url,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {settings.openai_api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=settings.request_timeout_seconds) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        raw_text = str(data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        result = json.loads(raw_text.strip())
+        result = _postprocess_llm_intent_result(result, request_data)
+        print(f"[OpenAI Fallback] intent={result.get('intent')} parameters={result.get('parameters')}")
+        return _attach_llm_meta(result, "openai", settings.openai_model)
+    except Exception as exc:
+        message = str(exc).replace(settings.openai_api_key, "[REDACTED]")
+        print(f"OpenAI Fallback Error: {message}")
+        return None
+
+
 def call_gemini_intent_service(request_data: dict) -> dict:
+    natural_result = _natural_chat_answer(request_data)
+    if natural_result:
+        print(f"[Natural Chat] intent={natural_result.get('intent')}")
+        return _attach_llm_meta(natural_result, "local")
+
+    analytics_result = _analytics_intent_fallback(request_data)
+    if analytics_result:
+        print(f"[Analytics Intent] intent={analytics_result.get('intent')} parameters={analytics_result.get('parameters')}")
+        return _attach_llm_meta(analytics_result, "local")
+
     local_result = _local_owner_intent_fallback(request_data)
     if local_result:
         print(f"[Local Intent] intent={local_result.get('intent')} parameters={local_result.get('parameters')}")
-        return local_result
+        return _attach_llm_meta(local_result, "local")
 
     settings = get_settings()
+    if not settings.gemini_api_keys:
+        openai_result = _openai_intent_fallback(request_data, "missing_gemini_key")
+        if openai_result:
+            return openai_result
+
+        fb = _local_owner_intent_fallback(request_data, force_fallback=True)
+        if fb and fb.get("intent") != "unknown":
+            print(f"[No Gemini Key Fallback] intent={fb.get('intent')}")
+            return _attach_llm_meta(fb, "local_fallback", error="missing_gemini_key")
+        return _attach_llm_meta(_intent_result(
+            "general_chat",
+            {},
+            (
+                "Mình đang chưa đọc được cấu hình Gemini hoặc GPT cho AI Admin/Owner. "
+                "Sếp vẫn có thể dùng các tác vụ cơ bản, còn phần phân tích tự nhiên sẽ hoạt động đầy đủ khi cấu hình API sẵn sàng."
+            ),
+            0.7,
+        ), "local_fallback", error="missing_llm_key")
     api_key = random.choice(settings.gemini_api_keys) if settings.gemini_api_keys else ""
     client = genai.Client(api_key=api_key, http_options={'timeout': 28000})
     role = request_data.get("role", "")
@@ -808,10 +1270,12 @@ def call_gemini_intent_service(request_data: dict) -> dict:
         
         # Fallback TOÀN CỤC: Với BẤT KỲ intent thống kê nào, nếu Gemini không trích xuất được tháng/ngày, tự parse từ text
         STATS_INTENTS = {
-            'get_dashboard_stats', 'owner_analyze_reviews', 'owner_get_order_stats',
-            'owner_get_revenue_structure', 'owner_get_top_locations', 'owner_get_top_services', 'owner_manage_employees',
+            'get_dashboard_stats', 'owner_analyze_reviews', 'owner_get_order_stats', 'owner_get_cancellation_stats',
+            'owner_get_revenue_structure', 'owner_get_top_locations', 'owner_get_top_services', 'owner_get_top_customers',
+            'owner_get_business_recommendations', 'owner_manage_employees',
             'owner_view_employees', 'owner_view_bookings', 'view_commissions', 'export_revenue_report',
-            'admin_get_user_growth', 'admin_get_owners', 'admin_get_top_locations',
+            'admin_get_user_growth', 'admin_get_owners', 'admin_get_top_locations', 'admin_get_cancellation_stats',
+            'admin_get_top_services', 'admin_get_top_customers', 'admin_get_business_recommendations',
         }
         if result.get('intent') in STATS_INTENTS:
             params = result.get('parameters') or {}
@@ -867,7 +1331,7 @@ def call_gemini_intent_service(request_data: dict) -> dict:
                     params.update(parsed_dates)
                     result['parameters'] = params
 
-        return result
+        return _attach_llm_meta(result, "gemini", "gemini-2.5-flash")
     except Exception as e:
         print(f"Gemini Intent Error: {e}")
         error_msg = str(e)
@@ -876,14 +1340,17 @@ def call_gemini_intent_service(request_data: dict) -> dict:
         if "429" in error_msg or "quota" in error_msg.lower():
             user_msg = "Hệ thống AI đang quá tải (vượt quá hạn mức gọi API miễn phí). Vui lòng thử lại sau vài chục giây nhé."
         elif "403" in error_msg or "denied" in error_msg.lower():
-            safe_key = api_key[:15] + "..." if api_key else "không xác định"
-            user_msg = f"CẢNH BÁO: API Key ({safe_key}) đã bị Google khóa (Lỗi 403). Sếp vui lòng xóa key này khỏi file .env nhé!"
+            user_msg = "Gemini đang từ chối request hiện tại. Mình sẽ thử GPT fallback trước khi báo lỗi cho sếp."
+
+        openai_result = _openai_intent_fallback(request_data, error_msg)
+        if openai_result:
+            return openai_result
             
         # Thử NLP Fallback nếu gọi Gemini thất bại (để cứu vãn các tác vụ thiết yếu như tạo voucher)
         if "403" not in error_msg and "denied" not in error_msg.lower():
             fb = _local_owner_intent_fallback(request_data, force_fallback=True)
             if fb and fb.get("intent") != "unknown":
                 print(f"[Gemini Timeout Fallback] intent={fb.get('intent')}")
-                return fb
+                return _attach_llm_meta(fb, "local_fallback", error=error_msg)
             
-        return {"intent": "unknown", "confidence": 0, "answer": user_msg, "error": error_msg}
+        return _attach_llm_meta({"intent": "unknown", "confidence": 0, "answer": user_msg, "error": error_msg}, "local_fallback", error=error_msg)

@@ -125,7 +125,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Search result marker (Nominatim) - persists until dismissed
-  const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  const [searchMarker, setSearchMarker] = useState<{ lat: number; lng: number; name: string; address?: string } | null>(null);
 
   // Picked point (click on map) - persists until dismissed
   const [pickedPoint, setPickedPoint] = useState<{ lat: number; lng: number } | null>(null);
@@ -252,12 +252,16 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
       if (!isNaN(lat) && !isNaN(lng)) {
         setRecenterTarget({ lat, lng });
         setRecenterSignal((s) => s + 1);
-        setSearchMarker({ lat, lng, name: result.display_name || "" });
+        const addr = result.display_name || "";
+        setSearchMarker({ lat, lng, name: "", address: addr });
+        if (onPickLocation) {
+          onPickLocation({ lat, lng, name: undefined, address: addr });
+        }
       }
       setSearchQuery(result.display_name || "");
       setSearchResults([]);
     },
-    [],
+    [onPickLocation],
   );
 
   // ---- Handle map click → only place picked pin (don't call onPickLocation yet) ----
@@ -275,11 +279,8 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
       if (!onPickLocation) return;
       try {
         const result = await geoApi.reverse(coords.lat, coords.lng);
-        const name = result.display_name || "";
-        const addr = result.address
-          ? [result.address.road, result.address.suburb, result.address.city || result.address.town || result.address.village, result.address.state].filter(Boolean).join(", ")
-          : "";
-        onPickLocation({ lat: coords.lat, lng: coords.lng, name: name || undefined, address: addr || undefined });
+        const addr = result.display_name || "";
+        onPickLocation({ lat: coords.lat, lng: coords.lng, name: undefined, address: addr || undefined });
       } catch {
         onPickLocation({ lat: coords.lat, lng: coords.lng });
       }
@@ -425,6 +426,7 @@ const LocationPickerMap = ({ onSelectLocation, onPickLocation, className = "" }:
                         lat: searchMarker.lat,
                         lng: searchMarker.lng,
                         name: searchMarker.name,
+                        address: searchMarker.address,
                       });
                     }
                     // Keep green pin on map (don't convert to yellow)

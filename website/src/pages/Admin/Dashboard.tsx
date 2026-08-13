@@ -11,12 +11,13 @@ import {
   Table,
   Avatar,
   Typography,
-  Radio,
+  Select,
   DatePicker,
   Space,
   message
 } from "antd";
 import {
+  EnvironmentOutlined,
   FileExcelOutlined,
   ShopOutlined,
   UserOutlined,
@@ -351,61 +352,87 @@ class DashboardErrorBoundary extends React.Component<{children: React.ReactNode}
     <DashboardErrorBoundary>
     <MainLayout>
       <Spin spinning={loading} size="large">
-      <div className="mb-6 flex justify-between items-start flex-wrap gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">Tổng quan hệ thống</h2>
-          <p className="text-gray-500">Các chỉ số hoạt động cốt lõi của nền tảng.</p>
-        </div>
-        
-        <Space size="middle" className="bg-white p-2 rounded-xl shadow-sm border border-gray-100">
-          <Button
-            icon={<FileExcelOutlined />}
-            onClick={() => setIsInvoiceModalOpen(true)}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
-          >
-            Xuất file
-          </Button>
-          <Radio.Group value={rangeType} onChange={handleRangeChange} optionType="button" buttonStyle="solid">
-            <Radio.Button value="today">Hôm nay</Radio.Button>
-            <Radio.Button value="7days">7 ngày</Radio.Button>
-            <Radio.Button value="month">1 tháng</Radio.Button>
-            <Radio.Button value="year">1 năm</Radio.Button>
-            <Radio.Button value="all">Tất cả</Radio.Button>
-          </Radio.Group>
-          <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
-            <DatePicker 
-              value={dateRange[0]}
-              onChange={(d) => {
-                if (d) {
-                  let end = dateRange[1];
-                  if (end.isBefore(d, 'day')) end = d;
-                  setDateRange([d, end]);
-                  setRangeType("custom");
-                }
-              }}
-              format="DD/MM/YYYY"
-              allowClear={false}
-              className="w-32"
-              disabledDate={(current) => current && current > dayjs().endOf('day')}
-              placeholder="Từ ngày"
+      <div className="mb-6 rounded-2xl border border-rose-100/70 bg-gradient-to-br from-white via-rose-50/40 to-slate-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-rose-500">
+              Trung tâm điều hành
+            </div>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Tổng quan hệ thống</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Theo dõi sức khỏe nền tảng, đối tác, người dùng và voucher trong một màn hình.
+            </p>
+
+            <div className="mt-4 inline-flex rounded-full border border-amber-100/70 bg-white/55 px-3 py-2 shadow-sm backdrop-blur-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50/80 text-amber-500">
+                  <EnvironmentOutlined />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-800 whitespace-nowrap">
+                    Thời tiết hôm nay: Trời nắng đẹp, 29°C
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Space size="middle" wrap className="bg-white/90 p-2 rounded-xl shadow-sm border border-gray-100">
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={() => setIsInvoiceModalOpen(true)}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 hover:border-emerald-400 hover:from-emerald-100 hover:to-teal-100 font-semibold rounded-lg px-4 transition-all duration-300 shadow-sm hover:shadow"
+            >
+              Xuất file
+            </Button>
+            <Select
+              value={rangeType === "custom" ? "custom" : rangeType}
+              onChange={(val) => handleRangeChange({ target: { value: val } })}
+              style={{ width: 140 }}
+              options={[
+                { value: "today", label: "Hôm nay" },
+                { value: "7days", label: "7 ngày qua" },
+                { value: "month", label: "1 tháng qua" },
+                { value: "year", label: "1 năm qua" },
+                { value: "all", label: "Tất cả" },
+                ...(rangeType === "custom" ? [{ value: "custom", label: "Tùy chỉnh" }] : []),
+              ]}
             />
-            <span className="text-gray-400">→</span>
-            <DatePicker 
-              value={dateRange[1]}
-              onChange={(d) => {
-                if (d) {
-                  setDateRange([dateRange[0], d]);
-                  setRangeType("custom");
-                }
-              }}
-              format="DD/MM/YYYY"
-              allowClear={false}
-              className="w-32"
-              disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
-              placeholder="Đến ngày"
-            />
+            <Space className="bg-white p-1.5 rounded-lg shadow-sm border border-gray-100">
+              <DatePicker
+                value={dateRange[0]}
+                onChange={(d) => {
+                  if (d) {
+                    let end = dateRange[1];
+                    if (end.isBefore(d, 'day')) end = d;
+                    setDateRange([d, end]);
+                    setRangeType("custom");
+                  }
+                }}
+                format="DD/MM/YYYY"
+                allowClear={false}
+                className="w-32"
+                disabledDate={(current) => current && current > dayjs().endOf('day')}
+                placeholder="Từ ngày"
+              />
+              <span className="text-gray-400">→</span>
+              <DatePicker
+                value={dateRange[1]}
+                onChange={(d) => {
+                  if (d) {
+                    setDateRange([dateRange[0], d]);
+                    setRangeType("custom");
+                  }
+                }}
+                format="DD/MM/YYYY"
+                allowClear={false}
+                className="w-32"
+                disabledDate={(current) => current && (current > dayjs().endOf('day') || current < dateRange[0].startOf('day'))}
+                placeholder="Đến ngày"
+              />
+            </Space>
           </Space>
-        </Space>
+        </div>
       </div>
 
       {stats ? (

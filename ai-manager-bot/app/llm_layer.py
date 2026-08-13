@@ -24,13 +24,15 @@ def maybe_analyze_payload(
     action_plan: ActionPlan,
 ) -> LlmAnalysis | None:
     
-    # Chuẩn bị dữ liệu gửi cho Gemini
+    # Chuẩn bị dữ liệu gửi cho LLM chính/fallback
     request_data = {
         "role": request.role,
+        "route": request.route,
         "actor_user_id": request.actor_user_id,
         "text": request.text,
         "chat_history": [{"from": item.from_role, "text": item.text} for item in request.chat_history[-8:]],
-        "screen_context": request.screen_context
+        "screen_context": request.screen_context,
+        "available_actions": request.available_actions,
     }
     
     # Bước 1: Gọi LLM lần 1 để lấy Intent
@@ -40,6 +42,8 @@ def maybe_analyze_payload(
     confidence = first_pass.get("confidence", 0.0)
     parameters = first_pass.get("parameters", {})
     answer = first_pass.get("answer", "")
+    provider = first_pass.get("_llm_provider") or "gemini"
+    model = first_pass.get("_llm_model") or ("gemini-2.5-flash" if provider == "gemini" else provider)
     
     # Xóa bước 2 vì Frontend sẽ tự gọi executeAction để hiển thị số liệu từ NodeJS
 
@@ -48,8 +52,9 @@ def maybe_analyze_payload(
         confidence=confidence,
         entities=parameters,
         answer=answer,
-        provider="gemini",
-        model="gemini-2.5-flash",
+        provider=provider,
+        model=model,
+        error=first_pass.get("_llm_error") or first_pass.get("error"),
     )
 
 def merge_entities(local_entities: dict[str, Any], llm_entities: dict[str, Any]) -> dict[str, Any]:

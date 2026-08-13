@@ -86,6 +86,14 @@ OWNER_COMMON = (
         risk_level="read",
         requires_confirmation=False,
     ),
+    PromptSuggestion(
+        id="owner_common_ai_recommendations",
+        title="Gợi ý vận hành",
+        prompt="Phân tích doanh thu, tỷ lệ hủy rồi gợi ý tui nên làm gì tháng này",
+        intent_hint="owner_get_business_recommendations",
+        risk_level="read",
+        requires_confirmation=False,
+    ),
 )
 
 OWNER_BY_ROUTE = (
@@ -174,6 +182,14 @@ ADMIN_COMMON = (
         title="Theo dõi SOS",
         prompt="Có cảnh báo SOS nào đang mở không?",
         intent_hint="admin_view_sos_alerts",
+        risk_level="read",
+        requires_confirmation=False,
+    ),
+    PromptSuggestion(
+        id="admin_common_ai_recommendations",
+        title="Gợi ý hệ thống",
+        prompt="Phân tích doanh thu, tỷ lệ hủy rồi đề xuất chiến dịch cho hệ thống tháng này",
+        intent_hint="admin_get_business_recommendations",
         risk_level="read",
         requires_confirmation=False,
     ),

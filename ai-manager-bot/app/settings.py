@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from functools import lru_cache
 
 from dotenv import load_dotenv
 
 
-load_dotenv()
+def _load_env_files() -> None:
+    """Load only the AI Manager Bot env file."""
+    app_dir = Path(__file__).resolve().parent
+    bot_dir = app_dir.parent
+    env_path = bot_dir / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+
+
+_load_env_files()
 
 
 @dataclass(frozen=True)
@@ -24,8 +34,16 @@ class AiManagerSettings:
         return self.llm_provider == "openai" and bool(self.openai_api_key)
 
     @property
+    def openai_configured(self) -> bool:
+        return bool(self.openai_api_key)
+
+    @property
     def gemini_enabled(self) -> bool:
-        return self.llm_provider == "gemini" and bool(self.gemini_api_keys)
+        return bool(self.gemini_api_keys)
+
+    @property
+    def enabled(self) -> bool:
+        return self.gemini_enabled or self.openai_configured
 
 
 @lru_cache(maxsize=1)
@@ -34,7 +52,7 @@ def get_settings() -> AiManagerSettings:
     keys = [k.strip() for k in raw_keys.split(",")] if raw_keys else []
     
     return AiManagerSettings(
-        llm_provider=str(os.getenv("AI_MANAGER_BOT_LLM_PROVIDER", "local")).strip().lower() or "local",
+        llm_provider=str(os.getenv("AI_MANAGER_BOT_LLM_PROVIDER", "gemini")).strip().lower() or "gemini",
         openai_api_key=str(os.getenv("OPENAI_API_KEY", "")).strip(),
         openai_model=str(os.getenv("OPENAI_MODEL", "gpt-4.1-mini")).strip() or "gpt-4.1-mini",
         openai_base_url=(
