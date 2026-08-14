@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar, Button, Form, Input, Tag, message } from "antd";
-import { CameraOutlined, LockOutlined, SaveOutlined, EditOutlined, EyeOutlined, EyeInvisibleOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { CameraOutlined, LockOutlined, SaveOutlined } from "@ant-design/icons";
 import AvatarCropper from "../../components/AvatarCropper";
 import VirtualBankCard from "../../components/VirtualBankCard";
 
@@ -9,6 +8,7 @@ import MainLayout from "../../layouts/MainLayout";
 import adminApi from "../../api/adminApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { getErrorMessage } from "../../utils/safe";
+import { buildVietQrImageUrl } from "../../utils/vietqr";
 
 interface AdminProfileDto {
   user_id: number;
@@ -93,16 +93,27 @@ const getStatusLabel = (status: string | null | undefined): string => {
 };
 
 const Profile = () => {
-  const navigate = useNavigate();
   const [profile, setProfile] = useState<AdminProfileDto | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [bankInfo, setBankInfo] = useState<{
     bank_name: string;
     bank_account: string;
-    account_holder: string;
+    account_holder?: string;
+    bank_holder?: string;
   } | null>(null);
-  const [showBankAccount, setShowBankAccount] = useState(false);
+  const adminBankHolder =
+    bankInfo?.account_holder || bankInfo?.bank_holder || "";
+  const profileBankQrUrl = useMemo(
+    () =>
+      buildVietQrImageUrl({
+        bankName: bankInfo?.bank_name,
+        bankAccount: bankInfo?.bank_account,
+        accountHolder: adminBankHolder,
+        template: "qr_only",
+      }).url || "",
+    [bankInfo, adminBankHolder],
+  );
 
   // Avatar upload
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
@@ -542,32 +553,20 @@ const Profile = () => {
               </div>
 
               {/* Cột thẻ ngân hàng (Platform Bank) */}
-              <div className="xl:w-[380px] shrink-0 space-y-6">
+              <div className="flex shrink-0 flex-col space-y-4 xl:w-[460px]">
                 <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4 flex items-center gap-2">
                   Thẻ ngân hàng (Platform)
                 </h3>
-                <div className="relative group">
-                  <div className="absolute top-4 right-4 z-20 flex gap-2">
-                    <Button
-                      type="text"
-                      icon={showBankAccount ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                      onClick={() => setShowBankAccount(!showBankAccount)}
-                      className="text-white hover:text-white bg-white/20 hover:bg-white/40"
-                    />
-                    <Button
-                      type="text"
-                      icon={<EditOutlined />}
-                      onClick={() => navigate("/admin/bank")}
-                      className="text-white hover:text-white bg-white/20 hover:bg-white/40"
-                    />
-                  </div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-sm">
+                  <div className="mx-auto w-full max-w-md">
                   <VirtualBankCard
                     bankName={bankInfo?.bank_name || ""}
-                    accountNumber={showBankAccount ? (bankInfo?.bank_account || "") : "•••• •••• ••••"}
-                    accountName={bankInfo?.account_holder || "VUI LÒNG CẬP NHẬT"}
-                    qrUrl={bankInfo && bankInfo.bank_name && bankInfo.bank_account ? `https://img.vietqr.io/image/${bankInfo.bank_name}-${bankInfo.bank_account}-compact2.jpg?accountName=${encodeURIComponent(bankInfo.account_holder || "")}` : ""}
-                    title=""
+                    accountNumber={bankInfo?.bank_account || ""}
+                    accountName={adminBankHolder || "VUI LÒNG CẬP NHẬT"}
+                    qrUrl={profileBankQrUrl}
+                    title="NGÂN HÀNG CỦA BẠN"
                   />
+                  </div>
                 </div>
               </div>
 

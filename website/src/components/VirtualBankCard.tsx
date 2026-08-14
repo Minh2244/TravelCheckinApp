@@ -67,7 +67,7 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
 
   const renderCard = (isInteractive: boolean = true) => (
     <div 
-      className={`relative w-full aspect-[1.58/1] rounded-2xl shadow-[0_10px_20px_rgba(0,0,0,0.2)] overflow-hidden group transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.4)] ${isInteractive ? 'mb-2 cursor-pointer' : 'cursor-default shadow-[0_20px_50px_rgba(0,0,0,0.5)] hover:shadow-[0_30px_60px_rgba(0,0,0,0.6)]'}`}
+      className={`bank-card-3d group relative w-full aspect-[1.58/1] rounded-2xl overflow-hidden transform-gpu transition-all duration-500 ${isInteractive ? 'mb-2 cursor-pointer' : 'bank-card-3d-preview cursor-default'}`}
       onClick={() => isInteractive && setIsPreviewOpen(true)}
       title={isInteractive ? "Bấm để phóng to thẻ" : ""}
     >
@@ -77,17 +77,18 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
       />
       
       {/* Gloss / Shine Effect (3D Reflection) */}
-      <div className="absolute top-0 left-0 w-[150%] h-[150%] -rotate-45 bg-gradient-to-b from-transparent via-white/20 to-transparent translate-y-[100%] group-hover:translate-y-[-100%] transition-transform duration-1000 ease-in-out pointer-events-none z-0" />
+      <div className="bank-card-shine pointer-events-none absolute inset-0 z-0" />
+      <div className="bank-card-rim pointer-events-none absolute inset-0 z-0 rounded-2xl" />
       
       {/* Card Content */}
-      <div className="relative h-full w-full p-6 flex flex-col justify-between text-white z-10 drop-shadow-md">
+      <div className="relative z-10 flex h-full w-full flex-col p-5 text-white">
         {/* Top Row: Bank Name & Contactless Icon */}
-        <div className="flex justify-between items-start">
-          <span className="font-bold text-lg tracking-widest text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]">
+        <div className="flex justify-between items-start gap-4">
+          <span className={`${isInteractive ? "text-base" : "text-lg md:text-xl"} font-extrabold tracking-widest text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.35)]`}>
             {bankName ? bankName.toUpperCase() : "BANK NAME"}
           </span>
           <svg
-            className="w-6 h-6 text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)]"
+            className={`${isInteractive ? "h-6 w-6" : "h-7 w-7 md:h-8 md:w-8"} shrink-0 text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.35)]`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -98,9 +99,9 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
         </div>
 
         {/* Middle: EMV Chip */}
-        <div className="my-2">
+        <div className="mt-5">
           <svg
-            className="w-12 h-12 text-yellow-400 drop-shadow-[0_3px_3px_rgba(0,0,0,0.4)]"
+            className={`${isInteractive ? "h-10 w-10" : "h-12 w-12 md:h-14 md:w-14"} text-yellow-400 drop-shadow-[0_3px_3px_rgba(0,0,0,0.35)]`}
             viewBox="0 0 48 48"
             fill="currentColor"
           >
@@ -109,30 +110,30 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
         </div>
 
         {/* Account Number */}
-        <div className="mb-2">
-          <p className="font-mono text-2xl tracking-widest text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]">
+        <div className="mt-4 pr-28">
+          <p className={`${isInteractive ? "text-xl" : "text-2xl md:text-3xl"} font-mono font-semibold tracking-widest text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.45)]`}>
             {formattedAccount}
           </p>
         </div>
 
         {/* Bottom: Account Holder & Embedded QR */}
-        <div className="flex justify-between items-end">
-          <div className="pb-1">
-            <p className="text-[10px] uppercase tracking-widest opacity-80 mb-0.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
+        <div className="mt-auto flex min-h-[66px] items-end justify-between gap-4 pr-28">
+          <div className="min-w-0 pb-1">
+            <p className={`${isInteractive ? "text-[10px]" : "text-xs md:text-sm"} mb-1 uppercase tracking-widest text-white/85 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]`}>
               Chủ tài khoản
             </p>
-            <p className="font-bold text-base tracking-wider uppercase drop-shadow-[0_2px_2px_rgba(0,0,0,0.5)] truncate max-w-[250px]">
+            <p className={`${isInteractive ? "text-sm" : "text-base md:text-lg"} max-w-[260px] truncate font-extrabold uppercase tracking-wide text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.45)]`}>
               {accountName || "YOUR NAME"}
             </p>
           </div>
           
           {/* Embedded QR Code */}
           {qrUrl && (
-            <div className="bg-white/95 backdrop-blur-sm p-2 rounded-xl shadow-lg border border-white/20 hover:scale-105 transition-transform duration-300 origin-bottom-right">
+            <div className={`${isInteractive ? "h-[92px] w-[92px]" : "h-[112px] w-[112px] md:h-[126px] md:w-[126px]"} absolute bottom-4 right-4 overflow-hidden rounded-2xl border-4 border-white bg-white shadow-[0_14px_28px_rgba(15,23,42,0.28)] transition-transform duration-300 origin-bottom-right hover:scale-105`}>
               <img
                 src={qrUrl}
-                alt="VietQR"
-                className="w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-lg mix-blend-multiply"
+                alt="Ma QR thanh toan"
+                className="h-full w-full scale-[1.16] object-cover"
               />
             </div>
           )}
@@ -143,7 +144,7 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
 
   return (
     <>
-      <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto space-y-6">
+      <div className="bank-card-stage flex w-full max-w-[400px] flex-col items-center justify-center mx-auto space-y-5">
         {/* Title */}
         <h3 className="text-sm font-bold text-slate-500 tracking-widest uppercase">
           {title}
@@ -159,7 +160,7 @@ const VirtualBankCard: React.FC<VirtualBankCardProps> = ({
           onClick={() => setIsPreviewOpen(false)}
         >
           <div 
-            className="w-full max-w-md scale-100 sm:scale-125 md:scale-150 transition-transform duration-300 cursor-default"
+            className="bank-card-stage w-full max-w-[560px] scale-100 sm:scale-110 md:scale-125 transition-transform duration-300 cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
             {renderCard(false)}

@@ -61,6 +61,43 @@ type CartItem = {
 
 type PayMethod = "cash" | "transfer";
 
+const touristCartStorageKey = (locationId: number | string) =>
+  `travel-owner-tourist-cart:${locationId}`;
+
+const todayStorageDate = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const sanitizeCartItems = (items: unknown): CartItem[] => {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set<number>();
+  const next: CartItem[] = [];
+
+  for (const raw of items) {
+    const row = asRecord(raw);
+    const serviceId = Number(row.service_id);
+    const quantity = Math.trunc(Number(row.quantity || 0));
+    if (!Number.isFinite(serviceId) || serviceId <= 0) continue;
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    if (seen.has(serviceId)) continue;
+
+    seen.add(serviceId);
+    next.push({
+      service_id: serviceId,
+      service_name: String(row.service_name || ""),
+      price: Number(row.price || 0),
+      remaining_today: Number(row.remaining_today || 0),
+      quantity: Math.max(1, Math.min(200, quantity)),
+    });
+  }
+
+  return next;
+};
+
 type TicketLineItem = {
   service_id: number;
   service_name: string;
@@ -124,7 +161,18 @@ export default function FrontOfficeTourist(props: {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [sellServiceId, setSellServiceId] = useState<number | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(touristCartStorageKey(locationId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (asRecord(parsed).date !== todayStorageDate()) return [];
+      return sanitizeCartItems(asRecord(parsed).items);
+    } catch {
+      return [];
+    }
+  });
 
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payMethod, setPayMethod] = useState<PayMethod>("cash");
@@ -151,6 +199,22 @@ export default function FrontOfficeTourist(props: {
   useEffect(() => {
     void loadToday();
   }, [loadToday]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = touristCartStorageKey(locationId);
+    if (cart.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        date: todayStorageDate(),
+        items: cart,
+      }),
+    );
+  }, [cart, locationId]);
 
   const loadRealtimeTicketStocks = useCallback(async () => {
     if (!locationId) return;
@@ -403,6 +467,54 @@ export default function FrontOfficeTourist(props: {
     );
     return { total, sold, soldOnline, soldPos, used, usedOnline, remaining };
   }, [summary]);
+
+  useEffect(() => {
+    const services = summary?.services || [];
+    if (cart.length === 0 || services.length === 0) return;
+
+    const serviceById = new Map(
+      services.map((s) => [Number(s.service_id), s] as const),
+    );
+    let changed = false;
+
+    const next = cart
+      .map((item) => {
+        const service = serviceById.get(Number(item.service_id));
+        if (!service) {
+          changed = true;
+          return null;
+        }
+
+        const remaining = Math.max(0, Number(service.remaining_today || 0));
+        const quantity = Math.min(Number(item.quantity || 0), remaining, 200);
+        if (quantity <= 0) {
+          changed = true;
+          return null;
+        }
+
+        const synced: CartItem = {
+          service_id: Number(service.service_id),
+          service_name: String(service.service_name || item.service_name || ""),
+          price: Number(service.price || 0),
+          remaining_today: remaining,
+          quantity,
+        };
+
+        if (
+          synced.service_name !== item.service_name ||
+          synced.price !== item.price ||
+          synced.remaining_today !== item.remaining_today ||
+          synced.quantity !== item.quantity
+        ) {
+          changed = true;
+        }
+
+        return synced;
+      })
+      .filter((item): item is CartItem => Boolean(item));
+
+    if (changed) setCart(next);
+  }, [cart, summary]);
 
   const addServiceToCart = useCallback((service: ServiceStat, qty: number = 1) => {
     const qtyValid = Math.max(1, Math.min(200, qty));

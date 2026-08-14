@@ -11871,6 +11871,180 @@ export const deleteSystemVoucher = async (
 };
 
 // ==================== PUSH NOTIFICATIONS (ADMIN) ====================
+type AdminNotificationSummaryItem = {
+  id: string;
+  type: "sos" | "location" | "review" | "user" | "voucher" | "general";
+  title: string;
+  body: string;
+  link: string;
+  count: number;
+  at: string;
+};
+
+const readCount = async (
+  sql: string,
+  params: Array<string | number> = [],
+): Promise<number> => {
+  const [rows] = await pool.query<RowDataPacket[]>(sql, params);
+  return Number(rows?.[0]?.total || 0);
+};
+
+export const getAdminNotificationSummary = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const [
+      pendingOwners,
+      pendingLocations,
+      pendingServices,
+      openSosAlerts,
+      pendingReports,
+      pendingCommissions,
+    ] = await Promise.all([
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM users u
+         LEFT JOIN owner_profiles op ON op.owner_id = u.user_id
+         WHERE u.role = 'owner'
+           AND COALESCE(op.approval_status, 'pending') = 'pending'
+           AND COALESCE(u.status, 'active') <> 'deleted'`,
+      ),
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM locations l
+         JOIN users u ON u.user_id = l.owner_id
+         WHERE l.status = 'pending'
+           AND l.deleted_at IS NULL
+           AND u.role <> 'user'`,
+      ),
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM services s
+         JOIN locations l ON l.location_id = s.location_id
+         JOIN users u ON u.user_id = l.owner_id
+         WHERE s.deleted_at IS NULL
+           AND s.admin_status = 'pending'
+           AND u.role = 'owner'`,
+      ),
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM sos_alerts
+         WHERE status IN ('pending', 'processing')`,
+      ),
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM reports
+         WHERE status IN ('pending', 'reviewing')`,
+      ),
+      readCount(
+        `SELECT COUNT(*) AS total
+         FROM commissions
+         WHERE status = 'payment_submitted'`,
+      ),
+    ]);
+
+    let pendingOwnerVouchers = 0;
+    try {
+      pendingOwnerVouchers = await readCount(
+        `SELECT COUNT(*) AS total
+         FROM vouchers v
+         JOIN users u ON u.user_id = v.owner_id
+         LEFT JOIN voucher_reviews vr ON vr.voucher_id = v.voucher_id
+         WHERE u.role = 'owner'
+           AND v.owner_deleted_at IS NULL
+           AND COALESCE(vr.approval_status, 'pending') = 'pending'`,
+      );
+    } catch (error: any) {
+      if (error?.code !== "ER_NO_SUCH_TABLE") {
+        throw error;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const allItems: AdminNotificationSummaryItem[] = [
+      {
+        id: "pending-owners",
+        type: "user",
+        title: "Owner chờ duyệt",
+        body: `${pendingOwners} tài khoản owner đang chờ xử lý.`,
+        link: "/admin/owners",
+        count: pendingOwners,
+        at: now,
+      },
+      {
+        id: "pending-locations",
+        type: "location",
+        title: "Địa điểm chờ duyệt",
+        body: `${pendingLocations} địa điểm owner gửi lên đang chờ duyệt.`,
+        link: "/admin/locations",
+        count: pendingLocations,
+        at: now,
+      },
+      {
+        id: "pending-services",
+        type: "general",
+        title: "Dịch vụ chờ duyệt",
+        body: `${pendingServices} dịch vụ owner gửi lên đang chờ duyệt.`,
+        link: "/admin/owner-services",
+        count: pendingServices,
+        at: now,
+      },
+      {
+        id: "pending-owner-vouchers",
+        type: "voucher",
+        title: "Voucher Owner chờ duyệt",
+        body: `${pendingOwnerVouchers} voucher owner đang chờ duyệt.`,
+        link: "/admin/vouchers",
+        count: pendingOwnerVouchers,
+        at: now,
+      },
+      {
+        id: "open-sos-alerts",
+        type: "sos",
+        title: "SOS chưa xử lý",
+        body: `${openSosAlerts} yêu cầu SOS đang chờ hoặc đang xử lý.`,
+        link: "/admin/sos",
+        count: openSosAlerts,
+        at: now,
+      },
+      {
+        id: "pending-reports",
+        type: "review",
+        title: "Báo cáo chờ xử lý",
+        body: `${pendingReports} báo cáo/đánh giá đang chờ admin xử lý.`,
+        link: "/admin/reviews",
+        count: pendingReports,
+        at: now,
+      },
+      {
+        id: "pending-commissions",
+        type: "general",
+        title: "Đối soát hoa hồng",
+        body: `${pendingCommissions} khoản đối soát đang chờ xác nhận thanh toán.`,
+        link: "/admin/payments",
+        count: pendingCommissions,
+        at: now,
+      },
+    ];
+    const items = allItems.filter((item) => item.count > 0);
+
+    res.json({
+      success: true,
+      data: {
+        total: items.reduce((sum, item) => sum + item.count, 0),
+        items,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi lấy tổng hợp thông báo admin:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi lấy tổng hợp thông báo admin",
+    });
+  }
+};
+
 export const createPushNotification = async (
   req: Request,
   res: Response,

@@ -7,7 +7,6 @@ import {
   Modal,
   Select,
   Space,
-  Table,
   Tag,
   message,
 } from "antd";
@@ -105,6 +104,7 @@ const bookingStatusLabel = (value: string): string => {
 const isTravelBooking = (row: BookingRow): boolean => {
   const locationType = String(row.location_type || "").toLowerCase();
   const serviceType = String(row.service_type || "").toLowerCase();
+
   return (
     serviceType === "ticket" ||
     serviceType === "tour" ||
@@ -638,6 +638,8 @@ const OwnerBookings = () => {
     },
   ];
 
+  void columns;
+
   const filteredItems = useMemo(() => {
     return items.filter((row) => {
       if (
@@ -696,16 +698,168 @@ const OwnerBookings = () => {
           </Space>
         }
       >
-        <div style={{ overflowX: "auto", width: "100%" }}>
-          <Table
-            rowKey="booking_id"
-            loading={loading}
-            dataSource={filteredItems}
-            columns={columns}
-            pagination={false}
-            size="middle"
-            scroll={{ x: 1160 }}
-          />
+        <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+          <div className="mb-2 hidden rounded-xl bg-white px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 shadow-sm xl:grid xl:grid-cols-[56px_minmax(170px,0.75fr)_minmax(240px,0.9fr)_minmax(145px,0.55fr)_220px] xl:items-center xl:gap-2">
+            <span>STT</span>
+            <span>Khách hàng</span>
+            <span>Đặt chỗ</span>
+            <span>Thanh toán</span>
+            <span className="text-center">Hành động</span>
+          </div>
+
+          <div className="max-h-[calc(100vh-360px)] min-h-[360px] overflow-y-auto pr-1 sleek-scrollbar">
+            {loading ? (
+              <div className="flex h-44 items-center justify-center text-sm font-semibold text-slate-400">
+                Đang tải danh sách đặt chỗ...
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="flex h-44 items-center justify-center text-sm font-semibold text-slate-400">
+                Chưa có đặt chỗ phù hợp
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredItems.map((row, index) => {
+                  const details = getDetailItemsForDisplay(row);
+                  const brief = details
+                    .slice(0, 2)
+                    .map((item) => formatBookingDetailLine(item))
+                    .join(", ");
+                  const more = details.length > 2 ? ` +${details.length - 2}` : "";
+                  const finalAmount = Number(row.final_amount || 0);
+                  const paidAmount = Number(row.total_completed_paid_amount || 0);
+                  const isPaid = paidAmount >= finalAmount && finalAmount > 0;
+                  const paymentStatus = String(row.latest_payment_status || "");
+                  const paymentText = isPaid || paymentStatus === "completed"
+                    ? "Đã thanh toán"
+                    : paymentStatus === "pending"
+                      ? "Chờ thanh toán"
+                      : "Chưa thanh toán";
+                  const paymentColor = isPaid || paymentStatus === "completed"
+                    ? "green"
+                    : paymentStatus === "pending"
+                      ? "orange"
+                      : row.latest_payment_id
+                        ? "red"
+                        : "default";
+                  const extraAmount = paidAmount > finalAmount ? paidAmount - finalAmount : 0;
+                  const displayAmount = finalAmount + extraAmount;
+                  const checkIn = formatDisplayDateTime(row.check_in_date || "");
+                  const checkOut = formatDisplayDateTime(row.check_out_date || "");
+                  const email = String(row.contact_email || row.user_email || "").trim();
+                  const phone = String(row.contact_phone || row.user_phone || "").trim();
+                  const isConfirmEnabled = row.can_confirm && !submitting;
+                  const isCancelEnabled = row.can_cancel && !submitting;
+
+                  return (
+                    <div
+                      key={row.booking_id}
+                      className="rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm transition hover:border-blue-100 hover:shadow-md xl:grid xl:grid-cols-[56px_minmax(170px,0.75fr)_minmax(240px,0.9fr)_minmax(145px,0.55fr)_220px] xl:items-center xl:gap-2"
+                    >
+                      <div className="mb-3 flex items-center justify-between xl:mb-0 xl:block">
+                        <span className="text-xs font-bold text-slate-400 xl:hidden">STT</span>
+                        <span className="text-base font-semibold text-slate-700">
+                          {filteredItems.length - index}
+                        </span>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900">{row.user_name || "-"}</div>
+                        {phone ? <div className="text-sm text-slate-600">{phone}</div> : null}
+                        {email ? (
+                          <div className="truncate text-xs text-slate-400" title={email}>
+                            {email}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 min-w-0 xl:mt-0">
+                        <div className="truncate font-semibold text-slate-800" title={row.location_name || "-"}>
+                          {row.location_name || "-"}
+                        </div>
+                        <div className="truncate text-sm text-slate-500" title={`${row.service_name || "-"} • ${brief}${more}`}>
+                          {row.service_name || "-"}
+                        </div>
+                        <div className="truncate text-xs text-slate-400" title={brief + more}>
+                          {brief || "-"}{more}
+                        </div>
+                        <div className="mt-1 text-xs font-medium text-slate-500">
+                          {checkIn || checkOut || "-"}
+                        </div>
+                        {checkIn && checkOut ? (
+                          <div className="text-xs text-slate-400">đến {checkOut}</div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 xl:mt-0">
+                        <div className="font-bold text-slate-900">{formatMoney(displayAmount)}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Tag color={paymentColor} className="m-0 text-[11px]">
+                            {paymentText}
+                          </Tag>
+                          {statusTag(row.status)}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-emerald-600">
+                          Đã trả: {formatMoney(paidAmount)}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap justify-start gap-2 xl:mt-0 xl:justify-end">
+                        <Button
+                          size="small"
+                          shape="round"
+                          className="font-semibold"
+                          style={{
+                            color: "#4f46e5",
+                            borderColor: "#c7d2fe",
+                            backgroundColor: "#f5f3ff",
+                          }}
+                          onClick={() => setActiveBooking(row)}
+                        >
+                          Chi tiết
+                        </Button>
+                        <Button
+                          size="small"
+                          shape="round"
+                          className="font-semibold"
+                          style={
+                            isConfirmEnabled
+                              ? {
+                                  color: "#2563eb",
+                                  borderColor: "#bfdbfe",
+                                  backgroundColor: "#eff6ff",
+                                }
+                              : undefined
+                          }
+                          onClick={() => setStatus(row.booking_id, "confirmed")}
+                          disabled={!row.can_confirm || submitting}
+                        >
+                          Duyệt
+                        </Button>
+                        <Button
+                          size="small"
+                          shape="round"
+                          className="font-semibold"
+                          style={
+                            isCancelEnabled
+                              ? {
+                                  color: "#dc2626",
+                                  borderColor: "#fecaca",
+                                  backgroundColor: "#fef2f2",
+                                }
+                              : undefined
+                          }
+                          onClick={() => openCancelModal(row)}
+                          disabled={!row.can_cancel || submitting}
+                        >
+                          Hủy
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </Card>
 

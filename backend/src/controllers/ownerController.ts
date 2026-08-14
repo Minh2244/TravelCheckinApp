@@ -8907,12 +8907,6 @@ export const getHotelRooms = async (
       params,
     );
 
-    const getVNFormatDate = (dateVal: any): string => {
-      const d = new Date(dateVal);
-      if (isNaN(d.getTime())) return '';
-      return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
-    };
-
     const dataRows = rows.map((row) => {
       let status = row.status;
       let stay_status = row.stay_status;
@@ -8923,23 +8917,6 @@ export const getHotelRooms = async (
       let guest_name = row.guest_name;
       let guest_phone = row.guest_phone;
       let notes = row.notes;
-
-      if (stay_status === 'reserved' && expected_checkin) {
-        const checkinYMD = getVNFormatDate(expected_checkin);
-        const todayYMD = getVNFormatDate(new Date());
-
-        if (checkinYMD !== todayYMD) {
-          status = 'vacant';
-          stay_status = null;
-          stay_id = null;
-          expected_checkin = null;
-          expected_checkout = null;
-          booking_id = null;
-          guest_name = null;
-          guest_phone = null;
-          notes = null;
-        }
-      }
 
       return {
         ...row,

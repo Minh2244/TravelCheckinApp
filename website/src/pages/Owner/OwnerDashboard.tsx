@@ -20,6 +20,15 @@ import {
   ThunderboltOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
 import { formatMoney } from "../../utils/formatMoney";
@@ -363,16 +372,48 @@ const OwnerDashboard = () => {
     }));
   }, [filteredPayments, locations]);
 
-  // Con số tổng hợp vận hành (thay đổi theo kỳ lọc)
-  const operations = useMemo(() => {
-    const periodBookings = filteredBookings.length;
-    const periodPayments = filteredPayments.filter((p) => p.status === "completed").length;
-    return {
-      periodBookings,
-      periodPayments,
-      activeLocations: locations.filter((l) => l.status === "active" || l.status === "approved").length || locations.length,
-    };
-  }, [filteredBookings, locations, filteredPayments]);
+  // Xu hướng doanh thu theo tháng hoặc năm dựa trên bộ lọc thời gian.
+  const revenueTrendTitle = useMemo(() => {
+    if (rangeType === "all") return `Xu hướng doanh thu trong Năm ${dayjs().format("YYYY")}`;
+    if (rangeType === "year") return `Xu hướng doanh thu trong Năm ${dateRange[0].format("YYYY")}`;
+    return `Xu hướng doanh thu trong Tháng ${dateRange[0].format("M/YYYY")}`;
+  }, [dateRange, rangeType]);
+
+  const revenueTrendData = useMemo(() => {
+    const completedPayments = payments.filter((p) => String(p.status || "").toLowerCase() === "completed");
+
+    if (rangeType === "all" || rangeType === "year") {
+      const targetYear = rangeType === "all" ? dayjs().year() : dateRange[0].year();
+      const data = Array.from({ length: 12 }, (_, index) => ({
+        name: `T${index + 1}`,
+        DoanhThu: 0,
+      }));
+
+      for (const payment of completedPayments) {
+        const date = dayjs(payment.payment_time);
+        if (!date.isValid() || date.year() !== targetYear) continue;
+        data[date.month()].DoanhThu += Number(payment.amount || 0);
+      }
+
+      return data;
+    }
+
+    const targetMonth = dateRange[0].month();
+    const targetYear = dateRange[0].year();
+    const daysInMonth = dateRange[0].daysInMonth();
+    const data = Array.from({ length: daysInMonth }, (_, index) => ({
+      name: `${String(index + 1).padStart(2, "0")}/${dateRange[0].format("MM")}`,
+      DoanhThu: 0,
+    }));
+
+    for (const payment of completedPayments) {
+      const date = dayjs(payment.payment_time);
+      if (!date.isValid() || date.year() !== targetYear || date.month() !== targetMonth) continue;
+      data[date.date() - 1].DoanhThu += Number(payment.amount || 0);
+    }
+
+    return data;
+  }, [dateRange, payments, rangeType]);
 
   return (
     <MainLayout>
@@ -595,36 +636,7 @@ const OwnerDashboard = () => {
             </Card>
           </Col>
 
-          {/* HÀNG TRANG TRÍ WIDGET 1 & 2 */}
-          {/* Widget 1: Lời chào cá nhân hóa & Dự báo vận hành */}
-          <Col xs={24} md={12}>
-            <Card
-              className="shadow-sm border-0 rounded-2xl h-full flex flex-col justify-between"
-              bodyStyle={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "24px" }}
-              loading={loading}
-            >
-              <div>
-                <div className="text-2xl font-black text-slate-800 tracking-tight">Gợi ý vận hành hôm nay</div>
-                <p className="text-slate-400 text-sm mt-1.5 font-medium">Một vài tín hiệu nhanh để bạn ưu tiên công việc trong ngày.</p>
-              </div>
-
-              <div className="bg-slate-50 rounded-2xl p-4 mt-6 border border-slate-100/60">
-                <div className="flex items-center gap-3">
-                  <div className="text-3xl">☀️</div>
-                  <div>
-                    <div className="font-bold text-slate-700 text-sm">Vận hành hôm nay: Trời nắng đẹp, 29°C</div>
-                    <div className="text-xs text-slate-400 mt-0.5">Thời tiết tuyệt vời cho các hoạt động tham quan và nhận phòng nghỉ dưỡng ngoài trời.</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs italic text-slate-400 mt-6 font-medium">
-                "Khách hàng không chỉ mua một dịch vụ tốt, họ mua một trải nghiệm tuyệt vời và đáng nhớ."
-              </div>
-            </Card>
-          </Col>
-
-          {/* Widget 2: Cơ cấu Doanh thu theo Dịch vụ (Không liên quan duyệt đồ) */}
+          {/* Widget 1: Cơ cấu Doanh thu theo Dịch vụ */}
           <Col xs={24} md={12}>
             <Card
               title={
@@ -705,42 +717,61 @@ const OwnerDashboard = () => {
             </Card>
           </Col>
 
-          {/* Widget 4: Tóm tắt Hoạt động Vận hành */}
-          <Col xs={24} md={12}>
+          <Col span={24}>
             <Card
-              title={
-                <span className="font-bold text-slate-800 text-base flex items-center gap-2">
-                  <ThunderboltOutlined className="text-amber-500" />
-                  Hiệu suất vận hành
-                </span>
-              }
-              className="shadow-sm border-0 rounded-2xl h-full"
+              title={<span className="text-lg font-bold text-slate-800">{revenueTrendTitle}</span>}
+              className="shadow-sm border-0 rounded-2xl"
               bodyStyle={{ padding: "24px" }}
               loading={loading}
             >
-              <Row gutter={[12, 12]}>
-                <Col span={8}>
-                  <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
-                    <div className="text-xl">🏪</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Đang mở</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.activeLocations}</div>
-                  </div>
-                </Col>
-                <Col span={8}>
-                  <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
-                    <div className="text-xl">📅</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Lượt Booking</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.periodBookings}</div>
-                  </div>
-                </Col>
-                <Col span={8}>
-                  <div className="bg-slate-50/80 rounded-2xl p-3 border border-slate-100 text-center flex flex-col items-center justify-center h-24">
-                    <div className="text-xl">💳</div>
-                    <div className="text-xs text-slate-400 font-semibold mt-1">Lượt Giao dịch</div>
-                    <div className="text-lg font-black text-slate-800 mt-0.5">{operations.periodPayments}</div>
-                  </div>
-                </Col>
-              </Row>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+                  <AreaChart data={revenueTrendData} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="ownerRevenueTrend" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.28} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="name"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      dy={10}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tickFormatter={(value) => {
+                        const amount = Number(value || 0);
+                        if (amount >= 1000000) return `${Math.round(amount / 1000000)}M`;
+                        if (amount >= 1000) return `${Math.round(amount / 1000)}K`;
+                        return `${amount}`;
+                      }}
+                    />
+                    <Tooltip
+                      formatter={(value) => [formatMoney(Number(value || 0)), "Doanh thu"]}
+                      contentStyle={{
+                        borderRadius: 12,
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="DoanhThu"
+                      stroke="#3b82f6"
+                      strokeWidth={4}
+                      fillOpacity={1}
+                      fill="url(#ownerRevenueTrend)"
+                      activeDot={{ r: 7, strokeWidth: 0, fill: "#2563eb" }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </Card>
           </Col>
         </Row>

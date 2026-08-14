@@ -880,6 +880,11 @@ const adminApi = {
     );
     return response.data;
   },
+
+  getNotificationSummary: async () => {
+    const response = await axiosClient.get("/admin/notifications/summary");
+    return response.data;
+  },
 };
 
 export default adminApi;

@@ -23,6 +23,7 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { message, notification } from "antd";
 import ownerApi from "../api/ownerApi";
+import adminApi from "../api/adminApi";
 import { useSocket } from "../contexts/SocketContext";
 import { formatDateTimeVi } from "../utils/formatDateVi";
 import ManagerAiBubble from "../components/ManagerAiBubble";
@@ -42,6 +43,7 @@ type StoredUser = {
 };
 
 const MAX_ADMIN_NOTIFS = 50;
+const ADMIN_SUMMARY_DISMISSED_KEY = "admin_summary_notifs_dismissed";
 
 type AdminNotif = {
   id: string;
@@ -51,6 +53,8 @@ type AdminNotif = {
   link: string;
   read: boolean;
   at: string; // ISO string
+  count?: number;
+  source?: "realtime" | "summary";
 };
 
 const loadAdminNotifs = (): AdminNotif[] => {
@@ -66,6 +70,25 @@ const saveAdminNotifs = (items: AdminNotif[]) => {
   try {
     localStorage.setItem("admin_notifs", JSON.stringify(items.slice(0, MAX_ADMIN_NOTIFS)));
   } catch {}
+};
+
+const loadAdminSummaryDismissedKeys = (): string[] => {
+  try {
+    const raw = localStorage.getItem(ADMIN_SUMMARY_DISMISSED_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveAdminSummaryDismissedKeys = (keys: string[]) => {
+  try {
+    localStorage.setItem(ADMIN_SUMMARY_DISMISSED_KEY, JSON.stringify(Array.from(new Set(keys)).slice(-200)));
+  } catch {}
+};
+
+const getAdminSummaryDismissKey = (item: Pick<AdminNotif, "id" | "count">) => {
+  return `${item.id}:${Number(item.count || 0)}`;
 };
 
 const SSE_NOTIF_TYPE_MAP: Record<string, { type: AdminNotif["type"]; title: string; link: string }> = {
@@ -109,6 +132,8 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   // Admin notification state
   const [adminNotifOpen, setAdminNotifOpen] = useState(false);
   const [adminNotifs, setAdminNotifs] = useState<AdminNotif[]>(loadAdminNotifs);
+  const [adminSummaryNotifs, setAdminSummaryNotifs] = useState<AdminNotif[]>([]);
+  const [adminSummaryLoading, setAdminSummaryLoading] = useState(false);
   const adminNotifRef = useRef<HTMLDivElement | null>(null);
 
   const addAdminNotif = (notif: Omit<AdminNotif, "id" | "at" | "read">) => {
@@ -131,8 +156,55 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   };
 
   const clearAdminNotifs = () => {
+    const dismissedKeys = loadAdminSummaryDismissedKeys();
+    const summaryKeys = adminSummaryNotifs.map(getAdminSummaryDismissKey);
+    saveAdminSummaryDismissedKeys([...dismissedKeys, ...summaryKeys]);
+    setAdminSummaryNotifs([]);
     setAdminNotifs([]);
     localStorage.removeItem("admin_notifs");
+  };
+
+  const dismissAdminNotif = (notif: AdminNotif) => {
+    if (notif.source === "summary") {
+      const dismissedKeys = loadAdminSummaryDismissedKeys();
+      saveAdminSummaryDismissedKeys([...dismissedKeys, getAdminSummaryDismissKey(notif)]);
+      setAdminSummaryNotifs((prev) => prev.filter((item) => item.id !== notif.id));
+      return;
+    }
+
+    setAdminNotifs((prev) => {
+      const next = prev.filter((item) => item.id !== notif.id);
+      saveAdminNotifs(next);
+      return next;
+    });
+  };
+
+  const refreshAdminNotificationSummary = async () => {
+    if (user?.role !== "admin") return;
+    setAdminSummaryLoading(true);
+    try {
+      const res = await adminApi.getNotificationSummary();
+      const rawItems = Array.isArray(res?.data?.items) ? res.data.items : [];
+      const next: AdminNotif[] = rawItems.map((item: any) => ({
+        id: String(item.id || `summary-${item.link || item.title}`),
+        type: (["sos", "location", "review", "user", "voucher", "general"].includes(String(item.type))
+          ? String(item.type)
+          : "general") as AdminNotif["type"],
+        title: String(item.title || "Thông báo hệ thống"),
+        body: String(item.body || ""),
+        link: String(item.link || ""),
+        read: false,
+        at: String(item.at || new Date().toISOString()),
+        count: Number(item.count || 0),
+        source: "summary",
+      }));
+      const dismissedKeys = new Set(loadAdminSummaryDismissedKeys());
+      setAdminSummaryNotifs(next.filter((item) => !dismissedKeys.has(getAdminSummaryDismissKey(item))));
+    } catch {
+      setAdminSummaryNotifs([]);
+    } finally {
+      setAdminSummaryLoading(false);
+    }
   };
 
   const loadUserFromStorage = () => {
@@ -213,6 +285,23 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
   const userRole = user?.role;
   const userId = user?.user_id;
+  const unreadRealtimeAdminCount = adminNotifs.filter((n) => !n.read).length;
+  const adminBadgeCount = adminSummaryNotifs.length + unreadRealtimeAdminCount;
+  const visibleAdminNotifs = [...adminSummaryNotifs, ...adminNotifs];
+
+  useEffect(() => {
+    if (userRole !== "admin") {
+      setAdminSummaryNotifs([]);
+      return;
+    }
+
+    void refreshAdminNotificationSummary();
+    const id = window.setInterval(() => {
+      void refreshAdminNotificationSummary();
+    }, 30000);
+
+    return () => window.clearInterval(id);
+  }, [userRole]);
 
   // Realtime Socket listener for Admin (SOS events + other events)
   useEffect(() => {
@@ -638,12 +727,15 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                   className="group relative flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-all hover:bg-red-100 hover:text-red-700"
                   onClick={() => {
                     setAdminNotifOpen((o) => !o);
-                    if (!adminNotifOpen) markAllAdminRead();
+                    if (!adminNotifOpen) {
+                      markAllAdminRead();
+                      void refreshAdminNotificationSummary();
+                    }
                   }}
                   aria-label="Thông báo Admin"
                 >
                   <Badge
-                    count={adminNotifs.filter((n) => !n.read).length}
+                    count={adminBadgeCount}
                     size="small"
                     offset={[2, -2]}
                   >
@@ -658,9 +750,9 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                       <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
                         <BellOutlined className="text-red-500" />
                         Thông báo Hệ thống
-                        {adminNotifs.filter((n) => !n.read).length > 0 && (
+                        {adminBadgeCount > 0 && (
                           <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">
-                            {adminNotifs.filter((n) => !n.read).length} mới
+                            {adminBadgeCount} cần xử lý
                           </span>
                         )}
                       </div>
@@ -668,21 +760,25 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                         type="button"
                         className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-white disabled:opacity-50"
                         onClick={clearAdminNotifs}
-                        disabled={adminNotifs.length === 0}
+                        disabled={visibleAdminNotifs.length === 0}
                       >
-                        Xóa hết
+                        Đã xem hết
                       </button>
                     </div>
 
                     {/* List */}
                     <div className="max-h-[460px] overflow-y-auto sleek-scrollbar">
-                      {adminNotifs.length === 0 ? (
+                      {adminSummaryLoading ? (
+                        <div className="px-4 py-7 text-center text-sm text-slate-500">
+                          Đang tải thông báo...
+                        </div>
+                      ) : visibleAdminNotifs.length === 0 ? (
                         <div className="px-4 py-10 text-center">
                           <div className="text-3xl mb-2">🔔</div>
                           <div className="text-sm text-slate-400">Chưa có thông báo nào</div>
                         </div>
                       ) : (
-                        adminNotifs.map((n) => (
+                        visibleAdminNotifs.map((n) => (
                           <button
                             type="button"
                             key={n.id}
@@ -690,6 +786,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                               !n.read ? "bg-red-50/40" : ""
                             }`}
                             onClick={() => {
+                              dismissAdminNotif(n);
                               setAdminNotifOpen(false);
                               if (n.link) {
                                 navigate(n.link);
@@ -701,9 +798,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="text-sm font-semibold text-slate-900">{n.title}</span>
-                                  {!n.read && (
+                                  {n.source === "summary" ? (
+                                    <span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[9px] font-bold text-orange-700">
+                                      {n.count} việc
+                                    </span>
+                                  ) : !n.read ? (
                                     <span className="shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>
-                                  )}
+                                  ) : null}
                                 </div>
                                 {n.body && (
                                   <div className="mt-0.5 text-xs text-slate-500 line-clamp-3 whitespace-pre-line break-words">{n.body.trim()}</div>

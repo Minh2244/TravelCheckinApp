@@ -8,7 +8,6 @@ import {
   Upload,
   Input,
   InputNumber,
-  Divider,
   TimePicker,
   Modal,
   Select,
@@ -66,6 +65,12 @@ type LocationRow = {
 };
 
 const DEFAULT_CENTER: LatLng = { lat: 10.776889, lng: 106.700806 };
+const DEFAULT_AUTOMATION_CONFIG = {
+  auto_confirm_minutes: 30,
+  auto_cancel_food_minutes: 60,
+  auto_cancel_hotel_minutes: 4320,
+  auto_cancel_ticket_minutes: 1440,
+};
 
 const MapResizeFix = () => {
   const map = useMap();
@@ -302,6 +307,7 @@ const OwnerLocations = () => {
     if (defaultPhone) {
       form.setFieldsValue({ phone: defaultPhone });
     }
+    form.setFieldsValue(DEFAULT_AUTOMATION_CONFIG);
     setPicked(null);
     setPickedDraft(null);
     setCreateStep("pick");
@@ -326,10 +332,18 @@ const OwnerLocations = () => {
         email: row.email,
         opening_open: toTimeValue(oc.open),
         opening_close: toTimeValue(oc.close),
-        auto_confirm_minutes: row.auto_confirm_minutes ?? 30,
-        auto_cancel_food_minutes: row.auto_cancel_food_minutes ?? 60,
-        auto_cancel_hotel_minutes: row.auto_cancel_hotel_minutes ?? 4320,
-        auto_cancel_ticket_minutes: row.auto_cancel_ticket_minutes ?? 1440,
+        auto_confirm_minutes:
+          row.auto_confirm_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_confirm_minutes,
+        auto_cancel_food_minutes:
+          row.auto_cancel_food_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_food_minutes,
+        auto_cancel_hotel_minutes:
+          row.auto_cancel_hotel_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_hotel_minutes,
+        auto_cancel_ticket_minutes:
+          row.auto_cancel_ticket_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_ticket_minutes,
       });
       const lat = Number(row.latitude);
       const lng = Number(row.longitude);
@@ -547,6 +561,25 @@ const OwnerLocations = () => {
         opening_open?: Dayjs | null;
         opening_close?: Dayjs | null;
       };
+      const valuesWithAutomation = {
+        ...values,
+        auto_confirm_minutes:
+          values.auto_confirm_minutes ??
+          editing?.auto_confirm_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_confirm_minutes,
+        auto_cancel_food_minutes:
+          values.auto_cancel_food_minutes ??
+          editing?.auto_cancel_food_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_food_minutes,
+        auto_cancel_hotel_minutes:
+          values.auto_cancel_hotel_minutes ??
+          editing?.auto_cancel_hotel_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_hotel_minutes,
+        auto_cancel_ticket_minutes:
+          values.auto_cancel_ticket_minutes ??
+          editing?.auto_cancel_ticket_minutes ??
+          DEFAULT_AUTOMATION_CONFIG.auto_cancel_ticket_minutes,
+      };
 
       const openStr = dayjs.isDayjs(values.opening_open)
         ? values.opening_open.format("HH:mm")
@@ -565,7 +598,7 @@ const OwnerLocations = () => {
 
       setSaving(true);
       if (editing) {
-        const payload: Record<string, unknown> = { ...values };
+        const payload: Record<string, unknown> = { ...valuesWithAutomation };
         delete payload.image;
         delete payload.images;
         delete payload.opening_open;
@@ -601,7 +634,7 @@ const OwnerLocations = () => {
 
         const fd = new FormData();
         fileObjects.forEach((file) => fd.append("images", file));
-        Object.entries(values as Record<string, unknown>).forEach(([k, v]) => {
+        Object.entries(valuesWithAutomation as Record<string, unknown>).forEach(([k, v]) => {
           if (k === "images") return;
           if (k === "opening_open" || k === "opening_close") return;
           if (v === undefined || v === null) return;
@@ -652,89 +685,109 @@ const OwnerLocations = () => {
 
   const columns: ColumnsType<LocationRow> = useMemo(
     () => [
-      { 
-        title: "#", 
-        key: "index", 
-        width: 80,
-        render: (_: any, __: any, index: number) => items.length - index
+      {
+        title: "STT",
+        key: "index",
+        width: 56,
+        align: "center",
+        render: (_: unknown, __: LocationRow, index: number) =>
+          items.length - index,
       },
       {
-        title: "Ảnh",
-        key: "image",
-        width: 90,
+        title: "Địa điểm",
+        key: "location",
+        width: 320,
         render: (_: unknown, row: LocationRow) => {
           const first = normalizeLocationImages(row.images)?.[0];
-          if (!first) return <span className="text-gray-400">-</span>;
-          const src = resolveBackendUrl(first) || first;
+          const src = first ? resolveBackendUrl(first) || first : "";
           return (
-            <Image
-              src={src}
-              width={56}
-              height={40}
-              style={{ objectFit: "cover", borderRadius: 8 }}
-              preview={{ mask: "Xem" }}
-            />
+            <div className="flex min-w-0 items-center gap-3">
+              {src ? (
+                <Image
+                  src={src}
+                  width={64}
+                  height={46}
+                  style={{
+                    objectFit: "cover",
+                    borderRadius: 8,
+                    flexShrink: 0,
+                  }}
+                  preview={{ mask: "Xem" }}
+                />
+              ) : (
+                <div className="h-[46px] w-16 shrink-0 rounded-lg bg-slate-100" />
+              )}
+              <div className="min-w-0">
+                <div className="truncate font-medium text-slate-700">
+                  {row.location_name || "-"}
+                </div>
+                <div className="mt-1 text-sm text-slate-500">
+                  {locationTypeToVi(row.location_type)}
+                </div>
+              </div>
+            </div>
           );
         },
       },
-      { title: "Tên", dataIndex: "location_name" },
       {
-        title: "Loại",
-        dataIndex: "location_type",
-        width: 140,
-        render: (v: unknown) => locationTypeToVi(v),
-      },
-      {
-        title: "Giờ mở/đóng",
-        key: "opening_hours",
-        width: 140,
+        title: "Vận hành",
+        key: "operation",
+        width: 230,
         render: (_: unknown, row: LocationRow) => {
           const oc = parseOpenCloseFromOpeningHours(row.opening_hours);
-          if (!oc.open || !oc.close)
-            return <span className="text-gray-400">-</span>;
+          const hours =
+            oc.open && oc.close ? `${oc.open} - ${oc.close}` : "Chưa có giờ";
           return (
-            <span className="text-gray-700">
-              {oc.open} - {oc.close}
-            </span>
+            <div className="space-y-1">
+              <div className="font-medium text-slate-700">{hours}</div>
+              <div className="text-sm text-slate-500">{row.province || "-"}</div>
+            </div>
           );
         },
       },
-      { title: "Tỉnh", dataIndex: "province", width: 120 },
       {
         title: "Trạng thái",
         dataIndex: "status",
-        width: 120,
+        width: 130,
         render: (s: string) => statusTag(s),
       },
       {
         title: "Hoa hồng",
         dataIndex: "commission_rate",
-        width: 110,
-        align: "right",
+        width: 92,
+        align: "center",
         render: (v: unknown) => {
           const n = Number(v);
-          return `${Number.isFinite(n) ? n : 2.5}%`;
+          return (
+            <span className="font-medium text-slate-700">
+              {Number.isFinite(n) ? n : 2.5}%
+            </span>
+          );
         },
       },
       {
         title: "Hành động",
         key: "actions",
-        width: 320,
+        width: 270,
         render: (_: unknown, row: LocationRow) => (
-          <Space>
+          <Space size={8} wrap>
             <Button size="small" onClick={() => openViewMap(row)}>
               Vị trí
             </Button>
             <Button size="small" onClick={() => onEdit(row)}>
               Sửa
             </Button>
-            <Button
-              size="small"
-              onClick={() => navigate(`/owner/location-ops/${row.location_id}`)}
-              disabled={row.status !== "active"}
-            >
-              Cấu hình sơ đồ
-            </Button>
+            <Tooltip title="Cấu hình sơ đồ vận hành">
+              <Button
+                size="small"
+                onClick={() =>
+                  navigate(`/owner/location-ops/${row.location_id}`)
+                }
+                disabled={row.status !== "active"}
+              >
+                Sơ đồ
+              </Button>
+            </Tooltip>
             {row.status === "inactive" && row.previous_status === "active" ? (
               <Tooltip title="Địa điểm bị admin tạm ẩn nên owner không thể bật lại.">
                 <Button size="small" onClick={() => toggleStatus(row)} disabled>
@@ -754,7 +807,7 @@ const OwnerLocations = () => {
         ),
       },
     ],
-    [navigate, onEdit, openViewMap, toggleStatus],
+    [items.length, navigate, onEdit, openViewMap, toggleStatus],
   );
 
   return (
@@ -773,7 +826,8 @@ const OwnerLocations = () => {
           dataSource={items}
           columns={columns}
           pagination={false}
-          scroll={{ y: "calc(100vh - 250px)" }}
+          tableLayout="fixed"
+          scroll={{ y: 520 }}
         />
       </Card>
 
@@ -1191,52 +1245,6 @@ const OwnerLocations = () => {
               <Form.Item name="email" label="Email">
                 <Input />
               </Form.Item>
-
-              <Divider titlePlacement="left" className="!my-6 text-blue-600 font-semibold">
-                Cấu hình tự động duyệt & hủy (Smart Check-in)
-              </Divider>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-2xl bg-slate-50/50 p-4 border border-slate-100 mb-4">
-                <Form.Item 
-                  name="auto_confirm_minutes" 
-                  label="Thời gian tự động duyệt đơn"
-                  tooltip="Đơn đặt chỗ online sau khi thanh toán thành công sẽ ở trạng thái Pending. Sau số phút này, nếu Owner chưa bấm Chấp nhận thì hệ thống tự động xác nhận đơn."
-                  rules={[{ required: true, message: "Vui lòng nhập số phút" }]}
-                  initialValue={30}
-                >
-                  <InputNumber min={1} style={{ width: "100%" }} addonAfter="phút" />
-                </Form.Item>
-
-                <Form.Item 
-                  name="auto_cancel_food_minutes" 
-                  label="Tự động hủy bàn ăn trễ hẹn"
-                  tooltip="Sau giờ đặt bàn X phút, nếu khách không check-in, bàn sẽ tự động giải phóng trống."
-                  rules={[{ required: true, message: "Vui lòng nhập số phút" }]}
-                  initialValue={60}
-                >
-                  <InputNumber min={1} style={{ width: "100%" }} addonAfter="phút" />
-                </Form.Item>
-
-                <Form.Item 
-                  name="auto_cancel_hotel_minutes" 
-                  label="Tự động hủy phòng trễ hẹn"
-                  tooltip="Mặc định 3 ngày (4320 phút). Sau thời gian nhận phòng dự kiến X phút, nếu khách không check-in, phòng sẽ tự động giải phóng trống."
-                  rules={[{ required: true, message: "Vui lòng nhập số phút" }]}
-                  initialValue={4320}
-                >
-                  <InputNumber min={1} style={{ width: "100%" }} addonAfter="phút" />
-                </Form.Item>
-
-                <Form.Item 
-                  name="auto_cancel_ticket_minutes" 
-                  label="Tự động hủy vé du lịch trễ hẹn"
-                  tooltip="Mặc định 1 ngày (1440 phút). Sau ngày sử dụng vé X phút, nếu vé chưa được quét, vé sẽ tự động hết hạn."
-                  rules={[{ required: true, message: "Vui lòng nhập số phút" }]}
-                  initialValue={1440}
-                >
-                  <InputNumber min={1} style={{ width: "100%" }} addonAfter="phút" />
-                </Form.Item>
-              </div>
             </div>
           )}
         </Form>

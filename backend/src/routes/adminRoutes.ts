@@ -122,6 +122,7 @@ import {
   reviewOwnerVoucherAdmin,
   updateOwnerVoucherAdmin,
   deleteOwnerVoucherAdmin,
+  getAdminNotificationSummary,
   createPushNotification,
   getPushNotifications,
   deletePushNotification,
@@ -326,6 +327,7 @@ router.put("/owner-vouchers/:id", updateOwnerVoucherAdmin);
 router.delete("/owner-vouchers/:id", deleteOwnerVoucherAdmin);
 
 // Push Notifications (Admin)
+router.get("/notifications/summary", getAdminNotificationSummary);
 router.get("/push-notifications", getPushNotifications);
 router.post("/push-notifications", createPushNotification);
 router.delete("/push-notifications/:id", deletePushNotification);

@@ -2720,7 +2720,7 @@ export default function FrontOfficeHotel(props: {
                                     {r.status === "reserved" && r.expected_checkin ? (
                                       <>
                                         <div className="truncate mt-0.5 text-gray-500">
-                                          Dự kiến:{" "}
+                                          Ngày nhận:{" "}
                                           {formatDateTimeVN(String(r.expected_checkin))}
                                         </div>
                                         {(() => {

@@ -11,7 +11,6 @@ import {
   UserOutlined,
   SafetyCertificateOutlined,
   LineChartOutlined,
-  EditOutlined,
 } from "@ant-design/icons";
 import AvatarCropper from "../../components/AvatarCropper";
 import VirtualBankCard from "../../components/VirtualBankCard";
@@ -20,6 +19,7 @@ import MainLayout from "../../layouts/MainLayout";
 import ownerApi from "../../api/ownerApi";
 import { resolveBackendUrl } from "../../utils/resolveBackendUrl";
 import { asRecord, getErrorMessage } from "../../utils/safe";
+import { buildVietQrImageUrl } from "../../utils/vietqr";
 
 const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ỹ]+(?:\s+[A-Za-zÀ-ỹ]+)*$/u;
 const PHONE_PATTERN = /^0\d{9}$/;
@@ -166,10 +166,19 @@ const OwnerProfile = () => {
     bank_account: string;
     account_holder: string;
   } | null>(null);
+  const profileBankQrUrl = useMemo(
+    () =>
+      buildVietQrImageUrl({
+        bankName: bankInfo?.bank_name,
+        bankAccount: bankInfo?.bank_account,
+        accountHolder: bankInfo?.account_holder,
+        template: "qr_only",
+      }).url || "",
+    [bankInfo],
+  );
 
   // Show/Hide toggle states
   const [showRevenue, setShowRevenue] = useState(false);
-  const [showBankAccount, setShowBankAccount] = useState(false);
 
   // Avatar states
   const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
@@ -416,9 +425,9 @@ const OwnerProfile = () => {
 
   // Tab 1: Thông tin cơ bản
   const basicInfoTab = (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_minmax(0,1fr)] lg:items-stretch">
       {/* Cột trái: Cover + Avatar, Thống kê, Ngân hàng */}
-      <div className="space-y-6 animate-fadeIn">
+      <div className="grid gap-6 animate-fadeIn lg:h-full lg:grid-rows-[auto_1fr]">
         {/* Cover + Avatar Card */}
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)]">
           {/* Ảnh bìa gradient đối tác tĩnh cao cấp */}
@@ -483,7 +492,7 @@ const OwnerProfile = () => {
 
         {/* Business Stats Card (Chỉ hiện cho Owner) */}
         {isOwner ? (
-          <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)] p-6 space-y-4">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.035)] p-6 space-y-4 lg:h-full">
             <h4 className="text-sm font-bold text-slate-800 font-heading flex items-center gap-2">
               📈 Thống kê hoạt động đối tác
             </h4>
@@ -560,8 +569,8 @@ const OwnerProfile = () => {
       </div>
 
       {/* Cột phải: Form thông tin & Thẻ ngân hàng */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] animate-fadeIn">
-        <div className="flex flex-col xl:flex-row gap-8">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.035)] animate-fadeIn lg:h-full">
+        <div className="flex h-full flex-col gap-8 xl:flex-row">
 
           {/* Cột thông tin liên hệ */}
           <div className="flex-1 space-y-6">
@@ -662,32 +671,20 @@ const OwnerProfile = () => {
 
           {/* Cột thẻ ngân hàng (Chỉ hiện cho Owner) */}
           {isOwner && bankInfo && (
-            <div className="xl:w-[380px] shrink-0 space-y-6">
+            <div className="flex shrink-0 flex-col space-y-4 xl:w-[460px]">
               <h3 className="text-lg font-bold text-slate-800 font-heading border-b border-slate-200 pb-4 flex items-center gap-2">
                 <SafetyCertificateOutlined className="text-teal-600" /> Thẻ ngân hàng
               </h3>
-              <div className="relative group">
-                <div className="absolute top-4 right-4 z-20 flex gap-2">
-                  <Button
-                    type="text"
-                    icon={showBankAccount ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                    onClick={() => setShowBankAccount(!showBankAccount)}
-                    className="text-white hover:text-white bg-white/20 hover:bg-white/40"
-                  />
-                  <Button
-                    type="text"
-                    icon={<EditOutlined />}
-                    onClick={() => navigate("/owner/bank")}
-                    className="text-white hover:text-white bg-white/20 hover:bg-white/40"
+              <div className="rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-sm">
+                <div className="mx-auto w-full max-w-md">
+                  <VirtualBankCard
+                  bankName={bankInfo?.bank_name || ""}
+                  accountNumber={bankInfo?.bank_account || ""}
+                  accountName={bankInfo?.account_holder || "VUI LÒNG CẬP NHẬT"}
+                    qrUrl={profileBankQrUrl}
+                  title="NGÂN HÀNG CỦA BẠN"
                   />
                 </div>
-                <VirtualBankCard
-                  bankName={bankInfo?.bank_name || ""}
-                  accountNumber={showBankAccount ? (bankInfo?.bank_account || "") : "•••• •••• ••••"}
-                  accountName={bankInfo?.account_holder || "VUI LÒNG CẬP NHẬT"}
-                  qrUrl={bankInfo && bankInfo.bank_name && bankInfo.bank_account ? `https://img.vietqr.io/image/${bankInfo.bank_name}-${bankInfo.bank_account}-compact2.jpg?accountName=${encodeURIComponent(bankInfo.account_holder || "")}` : ""}
-                  title=""
-                />
               </div>
             </div>
           )}

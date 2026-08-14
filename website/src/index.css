@@ -292,6 +292,84 @@ h1, h2, h3, h4, h5, h6,
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08), 0 4px 10px rgba(15, 23, 42, 0.04);
 }
 
+.bank-card-stage {
+  perspective: 1100px;
+}
+
+.bank-card-3d {
+  transform-style: preserve-3d;
+  box-shadow:
+    0 20px 30px rgba(15, 23, 42, 0.26),
+    0 9px 16px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  transform: translateZ(0);
+}
+
+.bank-card-3d:hover {
+  transform: translateY(-6px) scale(1.015);
+  box-shadow:
+    0 34px 58px rgba(15, 23, 42, 0.34),
+    0 16px 24px rgba(15, 23, 42, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.bank-card-3d-preview {
+  transform: translateZ(0);
+  box-shadow:
+    0 40px 80px rgba(0, 0, 0, 0.58),
+    0 18px 36px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.bank-card-rim {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -24px 46px rgba(0, 0, 0, 0.14),
+    inset 22px 0 44px rgba(255, 255, 255, 0.08);
+}
+
+.bank-card-shine {
+  background:
+    linear-gradient(
+      115deg,
+      transparent 0%,
+      transparent 32%,
+      rgba(255, 255, 255, 0.06) 39%,
+      rgba(255, 255, 255, 0.42) 48%,
+      rgba(255, 255, 255, 0.08) 56%,
+      transparent 66%,
+      transparent 100%
+    );
+  filter: blur(0.2px);
+  mix-blend-mode: screen;
+  opacity: 0;
+  transform: translateX(-80%) skewX(-14deg);
+  animation: bankCardShine 4.8s ease-in-out infinite;
+}
+
+.bank-card-3d:hover .bank-card-shine {
+  animation-duration: 1.35s;
+}
+
+@keyframes bankCardShine {
+  0%,
+  42% {
+    opacity: 0;
+    transform: translateX(-82%) skewX(-14deg);
+  }
+  48% {
+    opacity: 0.55;
+  }
+  62% {
+    opacity: 0.22;
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: translateX(82%) skewX(-14deg);
+  }
+}
+
 /* === Focus ring teal === */
 input:focus, textarea:focus, select:focus {
   outline: none;

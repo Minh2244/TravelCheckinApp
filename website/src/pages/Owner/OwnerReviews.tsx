@@ -180,40 +180,37 @@ const OwnerReviews = () => {
 
   const columns: ColumnsType<ReviewRow> = useMemo(
     () => [
-      { title: "#", dataIndex: "review_id", width: 80 },
-      { title: "Địa điểm", dataIndex: "location_name" },
-      { title: "Khách", dataIndex: "user_name" },
-      { title: "Rating", dataIndex: "rating", width: 80 },
       {
-        title: "Thời gian",
-        dataIndex: "created_at",
-        width: 170,
-        render: (value: string) => formatDateTimeVi(value),
+        title: "STT",
+        width: 64,
+        align: "center",
+        render: (_: unknown, __: ReviewRow, index: number) => filteredItems.length - index,
       },
       { 
-        title: "Đánh giá & Phản hồi", 
+        title: "Nội dung đánh giá", 
         key: "comments",
         render: (_: unknown, row: ReviewRow) => (
-          <div className="flex flex-col gap-3 min-w-[300px] whitespace-normal py-2">
+          <div className="flex min-w-0 flex-col gap-3 whitespace-normal py-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span className="font-semibold text-slate-900">{row.location_name || "-"}</span>
+              <span>{row.user_name || "-"}</span>
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-700">
+                {Number(row.rating || 0).toFixed(1)} sao
+              </span>
+              <span>{formatDateTimeVi(row.created_at || "")}</span>
+            </div>
             {/* User Comment */}
             <div>
               <div className="text-sm text-slate-800 whitespace-pre-wrap font-medium">
                 {row.comment || <span className="italic text-slate-400 font-normal">Không có nội dung</span>}
               </div>
-              <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
                 <button
                   type="button"
-                  className="hover:text-blue-600 transition"
+                  className="rounded-full bg-blue-50 px-3 py-1 text-blue-600 transition hover:bg-blue-100 hover:text-blue-700"
                   onClick={() => openReply(row)}
                 >
                   {row.reply_content ? "Sửa phản hồi" : "Phản hồi"}
-                </button>
-                <button
-                  type="button"
-                  className="hover:text-blue-600 transition"
-                  onClick={() => toggleHide(row)}
-                >
-                  {row.status === "hidden" ? "Hiện bình luận" : "Ẩn bình luận"}
                 </button>
                 <Popconfirm
                   title="Xóa đánh giá này của User?"
@@ -221,7 +218,7 @@ const OwnerReviews = () => {
                   cancelText="Hủy"
                   onConfirm={() => deleteReview(row)}
                 >
-                  <button type="button" className="hover:text-red-600 transition">
+                  <button type="button" className="rounded-full bg-red-50 px-3 py-1 text-red-600 transition hover:bg-red-100 hover:text-red-700">
                     Xóa
                   </button>
                 </Popconfirm>
@@ -239,10 +236,10 @@ const OwnerReviews = () => {
                     Phản hồi của bạn (Owner)
                   </div>
                   <div className="text-sm text-slate-800 whitespace-pre-wrap">{row.reply_content}</div>
-                  <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
                     <button
                       type="button"
-                      className="hover:text-blue-600 transition"
+                      className="rounded-full bg-blue-50 px-3 py-1 text-blue-600 transition hover:bg-blue-100 hover:text-blue-700"
                       onClick={() => openReply(row)}
                     >
                       Sửa
@@ -253,7 +250,7 @@ const OwnerReviews = () => {
                       cancelText="Hủy"
                       onConfirm={() => deleteReply(row)}
                     >
-                      <button type="button" className="hover:text-red-600 transition">
+                      <button type="button" className="rounded-full bg-red-50 px-3 py-1 text-red-600 transition hover:bg-red-100 hover:text-red-700">
                         Xóa
                       </button>
                     </Popconfirm>
@@ -267,26 +264,26 @@ const OwnerReviews = () => {
       {
         title: "Ảnh",
         key: "images",
-        width: 210,
+        width: 110,
         render: (_: unknown, row: ReviewRow) => {
           const images = parseReviewImages(row.images);
           if (!images.length) return "-";
           return (
             <Image.PreviewGroup>
-              <div className="flex flex-wrap gap-2">
-                {images.slice(0, 4).map((src, idx) => (
+              <div className="flex flex-wrap gap-1.5">
+                {images.slice(0, 2).map((src, idx) => (
                   <Image
                     key={`${row.review_id}-${idx}`}
                     src={src}
                     alt={`review-${row.review_id}-${idx}`}
-                    width={44}
-                    height={44}
+                    width={40}
+                    height={40}
                     className="rounded border object-cover"
                   />
                 ))}
-                {images.length > 4 ? (
-                  <div className="flex h-[44px] w-[44px] items-center justify-center rounded border text-xs text-gray-500">
-                    +{images.length - 4}
+                {images.length > 2 ? (
+                  <div className="flex h-10 w-10 items-center justify-center rounded border text-xs text-gray-500">
+                    +{images.length - 2}
                   </div>
                 ) : null}
               </div>
@@ -297,7 +294,7 @@ const OwnerReviews = () => {
       {
         title: "Trạng thái",
         dataIndex: "status",
-        width: 120,
+        width: 105,
         render: (s: string) => {
           const v = String(s || "").toLowerCase();
           const label =
@@ -318,7 +315,7 @@ const OwnerReviews = () => {
         },
       }
     ],
-    [deleteReview, deleteReply, openReply, toggleHide],
+    [deleteReview, deleteReply, filteredItems.length, openReply, toggleHide],
   );
 
   return (
@@ -358,7 +355,7 @@ const OwnerReviews = () => {
             dataSource={filteredItems}
             columns={columns}
             pagination={false}
-            scroll={{ x: "max-content", y: "calc(100vh - 300px)" }}
+            scroll={{ y: "calc(100vh - 300px)" }}
             size="small"
           />
       </Card>

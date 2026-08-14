@@ -5,7 +5,6 @@ import {
   Image,
   Input,
   Modal,
-  Table,
   Tag,
   message,
   Select,
@@ -349,6 +348,7 @@ const OwnerCommissions = () => {
     ],
     [displayedGroupedItems.length],
   );
+  void columns;
 
   return (
     <MainLayout>
@@ -473,7 +473,72 @@ const OwnerCommissions = () => {
           loading={loading}
           className="rounded-2xl"
         >
-          <Table rowKey="commission_id" dataSource={displayedGroupedItems} columns={columns} pagination={false} />
+          <div className="space-y-3">
+            <div className="hidden rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 md:grid md:grid-cols-[72px_minmax(280px,1fr)_220px_170px] md:items-center">
+              <div className="text-center">STT</div>
+              <div>Kỳ đối soát</div>
+              <div>Số tiền hoa hồng</div>
+              <div>Trạng thái</div>
+            </div>
+
+            <div className="max-h-[420px] overflow-y-auto pr-2">
+              {displayedGroupedItems.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-10 text-center text-slate-400">
+                  Không có dữ liệu hoa hồng đã chốt
+                </div>
+              ) : (
+                displayedGroupedItems.map((item, index) => (
+                  <div
+                    key={`${item.commission_id}-${index}`}
+                    className="mb-3 rounded-2xl border border-slate-100 bg-white px-4 py-4 shadow-sm transition-all duration-200 hover:border-emerald-100 hover:shadow-md md:grid md:grid-cols-[72px_minmax(280px,1fr)_220px_170px] md:items-center"
+                  >
+                    <div className="mb-3 flex items-center gap-2 md:mb-0 md:justify-center">
+                      <span className="text-xs font-semibold uppercase text-slate-400 md:hidden">STT</span>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 font-semibold text-slate-700">
+                        {displayedGroupedItems.length - index}
+                      </span>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold uppercase text-slate-400 md:hidden">Kỳ đối soát</div>
+                      <div className="truncate font-semibold text-slate-800">
+                        {item.billing_period || "Chưa có kỳ đối soát"}
+                      </div>
+                      {item.due_date ? (
+                        <div className="mt-1 text-sm text-slate-500">
+                          Hạn thanh toán: {dayjs(item.due_date).format("DD/MM/YYYY")}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 md:mt-0">
+                      <div className="text-xs font-semibold uppercase text-slate-400 md:hidden">Số tiền hoa hồng</div>
+                      <div className="font-semibold text-blue-600">
+                        {formatMoney(Number(item.commission_amount || 0))}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 md:mt-0">
+                      <div className="mb-1 text-xs font-semibold uppercase text-slate-400 md:hidden">Trạng thái</div>
+                      <Tag
+                        color={
+                          item.status === "paid" ? "green"
+                          : item.status === "payment_submitted" ? "blue"
+                          : item.status === "pending" ? "orange"
+                          : "red"
+                        }
+                        className="m-0 rounded-full px-3 py-1 font-semibold"
+                      >
+                        {item.status === "payment_submitted" ? "Chờ admin duyệt"
+                         : item.status === "pending" ? "Chờ thanh toán"
+                         : statusToVi(String(item.status || ""))}
+                      </Tag>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </Card>
 
         <Card

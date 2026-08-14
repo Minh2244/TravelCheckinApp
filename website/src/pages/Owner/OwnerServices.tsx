@@ -523,75 +523,86 @@ const OwnerServices = () => {
 
   const columns: ColumnsType<ServiceRow> = useMemo(() => {
     const cols: ColumnsType<ServiceRow> = [
-      { title: "#", dataIndex: "service_id", width: 80 },
       {
-        title: "Ảnh",
-        key: "images",
-        width: 80,
+        title: "STT",
+        key: "index",
+        width: 52,
+        align: "center",
+        render: (_: unknown, __: ServiceRow, index: number) =>
+          services.length - index,
+      },
+      {
+        title: "Dịch vụ",
+        key: "service",
+        width: 300,
         render: (_: unknown, row: ServiceRow) => {
           const img = normalizeImages(row.images)?.[0] ?? "";
           const src = resolveBackendUrl(img) || img;
-          return src ? (
-            <img
-              src={src}
-              alt="service"
-              className="w-10 h-10 object-cover rounded-md border bg-white"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-md border bg-gray-50" />
+          return (
+            <div className="flex min-w-0 items-center gap-3">
+              {src ? (
+                <img
+                  src={src}
+                  alt="service"
+                  className="h-12 w-12 shrink-0 rounded-lg border bg-white object-cover"
+                />
+              ) : (
+                <div className="h-12 w-12 shrink-0 rounded-lg border bg-gray-50" />
+              )}
+              <div className="min-w-0">
+                <div className="truncate font-medium text-slate-700">
+                  {row.service_name || "-"}
+                </div>
+                <div className="mt-1 truncate text-sm text-slate-500">
+                  {row.category_name || "Chưa có danh mục"}
+                </div>
+              </div>
+            </div>
           );
         },
       },
-      { title: "Tên", dataIndex: "service_name", width: 220, ellipsis: true },
-      { title: "Danh mục", dataIndex: "category_name", width: 200, ellipsis: true },
       {
         title: "Loại",
         dataIndex: "service_type",
-        width: 160,
+        width: 105,
         render: (v: unknown) => serviceTypeLabel(v),
       },
       {
-        title: isHotelLocation ? "Tiền phòng/tiếng" : "Giá",
-        dataIndex: "price",
-        width: 160,
-        render: (v: unknown, row: ServiceRow) => {
-          const base = formatMoney(Number(v || 0));
-          if (isHotelLocation && String(row.service_type || "") === "room") {
-            return `${base} / tiếng`;
-          }
-          return base;
-        },
-      },
-      {
-        title: "Đơn vị",
-        dataIndex: "unit",
-        width: 140,
-        render: (v: unknown, row: ServiceRow) => {
-          if (isHotelLocation && String(row.service_type || "") === "room") {
-            return "Tiếng";
-          }
-          return String(v || "").trim() ? String(v).trim() : "-";
+        title: isHotelLocation ? "Giá phòng" : "Giá / kho",
+        key: "price_stock",
+        width: 165,
+        render: (_: unknown, row: ServiceRow) => {
+          const base = formatMoney(Number(row.price || 0));
+          const unit =
+            isHotelLocation && String(row.service_type || "") === "room"
+              ? "Tiếng"
+              : String(row.unit || "").trim() || "-";
+          const quantity =
+            isFoodLocation || isHotelLocation
+              ? null
+              : Number.isFinite(Number(row.quantity)) && Number(row.quantity) > 0
+                ? Number(row.quantity)
+                : 1;
+          return (
+            <div className="space-y-1">
+              <div className="font-medium text-slate-700">
+                {isHotelLocation && String(row.service_type || "") === "room"
+                  ? `${base} / tiếng`
+                  : base}
+              </div>
+              <div className="text-sm text-slate-500">
+                {quantity == null ? `Đơn vị: ${unit}` : `Đơn vị: ${unit} • SL: ${quantity}`}
+              </div>
+            </div>
+          );
         },
       },
     ];
 
-    if (!isFoodLocation) {
-      cols.push({
-        title: "SL",
-        dataIndex: "quantity",
-        width: 80,
-        render: (v: unknown) => {
-          if (isHotelLocation) return 1;
-          const n = Number(v);
-          return Number.isFinite(n) && n > 0 ? n : 1;
-        },
-      });
-    }
-
     cols.push(
       {
         title: "Trạng thái",
-        width: 180,
+        width: 135,
         render: (_: unknown, row: ServiceRow) => {
           const adminStatus = String(row.admin_status || "approved");
           const approvalTag =
@@ -640,12 +651,17 @@ const OwnerServices = () => {
       },
       {
         title: "Hành động",
-        width: 220,
+        width: 230,
         render: (_: unknown, row: ServiceRow) => (
-          <Space>
+          <Space size={8} wrap>
             {isFoodLocation || isTouristLocation ? (
               <Button
                 size="small"
+                className={
+                  String(row.status || "") === "available"
+                    ? "!h-8 !rounded-full !border-amber-200 !bg-amber-50 !px-3 !font-semibold !text-amber-700 !shadow-sm !transition-all hover:!-translate-y-0.5 hover:!border-amber-300 hover:!bg-amber-100"
+                    : "!h-8 !rounded-full !border-emerald-200 !bg-emerald-50 !px-3 !font-semibold !text-emerald-700 !shadow-sm !transition-all hover:!-translate-y-0.5 hover:!border-emerald-300 hover:!bg-emerald-100"
+                }
                 onClick={async () => {
                   try {
                     const cur = String(row.status || "");
@@ -678,10 +694,18 @@ const OwnerServices = () => {
                     : "Còn hàng"}
               </Button>
             ) : null}
-            <Button size="small" onClick={() => onEdit(row)}>
+            <Button
+              size="small"
+              className="!h-8 !rounded-full !border-blue-200 !bg-blue-50 !px-3 !font-semibold !text-blue-700 !shadow-sm !transition-all hover:!-translate-y-0.5 hover:!border-blue-300 hover:!bg-blue-100"
+              onClick={() => onEdit(row)}
+            >
               Sửa
             </Button>
-            <Button size="small" danger onClick={() => onDelete(row)}>
+            <Button
+              size="small"
+              className="!h-8 !rounded-full !border-red-200 !bg-red-50 !px-3 !font-semibold !text-red-600 !shadow-sm !transition-all hover:!-translate-y-0.5 hover:!border-red-300 hover:!bg-red-100"
+              onClick={() => onDelete(row)}
+            >
               Xóa
             </Button>
           </Space>
@@ -699,6 +723,7 @@ const OwnerServices = () => {
     locationType,
     onDelete,
     onEdit,
+    services.length,
     serviceTypeLabel,
   ]);
 
@@ -839,7 +864,8 @@ const OwnerServices = () => {
             dataSource={services}
             columns={columns}
             pagination={false}
-            scroll={{ x: 1400, y: 520 }}
+            tableLayout="fixed"
+            scroll={{ y: 520 }}
           />
         </Card>
       </Space>
