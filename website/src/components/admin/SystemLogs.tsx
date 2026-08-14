@@ -313,7 +313,8 @@ const SystemLogs = () => {
           onChange: (p) => setPage(p),
           showTotal: (t) => `Tổng ${t} dòng`
         }}
-        scroll={{ x: 'max-content', y: 600 }}
+        scroll={{ y: 600 }}
+        tableLayout="fixed"
         expandable={{
           expandedRowRender: renderExpandedRow,
           rowExpandable: (record) => !!record.details,
@@ -329,13 +330,13 @@ const SystemLogs = () => {
           {
             title: "Thời gian",
             dataIndex: "created_at",
-            width: 180,
+            width: 140,
             render: (v: unknown) => (v ? formatDateTimeVi(String(v)) : "-"),
           },
           {
             title: "Người thực hiện",
             dataIndex: "full_name",
-            width: 200,
+            width: 180,
             render: (v: string, record: AuditLogRow) => {
               if (!v) return <Text type="secondary">Hệ thống</Text>;
               return <div>
@@ -347,7 +348,7 @@ const SystemLogs = () => {
           { 
             title: "Hành động (Action)", 
             dataIndex: "action", 
-            width: 240,
+            width: 200,
             render: (v: string) => {
               const info = getActionInfo(v);
               return <Tag color={info.color}>{info.label}</Tag>;

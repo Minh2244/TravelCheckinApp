@@ -537,7 +537,8 @@ const Commissions = () => {
             dataSource={paymentRequests}
             pagination={false}
             size="middle"
-            scroll={{ x: 860 }}
+            scroll={{ y: 350 }}
+            tableLayout="fixed"
             rowClassName={(_, index) => index % 2 === 0 ? '' : 'ant-table-row-alt'}
             columns={[
               {
@@ -563,7 +564,7 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Mã</span>,
                 dataIndex: "request_id",
-                width: 80,
+                width: 70,
                 render: (v: number) => (
                   <span style={{ fontFamily: 'monospace', color: '#6366f1', fontWeight: 600, fontSize: 13 }}>
                     #{v}
@@ -575,24 +576,24 @@ const Commissions = () => {
                 dataIndex: "owner_name",
                 width: 180,
                 render: (_: unknown, r: CommissionPaymentRequest) => (
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14 }}>{r.owner_name}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{r.owner_email}</div>
+                  <div className="truncate">
+                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14 }} className="truncate" title={r.owner_name}>{r.owner_name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }} className="truncate" title={r.owner_email}>{r.owner_email}</div>
                   </div>
                 ),
               },
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Kỳ đối soát</span>,
                 dataIndex: "billing_period",
-                width: 180,
+                width: 130,
                 render: (v: string | null | undefined) => v
-                  ? <span style={{ fontSize: 13, color: '#475569', background: '#f1f5f9', borderRadius: 6, padding: '3px 9px', display: 'inline-block', border: '1px solid #e2e8f0' }}>{v}</span>
+                  ? <div style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>{v}</div>
                   : <span style={{ color: '#cbd5e1', fontSize: 13 }}>—</span>,
               },
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Tổng</span>,
                 dataIndex: "total_due",
-                width: 130,
+                width: 110,
                 render: (v: number) => (
                   <span style={{ fontWeight: 700, color: '#16a34a', fontSize: 14 }}>{formatMoney(v || 0)}</span>
                 ),
@@ -600,15 +601,15 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Nội dung CK</span>,
                 dataIndex: "transfer_note",
-                width: 200,
+                width: 150,
                 render: (v: string | null) => v
-                  ? <span style={{ fontSize: 12, color: '#334155', background: '#fffbeb', borderRadius: 5, padding: '2px 7px', border: '1px solid #fde68a' }}>{v}</span>
+                  ? <div className="truncate" title={v}><span style={{ fontSize: 12, color: '#334155', background: '#fffbeb', borderRadius: 5, padding: '2px 7px', border: '1px solid #fde68a' }}>{v}</span></div>
                   : <span style={{ color: '#cbd5e1' }}>—</span>,
               },
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Trạng thái</span>,
                 dataIndex: "is_fully_paid",
-                width: 150,
+                width: 120,
                 align: 'center' as const,
                 render: (_: unknown, r: CommissionPaymentRequest) => (
                   <Tag
@@ -622,10 +623,8 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Thao tác</span>,
                 key: "action",
-                width: 160,
-                fixed: 'right' as const,
                 render: (_: unknown, r: CommissionPaymentRequest) => (
-                  <Space size={6}>
+                  <Space size={6} wrap>
                     <Button
                       size="small"
                       style={{ borderRadius: 8 }}
@@ -753,7 +752,8 @@ const Commissions = () => {
             dataSource={ownerCommissions}
             pagination={false}
             size="middle"
-            scroll={{ x: 860 }}
+            scroll={{ y: 350 }}
+            tableLayout="fixed"
             columns={[
               {
                 title: <span style={{ color: '#6366f1', fontWeight: 700 }}>STT</span>,
@@ -772,26 +772,26 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Owner</span>,
                 dataIndex: 'owner_name',
-                width: 200,
+                width: 220,
                 render: (_: unknown, r: OverdueCommission) => (
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14 }}>{r.owner_name}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{r.owner_email}</div>
+                  <div className="truncate">
+                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14 }} className="truncate" title={r.owner_name}>{r.owner_name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }} className="truncate" title={r.owner_email}>{r.owner_email}</div>
                   </div>
                 ),
               },
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Kỳ đối soát</span>,
                 dataIndex: 'billing_period',
-                width: 170,
+                width: 140,
                 render: (v: string | undefined) => v
-                  ? <span style={{ fontSize: 13, color: '#475569', background: '#f1f5f9', borderRadius: 6, padding: '3px 9px', border: '1px solid #e2e8f0' }}>{v}</span>
+                  ? <div style={{ fontSize: 13, color: '#475569', fontWeight: 500 }}>{v}</div>
                   : <span style={{ color: '#cbd5e1' }}>—</span>,
               },
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Số tiền</span>,
                 dataIndex: 'total_due',
-                width: 130,
+                width: 120,
                 render: (v: number, r: OverdueCommission) => (
                   <span style={{
                     fontWeight: 700,
@@ -803,7 +803,7 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Trạng thái</span>,
                 dataIndex: 'status',
-                width: 140,
+                width: 130,
                 align: 'center' as const,
                 render: (v: string) => (
                   <Tag
@@ -817,8 +817,6 @@ const Commissions = () => {
               {
                 title: <span style={{ fontWeight: 700, color: '#374151' }}>Thao tác</span>,
                 key: 'action',
-                width: 280,
-                fixed: 'right' as const,
                 render: (_: unknown, r: OverdueCommission) => (
                   <Space size={6} wrap>
                     {/* Xem chi tiết */}

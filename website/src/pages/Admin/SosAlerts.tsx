@@ -452,13 +452,13 @@ const SosAlerts = () => {
         ) : rows.length === 0 ? (
           <div className="py-12 text-center text-gray-400">Không có dữ liệu SOS</div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 overflow-y-auto pr-2" style={{ maxHeight: 'calc(100vh - 260px)' }}>
             {rows.map((row, index) => (
               <div
                 key={row.alert_id}
                 className="grid grid-cols-12 gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow items-center"
               >
-                <div className="col-span-12 md:col-span-6">
+                <div className="col-span-12 md:col-span-5">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded text-xs border border-red-200">
                       #{rows.length - index}
@@ -488,7 +488,7 @@ const SosAlerts = () => {
                   </Tag>
                 </div>
                 
-                <div className="col-span-12 md:col-span-4 flex justify-between md:justify-end items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0 border-gray-100 flex-wrap">
+                <div className="col-span-12 md:col-span-5 flex justify-between md:justify-end items-center gap-2 border-t md:border-t-0 pt-3 md:pt-0 border-gray-100 flex-wrap">
                   <span className="md:hidden text-sm text-gray-500 font-medium">Thao tác:</span>
                   <div className="flex flex-wrap gap-1.5 justify-end w-full sm:w-auto">
                     <Button size="middle" onClick={() => openDetails(row)}>

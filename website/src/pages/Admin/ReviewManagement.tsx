@@ -189,27 +189,35 @@ const ReviewManagement = () => {
     () => [
       {
         title: "STT",
+        width: 50,
+        align: "center",
         render: (_: unknown, __: ReviewRow, index: number) => rows.length - index,
       },
-      { title: "Địa điểm", dataIndex: "location_name" },
-      { title: "User", dataIndex: "user_name" },
+      { title: "Địa điểm", dataIndex: "location_name", width: 140, ellipsis: true },
       {
-        title: "Liên hệ",
+        title: "Người đánh giá",
+        width: 170,
         render: (_: unknown, row: ReviewRow) => (
           <div className="text-xs">
-            <div>{row.user_email || "-"}</div>
-            <div>{row.user_phone || "-"}</div>
+            <div className="font-semibold text-slate-800 truncate" title={row.user_name || undefined}>{row.user_name || "-"}</div>
+            <div className="truncate text-slate-500 mt-1" title={row.user_email || undefined}>{row.user_email || "-"}</div>
+            <div className="text-slate-500">{row.user_phone || "-"}</div>
           </div>
         ),
       },
-      { title: "Sao", dataIndex: "rating" },
       {
         title: "Đánh giá & Phản hồi",
         key: "comments",
         render: (_: unknown, row: ReviewRow) => (
-          <div className="flex flex-col gap-3 min-w-[300px] whitespace-normal py-2">
+          <div className="flex flex-col gap-3 whitespace-normal py-2">
             {/* User Comment */}
             <div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-700 text-xs">
+                  {Number(row.rating || 0).toFixed(1)} sao
+                </span>
+                <span className="text-xs text-slate-500">{formatDateTimeVi(row.created_at || "")}</span>
+              </div>
               <div className="text-sm text-slate-800 whitespace-pre-wrap font-medium">
                 {row.comment || <span className="italic text-slate-400 font-normal">Không có nội dung</span>}
               </div>
@@ -232,10 +240,13 @@ const ReviewManagement = () => {
               <div className="flex gap-2">
                 {/* Curved line like Facebook */}
                 <div className="w-6 border-l-2 border-b-2 border-slate-300 rounded-bl-xl ml-2 mb-6"></div>
-                
+
                 <div className="flex-1 bg-slate-100 p-3 rounded-2xl rounded-tl-sm mt-1">
-                  <div className="text-[12px] font-bold text-slate-900 mb-1">
-                    Phản hồi của Owner
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="text-[12px] font-bold text-slate-900">Phản hồi của Owner</span>
+                    {row.reply_created_at && (
+                      <span className="text-[11px] text-slate-500">{formatDateTimeVi(row.reply_created_at)}</span>
+                    )}
                   </div>
                   <div className="text-sm text-slate-800 whitespace-pre-wrap">{row.reply_content}</div>
                   <div className="mt-2 flex items-center gap-3 text-xs font-semibold text-slate-500">
@@ -259,6 +270,7 @@ const ReviewManagement = () => {
       {
         title: "Ảnh",
         key: "images",
+        width: 120,
         render: (_: unknown, row: ReviewRow) => {
           const images = parseReviewImages(row.images);
           if (!images.length) return "-";
@@ -286,13 +298,10 @@ const ReviewManagement = () => {
         },
       },
       {
-        title: "Thời gian",
-        dataIndex: "created_at",
-        render: (value: string) => formatDateTimeVi(value),
-      },
-      {
         title: "Trạng thái",
         dataIndex: "status",
+        width: 90,
+        align: "center",
         render: (status: string) => {
           const v = String(status || "").toLowerCase();
           const label = v === "active" ? "HIỆN" : v === "hidden" ? "ẨN" : "ĐÃ XÓA";
@@ -396,13 +405,14 @@ const ReviewManagement = () => {
               columns={userReviewColumns}
               size="small"
               pagination={false}
-              scroll={{ x: 'max-content' }}
+              tableLayout="fixed"
+              scroll={{ y: 520 }}
               className="px-2 pb-2 pt-1"
             />
           </Card>
         </div>
       </Card>
-      
+
     </MainLayout>
   );
 };

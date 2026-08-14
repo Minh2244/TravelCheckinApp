@@ -71,7 +71,7 @@ const getApiErrorMessage = (error: unknown, fallback: string): string => {
 
 const Owners = () => {
   const LIST_LIMIT = 200;
-  const LIST_SCROLL_Y = 280;
+  const LIST_SCROLL_Y = 520;
 
   const [owners, setOwners] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(false);
@@ -246,22 +246,27 @@ const Owners = () => {
       title: "ID",
       dataIndex: "user_id",
       key: "user_id",
-      width: 80,
+      width: 60,
+      align: "center",
     },
     {
-      title: "Họ tên",
+      title: "Chủ địa điểm",
       dataIndex: "full_name",
       key: "full_name",
+      width: 260,
+      render: (text: string, record: Owner) => (
+        <div className="flex flex-col min-w-0">
+          <span className="font-medium text-gray-800 truncate">{text}</span>
+          <span className="text-xs text-gray-500 truncate">{record.email}</span>
+          {record.phone && <span className="text-xs text-gray-500 truncate">{record.phone}</span>}
+        </div>
+      ),
     },
     {
-      title: "Email",
-      dataIndex: "email",
-      key: "email",
-    },
-    {
-      title: "Trạng thái duyệt",
+      title: "Trạng thái",
       dataIndex: "approval_status",
       key: "approval_status",
+      width: 140,
       render: (status: string) => {
         const colors: { [key: string]: string } = {
           approved: "green",
@@ -269,45 +274,30 @@ const Owners = () => {
           rejected: "red",
         };
         return (
-          <Tag color={colors[status]}>{statusToVi(status || "pending")}</Tag>
+          <Tag color={colors[status]} className="m-0">{statusToVi(status || "pending")}</Tag>
         );
       },
     },
     {
-      title: "Doanh thu",
-      dataIndex: "total_revenue",
-      key: "total_revenue",
-      render: (amount: number) => formatMoney(amount || 0),
-    },
-    {
-      title: "Số địa điểm",
-      dataIndex: "total_locations",
-      key: "total_locations",
-      align: "right",
-    },
-    {
-      title: "Chờ duyệt",
-      dataIndex: "pending_locations",
-      key: "pending_locations",
-      width: 110,
-      align: "right",
-      render: (v: number | undefined) => <Tag color="orange">{v || 0}</Tag>,
-    },
-    {
-      title: "Đã duyệt",
-      dataIndex: "approved_locations",
-      key: "approved_locations",
-      width: 110,
-      align: "right",
-      render: (v: number | undefined) => <Tag color="green">{v || 0}</Tag>,
-    },
-    {
-      title: "Từ chối",
-      dataIndex: "rejected_locations",
-      key: "rejected_locations",
-      width: 110,
-      align: "right",
-      render: (v: number | undefined) => <Tag color="red">{v || 0}</Tag>,
+      title: "Quản lý Địa điểm",
+      key: "locations_summary",
+      width: 180,
+      render: (_, record: Owner) => (
+        <div className="flex flex-col gap-1">
+          <span className="text-sm">Tổng cộng: <b>{record.total_locations || 0}</b></span>
+          <div className="flex gap-1">
+            <Tooltip title="Đã duyệt">
+              <Tag color="green" className="m-0 cursor-default px-1 min-w-[24px] text-center">{record.approved_locations || 0}</Tag>
+            </Tooltip>
+            <Tooltip title="Chờ duyệt">
+              <Tag color="orange" className="m-0 cursor-default px-1 min-w-[24px] text-center">{record.pending_locations || 0}</Tag>
+            </Tooltip>
+            <Tooltip title="Từ chối">
+              <Tag color="red" className="m-0 cursor-default px-1 min-w-[24px] text-center">{record.rejected_locations || 0}</Tag>
+            </Tooltip>
+          </div>
+        </div>
+      ),
     },
     {
       title: "Thao tác",
@@ -423,7 +413,7 @@ const Owners = () => {
     <MainLayout>
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800">
-          Quản lý Owner & Duyệt Địa điểm
+          Quản lý và duyệt Owner
         </h2>
         <p className="text-gray-500">
           Danh sách owner đã đăng ký và có địa điểm trên hệ thống
@@ -481,7 +471,7 @@ const Owners = () => {
           loading={loading}
           rowKey="user_id"
           pagination={false}
-          scroll={{ x: 800, y: LIST_SCROLL_Y }}
+          scroll={{ y: LIST_SCROLL_Y }}
         />
       </Card>
 

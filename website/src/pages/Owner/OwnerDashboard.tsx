@@ -223,13 +223,13 @@ const OwnerDashboard = () => {
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0);
 
-    const totalCommissionDue = filteredPayments.reduce((sum, p) => {
+    const totalReceivable = filteredPayments.reduce((sum, p) => {
       if (String(p.status || "").toLowerCase() !== "completed") return sum;
-      const v = Number(p.commission_amount || 0);
+      const v = Number(p.owner_receivable || 0);
       return sum + (Number.isFinite(v) ? v : 0);
     }, 0);
 
-    const totalReceivable = totalRevenue - totalCommissionDue;
+    const totalCommissionDue = totalRevenue - totalReceivable;
 
     return {
       totalLocations,

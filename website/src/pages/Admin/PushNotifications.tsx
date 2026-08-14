@@ -162,10 +162,11 @@ const PushNotifications = () => {
 
   const columns: ColumnsType<PushNotificationRow> = [
     {
-      title: "ID",
-      dataIndex: "notification_id",
-      key: "notification_id",
-      width: 80,
+      title: "STT",
+      key: "index",
+      width: 60,
+      render: (_: unknown, __: unknown, index: number) => 
+        (pagination.current - 1) * pagination.pageSize + index + 1,
     },
     { title: "Tiêu đề", dataIndex: "title", key: "title" },
     {
@@ -362,7 +363,7 @@ const PushNotifications = () => {
                 pageSize: pageSize || 20,
               })),
           }}
-          scroll={{ x: 1000 }}
+          scroll={{ x: 1000, y: 'calc(100vh - 400px)' }}
         />
       </Card>
     </MainLayout>

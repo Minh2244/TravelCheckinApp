@@ -2059,9 +2059,17 @@ export const getOwnerMe = async (
       const [[{ total_revenue }]] = await pool.query<RowDataPacket[]>(
         `SELECT COALESCE(SUM(p.owner_receivable), 0) AS total_revenue
          FROM payments p
-         JOIN bookings b ON p.booking_id = b.booking_id
-         JOIN locations l ON b.location_id = l.location_id
+         JOIN locations l ON p.location_id = l.location_id
          WHERE l.owner_id = ? AND p.status = 'completed'`,
+        [auth.userId]
+      );
+
+      const [[{ revenue_7d }]] = await pool.query<RowDataPacket[]>(
+        `SELECT COALESCE(SUM(p.owner_receivable), 0) AS revenue_7d
+         FROM payments p
+         JOIN locations l ON p.location_id = l.location_id
+         WHERE l.owner_id = ? AND p.status = 'completed'
+           AND p.payment_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
         [auth.userId]
       );
 
@@ -2086,6 +2094,7 @@ export const getOwnerMe = async (
         total_locations: Number(total_locations || 0),
         total_bookings: Number(total_bookings || 0),
         total_revenue: Number(total_revenue || 0),
+        revenue_7d: Number(revenue_7d || 0),
         partner_rank,
         total_checkins: Number(total_checkins || 0),
       };
@@ -6308,8 +6317,8 @@ export const createOrGetPaymentForBooking = async (
       const commissionAmount = +((amount * safeCommissionRate) / 100).toFixed(
         2,
       );
-      const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
-      const ownerReceivable = +(amount - commissionAmount - vatAmount).toFixed(
+      const vatAmount = 0; // Đã dẹp vụ phí VAT
+      const ownerReceivable = +(amount - commissionAmount).toFixed(
         2,
       );
 
@@ -10829,8 +10838,8 @@ export const checkoutHotelStay = async (
       // Tính hoa hồng của payment checkout dựa trên số tiền thực thu finalAmount
       const finalPaymentAmount = finalAmount;
       const commissionAmount = +((finalPaymentAmount * safeCommissionRate) / 100).toFixed(2);
-      const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
-      const ownerReceivable = +(finalPaymentAmount - commissionAmount - vatAmount).toFixed(2);
+      const vatAmount = 0; // Đã dẹp vụ phí VAT
+      const ownerReceivable = +(finalPaymentAmount - commissionAmount).toFixed(2);
 
       // Legacy schema uses DECIMAL(10,2) for money columns (max 99,999,999.99).
       // Large hourly totals (e.g., long stays) will overflow unless the DB is migrated.
@@ -14698,11 +14707,8 @@ export const payPosOrder = async (
         txSource === "online_booking"
           ? +((amount * safeCommissionRate) / 100).toFixed(2)
           : 0;
-      const vatAmount =
-        txSource === "online_booking"
-          ? +((commissionAmount * safeVatRate) / 100).toFixed(2)
-          : 0;
-      const ownerReceivable = +(amount - commissionAmount - vatAmount).toFixed(
+      const vatAmount = 0; // Đã dẹp vụ phí VAT
+      const ownerReceivable = +(amount - commissionAmount).toFixed(
         2,
       );
 

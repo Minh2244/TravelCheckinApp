@@ -206,11 +206,10 @@ export const createOrGetUserPaymentForBookingBatch = async (params: {
       (totalAmount * safeCommissionRate) /
       100
     ).toFixed(2);
-    const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
+    const vatAmount = 0; // Đã dẹp vụ phí VAT
     const ownerReceivable = +(
       totalAmount -
-      commissionAmount -
-      vatAmount
+      commissionAmount
     ).toFixed(2);
 
     const tx = randomBatchTransactionCode(bookingIds.join("-"));
@@ -619,8 +618,8 @@ export const createOrGetUserPaymentForBooking = async (params: {
     const safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
 
     const commissionAmount = +((amount * safeCommissionRate) / 100).toFixed(2);
-    const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
-    const ownerReceivable = +(amount - commissionAmount - vatAmount).toFixed(2);
+    const vatAmount = 0; // Đã dẹp vụ phí VAT
+    const ownerReceivable = +(amount - commissionAmount).toFixed(2);
 
     const tx = randomTransactionCode(bookingId);
     const locationName = String(booking.location_name || "").trim();

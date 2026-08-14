@@ -11,6 +11,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -395,42 +396,44 @@ const Locations = () => {
 
   const columns: ColumnsType<AdminLocationRow> = [
     {
-      title: "Ảnh",
-      key: "first_image",
-      width: 90,
-      render: (_: unknown, r) => {
+      title: "Địa điểm",
+      dataIndex: "location_name",
+      key: "location_name",
+      width: 190,
+      render: (v: string, r) => {
         const src = resolveBackendUrl(r.first_image);
-        if (!src) return <span className="text-gray-400">-</span>;
-
         return (
-          <Image
-            src={src}
-            alt={r.location_name}
-            width={64}
-            height={48}
-            style={{ objectFit: "cover", borderRadius: 6 }}
-          />
+          <div className="flex items-center gap-2">
+            {src ? (
+              <Image
+                src={src}
+                alt={v}
+                width={50}
+                height={50}
+                style={{ objectFit: "cover", borderRadius: 6 }}
+                className="flex-shrink-0"
+              />
+            ) : (
+              <div className="w-[50px] h-[50px] bg-gray-100 rounded-md flex-shrink-0 flex items-center justify-center">
+                <span className="text-gray-400 text-[10px]">No img</span>
+              </div>
+            )}
+            <div className="flex flex-col min-w-0">
+              <span className="font-semibold text-gray-800 text-sm truncate">{v}</span>
+              <span className="text-[11px] text-gray-500 truncate">{r.location_type}</span>
+            </div>
+          </div>
         );
       },
     },
     {
-      title: "Địa điểm",
-      dataIndex: "location_name",
-      key: "location_name",
-      render: (v: string, r) => (
-        <div className="whitespace-normal break-words">
-          <div className="font-semibold text-gray-800">{v}</div>
-          <div className="text-xs text-gray-500">{r.location_type}</div>
-        </div>
-      ),
-    },
-    {
       title: "Owner",
       key: "owner",
+      width: 140,
       render: (_: unknown, r) => (
         <div className="whitespace-normal break-words">
-          <div className="text-gray-800">{r.owner_name || "(Không rõ)"}</div>
-          <div className="text-xs text-gray-500">{r.owner_email || ""}</div>
+          <div className="text-gray-800 text-sm">{r.owner_name || "(Không rõ)"}</div>
+          <div className="text-[11px] text-gray-500 break-all">{r.owner_email || ""}</div>
         </div>
       ),
     },
@@ -438,40 +441,27 @@ const Locations = () => {
       title: "Địa chỉ",
       dataIndex: "address",
       key: "address",
+      width: 180,
       render: (v: string, r) => (
         <div className="whitespace-normal break-words">
-          <div className="text-gray-800">{v}</div>
-          <div className="text-xs text-gray-500">{r.province || ""}</div>
+          <div className="text-gray-800 text-sm line-clamp-2">{v}</div>
+          <div className="text-[11px] text-gray-500">{r.province || ""}</div>
         </div>
       ),
     },
     {
-      title: "Giờ mở/đóng",
-      key: "opening_hours",
-      width: 130,
-      render: (_: unknown, r) => {
-        const text = formatOpeningHours(r.opening_hours);
-        return text ? (
-          <span className="text-gray-700">{text}</span>
-        ) : (
-          <span className="text-gray-400">-</span>
-        );
-      },
-    },
-    {
       title: "Trạng thái",
-      dataIndex: "status",
-      key: "status",
-      render: (_: LocationStatus, r) => statusTag(r),
-    },
-    {
-      title: "Hoa hồng",
-      key: "commission_rate",
+      key: "status_combined",
       width: 110,
-      render: (_: unknown, r) => {
+      render: (_, r) => {
         const rate = Number(r.commission_rate);
         return (
-          <Tag color="blue">{Number.isFinite(rate) ? `${rate}%` : "2.5%"}</Tag>
+          <div className="flex flex-col gap-1 items-start">
+            {statusTag(r)}
+            <Tag color="blue" className="m-0 text-[10px]">
+              HH: {Number.isFinite(rate) ? `${rate}%` : "2.5%"}
+            </Tag>
+          </div>
         );
       },
     },
@@ -479,58 +469,64 @@ const Locations = () => {
       title: "Ghi chú",
       dataIndex: "rejection_reason",
       key: "rejection_reason",
+      width: 110,
       render: (v: string | null, r) => {
         if (r.status !== "inactive")
           return <span className="text-gray-400">-</span>;
         const note = String(v || "").trim();
         if (note)
           return (
-            <span className="whitespace-normal break-words text-gray-700">
+            <span className="whitespace-normal break-words text-gray-700 text-xs line-clamp-2">
               {note}
             </span>
           );
-        return <span className="text-gray-500">(Tạm ẩn)</span>;
+        return <span className="text-gray-500 text-xs">(Tạm ẩn)</span>;
       },
     },
     {
       title: "Hành động",
       key: "actions",
+      width: 140,
       render: (_: unknown, r) => (
-        <Space size={6} wrap={false} className="whitespace-nowrap">
-          <Button
-            size="small"
-            icon={<EnvironmentOutlined />}
-            onClick={() => openMap(r)}
-          >
-            Vị trí
-          </Button>
+        <Space size={2} wrap className="max-w-full justify-center">
+          <Tooltip title="Vị trí">
+            <Button
+              size="small"
+              type="text"
+              icon={<EnvironmentOutlined />}
+              onClick={() => openMap(r)}
+            />
+          </Tooltip>
 
-          <Button
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openCommissionModal(r)}
-          >
-            Hoa hồng
-          </Button>
+          <Tooltip title="Hoa hồng">
+            <Button
+              size="small"
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => openCommissionModal(r)}
+            />
+          </Tooltip>
 
           {r.status === "pending" ? (
             <>
-              <Button
-                size="small"
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                onClick={() => onApprove(r.location_id)}
-              >
-                Duyệt
-              </Button>
-              <Button
-                size="small"
-                danger
-                icon={<CloseCircleOutlined />}
-                onClick={() => openReject(r.location_id)}
-              >
-                Từ chối
-              </Button>
+              <Tooltip title="Duyệt">
+                <Button
+                  size="small"
+                  type="text"
+                  className="text-green-600"
+                  icon={<CheckCircleOutlined />}
+                  onClick={() => onApprove(r.location_id)}
+                />
+              </Tooltip>
+              <Tooltip title="Từ chối">
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<CloseCircleOutlined />}
+                  onClick={() => openReject(r.location_id)}
+                />
+              </Tooltip>
             </>
           ) : null}
 
@@ -543,9 +539,9 @@ const Locations = () => {
               cancelText="Hủy"
               onConfirm={() => onHide(r.location_id)}
             >
-              <Button size="small" icon={<EyeInvisibleOutlined />}>
-                Ẩn khỏi hệ thống
-              </Button>
+              <Tooltip title="Ẩn">
+                <Button size="small" type="text" icon={<EyeInvisibleOutlined />} />
+              </Tooltip>
             </Popconfirm>
           ) : null}
 
@@ -556,9 +552,9 @@ const Locations = () => {
               cancelText="Hủy"
               onConfirm={() => onShowAgain(r.location_id)}
             >
-              <Button size="small" type="primary" icon={<EyeOutlined />}>
-                Mở lại
-              </Button>
+              <Tooltip title="Mở lại">
+                <Button size="small" type="text" className="text-blue-600" icon={<EyeOutlined />} />
+              </Tooltip>
             </Popconfirm>
           ) : null}
 
@@ -569,7 +565,9 @@ const Locations = () => {
             cancelText="Hủy"
             onConfirm={() => onDelete(r.location_id)}
           >
-            <Button size="small" icon={<DeleteOutlined />} />
+            <Tooltip title="Xóa">
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -697,7 +695,7 @@ const Locations = () => {
         </div>
 
         <Table
-          tableLayout="auto"
+          tableLayout="fixed"
           columns={columns}
           dataSource={rows}
           loading={loading}

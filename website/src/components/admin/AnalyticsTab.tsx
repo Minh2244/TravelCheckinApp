@@ -29,6 +29,21 @@ const translateType = (type: string) => {
   }
 };
 
+const getRegion = (province: string) => {
+  if (!province) return "Không rõ";
+  const normalized = province.toLowerCase().trim();
+  
+  const north = ["hà nội", "hải phòng", "hà giang", "cao bằng", "bắc kạn", "tuyên quang", "lào cai", "điện biên", "lai châu", "sơn la", "yên bái", "hòa bình", "thái nguyên", "lạng sơn", "quảng ninh", "bắc giang", "phú thọ", "vĩnh phúc", "bắc ninh", "hải dương", "hưng yên", "thái bình", "hà nam", "nam định", "ninh bình"];
+  const central = ["thanh hóa", "nghệ an", "hà tĩnh", "quảng bình", "quảng trị", "huế", "đà nẵng", "quảng nam", "quảng ngãi", "bình định", "phú yên", "khánh hòa", "ninh thuận", "bình thuận", "kon tum", "gia lai", "đắk lắk", "đắk nông", "lâm đồng"];
+  const south = ["hồ chí minh", "sài gòn", "bình phước", "tây ninh", "bình dương", "đồng nai", "vũng tàu", "long an", "tiền giang", "bến tre", "trà vinh", "vĩnh long", "đồng tháp", "an giang", "kiên giang", "cần thơ", "hậu giang", "sóc trăng", "bạc liêu", "cà mau"];
+
+  if (north.some(k => normalized.includes(k))) return "Miền Bắc";
+  if (central.some(k => normalized.includes(k))) return "Miền Trung";
+  if (south.some(k => normalized.includes(k))) return "Miền Nam";
+  
+  return "Không rõ";
+};
+
 const AnalyticsTab = () => {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
     dayjs().subtract(30, 'day'),
@@ -80,6 +95,26 @@ const AnalyticsTab = () => {
       displayDate: new Date(d.date).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit' })
     }));
   }, [byDay]);
+
+  const regionData = useMemo(() => {
+    const map = new Map<string, number>();
+    map.set("Miền Bắc", 0);
+    map.set("Miền Trung", 0);
+    map.set("Miền Nam", 0);
+
+    byProvince.forEach(p => {
+      if (p.province && p.province !== 'Không rõ') {
+        const region = getRegion(p.province);
+        if (region !== "Không rõ") {
+          map.set(region, (map.get(region) || 0) + Number(p.total));
+        }
+      }
+    });
+
+    return Array.from(map.entries())
+      .map(([region, total]) => ({ province: region, total }))
+      .filter(r => r.total > 0);
+  }, [byProvince]);
 
   const translatedByType = useMemo(() => {
     const dataMap = new Map<string, number>();
@@ -202,21 +237,21 @@ const AnalyticsTab = () => {
         <Card 
           bordered={false} 
           style={{ borderRadius: 16, boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}
-          title={<span className="font-semibold text-lg text-gray-800">🗺️ Phân bố theo Tỉnh/Thành</span>}
+          title={<span className="font-semibold text-lg text-gray-800">🗺️ Phân bố theo Khu vực</span>}
           loading={loading}
           bodyStyle={{ paddingRight: 0 }}
         >
           <div className="pr-6">
             <div className="w-full overflow-y-auto custom-scrollbar" style={{ height: 350 }}>
-              <div style={{ height: Math.max(300, byProvince.filter(p => p.province !== 'Không rõ').length * 40) }}>
+              <div style={{ height: Math.max(300, regionData.length * 50) }}>
                 <ResponsiveContainer>
-                  <BarChart data={byProvince.filter(p => p.province !== 'Không rõ')} layout="vertical" margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
+                  <BarChart data={regionData} layout="vertical" margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                     <XAxis type="number" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
                     <YAxis dataKey="province" type="category" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 13, fontWeight: 500}} width={100} />
                     <RechartsTooltip cursor={{fill: '#f8fafc'}} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }} />
                     <Bar dataKey="total" fill="#3b82f6" radius={[0, 6, 6, 0]} name="Check-in" maxBarSize={40}>
-                      {byProvince.map((_, index) => (
+                      {regionData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Bar>

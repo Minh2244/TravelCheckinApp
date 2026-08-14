@@ -110,7 +110,7 @@ const getApiErrorMessage = (error: unknown, fallback: string): string => {
 
 const Users = () => {
   const LIST_LIMIT = 200;
-  const LIST_SCROLL_Y = 280;
+  const LIST_SCROLL_Y = 520;
 
   const [searchText, setSearchText] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
@@ -477,59 +477,46 @@ const Users = () => {
       title: "ID",
       dataIndex: "user_id",
       key: "user_id",
-      width: 70,
+      width: 60,
+      align: "center",
     },
     {
-      title: "Họ tên",
+      title: "Người dùng",
       dataIndex: "full_name",
       key: "full_name",
-      width: 180,
+      width: 260,
       render: (text: string, record: User) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {record.avatar_url ? (
             <img
               src={resolveBackendUrl(record.avatar_url) || undefined}
               alt={text}
-              className="h-7 w-7 rounded-full"
+              className="h-10 w-10 rounded-full object-cover flex-shrink-0"
             />
           ) : (
-            <UserOutlined className="text-gray-400" />
+            <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+              <UserOutlined className="text-gray-400 text-lg" />
+            </div>
           )}
-          <span className="truncate">{text}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="font-medium text-gray-800 truncate">{text}</span>
+            <span className="text-xs text-gray-500 truncate">{record.email}</span>
+            {record.phone && <span className="text-xs text-gray-500 truncate">{record.phone}</span>}
+          </div>
         </div>
       ),
     },
     {
-      title: "Email",
-      dataIndex: "email",
-      key: "email",
-      ellipsis: true,
-    },
-    {
-      title: "SĐT",
-      dataIndex: "phone",
-      key: "phone",
-      width: 130,
-      render: (text: string | null) => text || "-",
-    },
-    {
       title: "Trạng thái",
-      dataIndex: "status",
-      key: "status",
-      width: 110,
-      render: (status: string) => (
-        <Tag color={statusColor(status)}>{statusToVi(status)}</Tag>
-      ),
-    },
-    {
-      title: "Xác thực",
-      dataIndex: "is_verified",
-      key: "is_verified",
-      width: 100,
-      render: (verified: number) => (
-        <Tag color={verified ? "green" : "default"}>
-          {verified ? "Đã xác thực" : "Chưa"}
-        </Tag>
+      key: "status_combined",
+      width: 130,
+      render: (_, record: User) => (
+        <div className="flex flex-col gap-1 items-start">
+          <Tag color={statusColor(record.status)} className="m-0">{statusToVi(record.status)}</Tag>
+          <Tag color={record.is_verified ? "green" : "default"} className="m-0">
+            {record.is_verified ? "Đã xác thực" : "Chưa xác thực"}
+          </Tag>
+        </div>
       ),
     },
   ];

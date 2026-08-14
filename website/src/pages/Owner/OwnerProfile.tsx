@@ -409,7 +409,7 @@ const OwnerProfile = () => {
     asRecord(actor).employee_context,
   );
 
-  const revenueValue = Number(stats.total_revenue || 0);
+  const revenueValue = Number(stats.revenue_7d || 0);
   const chartData = useMemo(() => {
     if (revenueValue === 0) return [0, 0, 0, 0, 0, 0, 0];
     return [

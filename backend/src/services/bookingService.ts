@@ -995,8 +995,8 @@ const createCompletedZeroOnlinePayment = async (params: {
   const safeCommissionRate = Number.isFinite(commissionRate) ? commissionRate : 2.5;
   const safeVatRate = Number.isFinite(vatRate) ? vatRate : 10;
   const commissionAmount = +((safeAmount * safeCommissionRate) / 100).toFixed(2);
-  const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
-  const ownerReceivable = +(safeAmount - commissionAmount - vatAmount).toFixed(2);
+  const vatAmount = 0; // Đã dẹp vụ phí VAT
+  const ownerReceivable = +(safeAmount - commissionAmount).toFixed(2);
   const effectiveBookingId = bookingId ?? bookingIds?.[0] ?? Date.now();
   const tx = randomTransactionCode(Number(effectiveBookingId));
   const locationName = String(locRows[0]?.location_name || "").trim();
@@ -2396,8 +2396,8 @@ export const createBooking = async (
       const commissionAmount = +((amount * safeCommissionRate) / 100).toFixed(
         2,
       );
-      const vatAmount = +((commissionAmount * safeVatRate) / 100).toFixed(2);
-      const ownerReceivable = +(amount - commissionAmount - vatAmount).toFixed(
+      const vatAmount = 0; // Đã dẹp vụ phí VAT
+      const ownerReceivable = +(amount - commissionAmount).toFixed(
         2,
       );
 

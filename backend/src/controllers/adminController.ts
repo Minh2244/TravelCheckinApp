@@ -5974,11 +5974,11 @@ export const getCheckinAnalytics = async (
     );
 
     const [byProvince] = await pool.query<RowDataPacket[]>(
-      `SELECT COALESCE(l.province, 'Không rõ') as province, COUNT(*) as total
+      `SELECT TRIM(COALESCE(l.province, 'Không rõ')) as province, COUNT(*) as total
        FROM checkins c
        JOIN locations l ON c.location_id = l.location_id
        ${whereSql}
-       GROUP BY l.province
+       GROUP BY TRIM(COALESCE(l.province, 'Không rõ'))
        ORDER BY total DESC`,
       params,
     );
@@ -6082,7 +6082,7 @@ export const getCommissions = async (
       const [csvRows] = await pool.query<RowDataPacket[]>(query, params);
 
       const header =
-        "commission_id,owner_name,owner_email,commission_amount,vat_amount,total_due,paid_amount,due_date,status\n";
+        "commission_id,owner_name,owner_email,commission_amount,total_due,paid_amount,due_date,status\n";
       const escape = (v: unknown): string => {
         const s = String(v ?? "");
         const escaped = s.replace(/\r?\n/g, " ").replace(/"/g, '""');
@@ -6095,7 +6095,6 @@ export const getCommissions = async (
             r.owner_name,
             r.owner_email,
             r.commission_amount,
-            r.vat_amount,
             r.total_due,
             r.paid_amount,
             r.due_date,
