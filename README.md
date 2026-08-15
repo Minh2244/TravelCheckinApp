@@ -17,9 +17,6 @@
 [![Firebase](https://img.shields.io/badge/Firebase-FCM-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com)
 [![Status](https://img.shields.io/badge/Trạng_thái-✅_Hoàn_thành-brightgreen)](.)<br>
 [![Platforms](https://img.shields.io/badge/Nền_tảng-Web_·_Mobile_·_API-blueviolet)](.)<br>
-
-🇬🇧 [English Version](../README.md)
-
 </div>
 
 ---
