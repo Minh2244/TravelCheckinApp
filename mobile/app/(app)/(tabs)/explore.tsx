@@ -91,6 +91,10 @@ export default function ExploreScreen() {
     focusLocationId?: string;
     startRoute?: string;
     requestKey?: string;
+    focusRouteLat?: string;
+    focusRouteLng?: string;
+    focusRouteName?: string;
+    focusRouteAddress?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -362,6 +366,25 @@ export default function ExploreScreen() {
     },
     [ensureLocationAccess, userLocation],
   );
+
+  useEffect(() => {
+    if (params.focusRouteLat && params.focusRouteLng) {
+      const targetLat = Number(params.focusRouteLat);
+      const targetLng = Number(params.focusRouteLng);
+      
+      if (Number.isFinite(targetLat) && Number.isFinite(targetLng)) {
+        // Automatically start routing to the target
+        const dummyTarget: any = {
+          location_id: -999, // Treat as temporary target
+          location_name: params.focusRouteName || "Điểm đến",
+          address: params.focusRouteAddress || "",
+          latitude: targetLat,
+          longitude: targetLng,
+        };
+        startRouteToLocation(dummyTarget);
+      }
+    }
+  }, [params.focusRouteLat, params.focusRouteLng, params.focusRouteName, params.focusRouteAddress, startRouteToLocation]);
 
   const saveTemporaryPin = useCallback(async () => {
     if (!temporaryPin || savingTemporaryPin) return;

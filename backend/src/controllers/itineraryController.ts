@@ -17,6 +17,8 @@ interface ItineraryItemInput {
   time?: string | null;
   note?: string | null;
   estimated_cost?: number | null;
+  is_visited?: boolean | 0 | 1;
+  visited_at?: string | null;
 }
 
 interface CreateItineraryBody {
@@ -164,8 +166,8 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
             return;
           }
           await conn.execute(
-            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost, visited_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               itineraryId,
               item.day_number,
@@ -178,6 +180,7 @@ export async function createUserItinerary(req: AuthenticatedRequest, res: Respon
               item.time?.trim() || null,
               item.note?.trim() || null,
               item.estimated_cost ?? null,
+              (item.is_visited || item.visited_at) ? new Date() : null,
             ]
           );
         }
@@ -279,8 +282,8 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
             return;
           }
           await conn.execute(
-            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO itinerary_items (itinerary_id, day_number, sort_order, location_id, custom_name, custom_address, custom_lat, custom_lng, time, note, estimated_cost, visited_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               itineraryId,
               item.day_number,
@@ -293,6 +296,7 @@ export async function updateUserItinerary(req: AuthenticatedRequest, res: Respon
               item.time?.trim() || null,
               item.note?.trim() || null,
               item.estimated_cost ?? null,
+              (item.is_visited || item.visited_at) ? new Date() : null,
             ]
           );
         }

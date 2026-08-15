@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -44,9 +44,11 @@ export default function ItinerariesScreen() {
     }
   };
 
-  useEffect(() => {
-    void fetchItineraries();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      void fetchItineraries();
+    }, [])
+  );
 
   const handleDelete = (id: number, title: string) => {
     Alert.alert("Xác nhận xóa", `Bạn có chắc chắn muốn xóa lịch trình "${title}"?`, [
@@ -252,7 +254,7 @@ function ItineraryCard({
 }) {
   const status = getItineraryStatus(item);
   const totalItems = Number(item.total_items || 0);
-  const visitedItems = Number(item.visited_items || 0);
+  const visitedItems = Number(item.visited_count || 0);
   const progress = totalItems > 0 ? Math.min(100, (visitedItems / totalItems) * 100) : 0;
 
   return (

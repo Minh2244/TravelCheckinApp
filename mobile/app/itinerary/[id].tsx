@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
 import { itineraryApi, ItineraryDetail, ItineraryItemInput } from "../../src/services/itinerary.api";
 import { locationApi } from "../../src/services/location.api";
@@ -48,6 +49,14 @@ export default function ItineraryDetailScreen() {
   const [stopTime, setStopTime] = useState("");
   const [stopNote, setStopNote] = useState("");
   const [stopCost, setStopCost] = useState("");
+  const [customLat, setCustomLat] = useState<number | null>(null);
+  const [customLng, setCustomLng] = useState<number | null>(null);
+  const [mapPickerVisible, setMapPickerVisible] = useState(false);
+
+  // Trip Info Edit State
+  const [tripInfoModalVisible, setTripInfoModalVisible] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
 
   const fetchDetail = async (asRefresh = false) => {
     if (!id) return;
@@ -112,8 +121,8 @@ export default function ItineraryDetailScreen() {
   }, [allLocations, searchQuery]);
 
   const handleToggleVisited = async (item: ItineraryItemInput) => {
-    if (!detail || !item.itinerary_item_id) return;
-    const currentVisited = !!item.is_visited;
+    if (!detail || !(item.item_id || item.itinerary_item_id)) return;
+    const currentVisited = !!item.is_visited || !!item.visited_at;
 
     // Optimistic UI state update
     setDetail((prev) => {
@@ -121,15 +130,15 @@ export default function ItineraryDetailScreen() {
       return {
         ...prev,
         items: prev.items.map((i) =>
-          i.itinerary_item_id === item.itinerary_item_id
-            ? { ...i, is_visited: !currentVisited }
+          (i.item_id || i.itinerary_item_id) === (item.item_id || item.itinerary_item_id)
+            ? { ...i, is_visited: !currentVisited, visited_at: !currentVisited ? new Date().toISOString() : null }
             : i
         ),
       };
     });
 
     try {
-      await itineraryApi.toggleVisited(detail.itinerary_id, item.itinerary_item_id, !currentVisited);
+      await itineraryApi.toggleVisited(detail.itinerary_id, (item.item_id || item.itinerary_item_id) as number, !currentVisited);
     } catch (e) {
       console.error(e);
       // Revert if error
@@ -138,8 +147,8 @@ export default function ItineraryDetailScreen() {
         return {
           ...prev,
           items: prev.items.map((i) =>
-            i.itinerary_item_id === item.itinerary_item_id
-              ? { ...i, is_visited: currentVisited }
+            (i.item_id || i.itinerary_item_id) === (item.item_id || item.itinerary_item_id)
+              ? { ...i, is_visited: currentVisited, visited_at: currentVisited ? new Date().toISOString() : null }
               : i
           ),
         };
@@ -159,6 +168,8 @@ export default function ItineraryDetailScreen() {
     setStopCost("");
     setSearchQuery("");
     setShowLocationList(false);
+    setCustomLat(null);
+    setCustomLng(null);
     setStopModalVisible(true);
   };
 
@@ -177,17 +188,24 @@ export default function ItineraryDetailScreen() {
     setStopTime(item.time || "");
     setStopNote(item.note || "");
     setStopCost(item.estimated_cost ? String(item.estimated_cost) : "");
+    setCustomLat(item.custom_lat ? Number(item.custom_lat) : null);
+    setCustomLng(item.custom_lng ? Number(item.custom_lng) : null);
     setStopModalVisible(true);
   };
 
   const saveItineraryStops = async (updatedItems: ItineraryItemInput[]) => {
     if (!detail) return;
     try {
+      const formatYMD = (dateString: string) => {
+        const d = new Date(dateString);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
+
       const res = await itineraryApi.updateItinerary(detail.itinerary_id, {
         title: detail.title,
         description: detail.description || undefined,
-        start_date: detail.start_date,
-        end_date: detail.end_date,
+        start_date: formatYMD(detail.start_date),
+        end_date: formatYMD(detail.end_date),
         items: updatedItems,
       });
 
@@ -196,9 +214,42 @@ export default function ItineraryDetailScreen() {
       } else {
         Alert.alert("Lỗi", res.message || "Cập nhật lịch trình thất bại.");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      Alert.alert("Lỗi", "Lỗi mạng hoặc không thể kết nối đến máy chủ.");
+      Alert.alert("Lỗi", e?.response?.data?.message || e.message || "Lỗi mạng hoặc không thể kết nối đến máy chủ.");
+    }
+  };
+
+  const handleSaveTripInfo = async () => {
+    if (!detail) return;
+    if (!editTitle.trim()) {
+      Alert.alert("Lỗi", "Vui lòng nhập tên chuyến đi.");
+      return;
+    }
+    try {
+      const formatYMD = (dateString: string) => {
+        const d = new Date(dateString);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
+
+      const res = await itineraryApi.updateItinerary(detail.itinerary_id, {
+        title: editTitle.trim(),
+        description: editDesc.trim() || undefined,
+        start_date: formatYMD(detail.start_date),
+        end_date: formatYMD(detail.end_date),
+        items: detail.items,
+      });
+
+      if (res.success && res.data) {
+        setDetail(res.data);
+        setTripInfoModalVisible(false);
+        Alert.alert("Thành công", "Đã cập nhật thông tin chuyến đi.");
+      } else {
+        Alert.alert("Lỗi", res.message || "Cập nhật thất bại.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert("Lỗi", e?.response?.data?.message || "Lỗi mạng.");
     }
   };
 
@@ -220,6 +271,7 @@ export default function ItineraryDetailScreen() {
       note: stopNote.trim() || null,
       estimated_cost: stopCost.trim() ? Number(stopCost) : null,
       is_visited: false,
+      visited_at: null,
     };
 
     if (stopType === "system" && selectedLocation) {
@@ -230,6 +282,8 @@ export default function ItineraryDetailScreen() {
       newItem.location_id = null;
       newItem.custom_name = customName.trim();
       newItem.custom_address = customAddress.trim() || null;
+      newItem.custom_lat = customLat;
+      newItem.custom_lng = customLng;
     }
 
     let updatedItems = [...detail.items];
@@ -240,15 +294,16 @@ export default function ItineraryDetailScreen() {
       const itemToReplace = activeItemsSorted[editingStopIndex];
       const indexInMain = updatedItems.findIndex(
         (x) =>
-          x.itinerary_item_id === itemToReplace.itinerary_item_id &&
+          (x.item_id || x.itinerary_item_id) === (itemToReplace.item_id || itemToReplace.itinerary_item_id) &&
           x.custom_name === itemToReplace.custom_name
       );
 
       if (indexInMain !== -1) {
         // Retain ID and sort order
-        newItem.itinerary_item_id = itemToReplace.itinerary_item_id;
+        newItem.item_id = itemToReplace.item_id || itemToReplace.itinerary_item_id;
         newItem.sort_order = itemToReplace.sort_order;
         newItem.is_visited = itemToReplace.is_visited;
+        newItem.visited_at = itemToReplace.visited_at;
         updatedItems[indexInMain] = newItem;
       }
     } else {
@@ -259,6 +314,24 @@ export default function ItineraryDetailScreen() {
 
     setStopModalVisible(false);
     await saveItineraryStops(updatedItems);
+  };
+
+  const handleStartNav = (item: any) => {
+    const lat = item.location_lat || item.custom_lat;
+    const lng = item.location_lng || item.custom_lng;
+    if (!lat || !lng) {
+      Alert.alert("Thông báo", "Địa điểm này chưa có tọa độ để dẫn đường.");
+      return;
+    }
+    router.push({
+      pathname: "/explore",
+      params: {
+        focusRouteLat: lat.toString(),
+        focusRouteLng: lng.toString(),
+        focusRouteName: item.custom_name || item.location_name || "",
+        focusRouteAddress: item.custom_address || item.location_address || "",
+      },
+    });
   };
 
   const handleDeleteStop = (itemIndex: number) => {
@@ -275,7 +348,7 @@ export default function ItineraryDetailScreen() {
           const updatedItems = detail.items.filter(
             (x) =>
               !(
-                x.itinerary_item_id === itemToDelete.itinerary_item_id &&
+                (x.item_id || x.itinerary_item_id) === (itemToDelete.item_id || itemToDelete.itinerary_item_id) &&
                 x.custom_name === itemToDelete.custom_name
               )
           );
@@ -301,7 +374,7 @@ export default function ItineraryDetailScreen() {
     // Map changes back to main items list
     const updatedItems = detail.items.map((mainItem) => {
       const matchedIdx = activeItemsSorted.findIndex(
-        (i) => i.itinerary_item_id === mainItem.itinerary_item_id && i.custom_name === mainItem.custom_name
+        (i) => (i.item_id || i.itinerary_item_id) === (mainItem.item_id || mainItem.itinerary_item_id) && i.custom_name === mainItem.custom_name
       );
       if (matchedIdx !== -1) {
         return activeItemsSorted[matchedIdx];
@@ -342,9 +415,23 @@ export default function ItineraryDetailScreen() {
           <Ionicons name="chevron-back" size={24} color="#0f172a" />
         </Pressable>
         <View className="ml-3 flex-1 mr-2">
-          <Text className="text-[16px] font-extrabold text-slate-900" numberOfLines={1}>
-            {detail.title}
-          </Text>
+          <View className="flex-row items-center">
+            <Text className="text-[16px] font-extrabold text-slate-900 flex-shrink" numberOfLines={1}>
+              {detail.title}
+            </Text>
+            {isEditMode && (
+              <Pressable 
+                onPress={() => {
+                  setEditTitle(detail.title);
+                  setEditDesc(detail.description || "");
+                  setTripInfoModalVisible(true);
+                }}
+                className="ml-2 p-1"
+              >
+                <Ionicons name="pencil" size={14} color="#6366f1" />
+              </Pressable>
+            )}
+          </View>
           <Text className="text-[10px] text-slate-400 font-bold mt-0.5">
             Ngày: {new Date(detail.start_date).toLocaleDateString("vi-VN")} - {new Date(detail.end_date).toLocaleDateString("vi-VN")}
           </Text>
@@ -414,7 +501,7 @@ export default function ItineraryDetailScreen() {
         ) : (
           <View className="p-4 gap-4">
             {activeDayItems.map((item, idx) => {
-              const isVisited = !!item.is_visited;
+              const isVisited = !!item.is_visited || !!item.visited_at;
               return (
                 <View
                   key={idx}
@@ -484,11 +571,29 @@ export default function ItineraryDetailScreen() {
                         💰 Dự chi: {Number(item.estimated_cost).toLocaleString("vi-VN")}đ
                       </Text>
                     ) : null}
+
+                    {/* Start Trip Button */}
+                    {!isEditMode && (item.location_lat || item.custom_lat) && (
+                      <Pressable
+                        onPress={() => handleStartNav(item)}
+                        className="mt-2.5 flex-row items-center justify-center bg-indigo-50 border border-indigo-100 py-2 rounded-xl active:bg-indigo-100"
+                      >
+                        <Ionicons name="navigate-circle" size={18} color="#4f46e5" />
+                        <Text className="text-[11px] font-bold text-indigo-700 ml-1">Bắt đầu</Text>
+                      </Pressable>
+                    )}
                   </View>
 
                   {/* Edit mode actions */}
                   {isEditMode && (
-                    <View className="justify-center gap-3">
+                    <View className="justify-center gap-3 items-center">
+                      <Pressable onPress={() => void handleToggleVisited(item)} className="p-1">
+                        <Ionicons
+                          name={isVisited ? "checkmark-circle" : "ellipse-outline"}
+                          size={20}
+                          color={isVisited ? "#10b981" : "#cbd5e1"}
+                        />
+                      </Pressable>
                       <Pressable onPress={() => openEditStopModal(idx, item)} className="p-1">
                         <Ionicons name="create-outline" size={18} color="#6366f1" />
                       </Pressable>
@@ -607,12 +712,21 @@ export default function ItineraryDetailScreen() {
                     />
                   </View>
                   <View>
-                    <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Địa chỉ</Text>
+                    <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tọa độ & Địa chỉ</Text>
+                    <Pressable
+                      onPress={() => setMapPickerVisible(true)}
+                      className="border border-line rounded-xl px-4 py-3 bg-white flex-row items-center justify-between"
+                    >
+                      <Text className={`text-xs ${customLat && customLng ? "text-slate-800" : "text-slate-400"}`} numberOfLines={1}>
+                        {customLat && customLng ? `${customLat.toFixed(5)}, ${customLng.toFixed(5)}` : "Chạm để chọn trên bản đồ..."}
+                      </Text>
+                      <Ionicons name="map-outline" size={16} color="#6366f1" />
+                    </Pressable>
                     <TextInput
                       value={customAddress}
                       onChangeText={customAddress => setCustomAddress(customAddress)}
                       placeholder="Số nhà, tên đường, khu vực..."
-                      className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white"
+                      className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white mt-3"
                     />
                   </View>
                 </View>
@@ -666,6 +780,104 @@ export default function ItineraryDetailScreen() {
               </Pressable>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* Map Picker Modal */}
+      <Modal visible={mapPickerVisible} animationType="slide" transparent>
+        <View className="flex-1 bg-white">
+          <SafeAreaView className="flex-1" edges={["top", "bottom"]}>
+            <View className="flex-row items-center justify-between px-4 py-3 border-b border-line bg-white z-10">
+              <Text className="text-base font-extrabold text-slate-900">Chọn vị trí</Text>
+              <Pressable onPress={() => setMapPickerVisible(false)} className="p-1">
+                <Ionicons name="close" size={24} color="#64748b" />
+              </Pressable>
+            </View>
+            <View className="flex-1 relative">
+              <MapView
+                provider={PROVIDER_GOOGLE}
+                style={{ flex: 1 }}
+                initialRegion={{
+                  latitude: customLat || 10.0452,
+                  longitude: customLng || 105.7469,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+                onPress={(e) => {
+                  setCustomLat(e.nativeEvent.coordinate.latitude);
+                  setCustomLng(e.nativeEvent.coordinate.longitude);
+                }}
+              >
+                {customLat && customLng && (
+                  <Marker coordinate={{ latitude: customLat, longitude: customLng }} />
+                )}
+              </MapView>
+              <View className="absolute bottom-4 left-4 right-4 bg-white rounded-xl shadow-lg border border-slate-100 p-4">
+                <Text className="text-xs text-slate-500 mb-3">Chạm vào bản đồ để chọn tọa độ</Text>
+                <Pressable
+                  onPress={() => setMapPickerVisible(false)}
+                  disabled={!customLat || !customLng}
+                  className={`w-full py-3 rounded-xl items-center ${
+                    customLat && customLng ? "bg-indigo-600" : "bg-slate-200"
+                  }`}
+                >
+                  <Text className={`font-bold text-xs ${customLat && customLng ? "text-white" : "text-slate-400"}`}>
+                    Xác nhận tọa độ
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {/* Trip Info Edit Modal */}
+      <Modal visible={tripInfoModalVisible} animationType="fade" transparent>
+        <View className="flex-1 bg-black/60 justify-center px-4">
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <View className="bg-white rounded-3xl p-5 shadow-xl">
+              <View className="flex-row justify-between items-center mb-4">
+                <Text className="text-base font-extrabold text-slate-900">Thông tin chuyến đi</Text>
+                <Pressable onPress={() => setTripInfoModalVisible(false)} className="p-1">
+                  <Ionicons name="close" size={24} color="#64748b" />
+                </Pressable>
+              </View>
+
+              <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tên chuyến đi</Text>
+              <TextInput
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Ví dụ: Khám phá Phú Quốc 3N2Đ"
+                className="border border-line rounded-xl px-4 py-3 text-sm text-slate-800 bg-white mb-4"
+              />
+
+              <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Mô tả (không bắt buộc)</Text>
+              <TextInput
+                value={editDesc}
+                onChangeText={setEditDesc}
+                placeholder="Chuyến đi cùng gia đình..."
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                className="border border-line rounded-xl p-4 text-sm text-slate-800 bg-white min-h-[80px] mb-6"
+              />
+
+              <View className="flex-row gap-4">
+                <Pressable
+                  onPress={() => setTripInfoModalVisible(false)}
+                  className="flex-1 py-3 items-center justify-center rounded-xl bg-slate-100"
+                >
+                  <Text className="text-slate-600 font-bold text-sm">Hủy</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSaveTripInfo}
+                  className="flex-1 py-3 items-center justify-center rounded-xl bg-indigo-600 active:bg-indigo-700"
+                >
+                  <Text className="text-white font-bold text-sm">Lưu thay đổi</Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>

@@ -8,6 +8,7 @@ type ApiResponse<T> = {
 
 export type ItineraryItemInput = {
   itinerary_item_id?: number;
+  item_id?: number;
   day_number: number;
   sort_order?: number;
   location_id?: number | null;
@@ -15,10 +16,15 @@ export type ItineraryItemInput = {
   custom_address?: string | null;
   custom_lat?: number | null;
   custom_lng?: number | null;
+  location_name?: string | null;
+  location_address?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
   time?: string | null;
   note?: string | null;
   estimated_cost?: number | null;
   is_visited?: boolean | 0 | 1;
+  visited_at?: string | null;
 };
 
 export type ItineraryInput = {
@@ -37,7 +43,7 @@ export type ItineraryListItem = {
   end_date: string;
   created_at: string;
   total_items: number;
-  visited_items: number;
+  visited_count: number;
 };
 
 export type ItineraryDetail = {

@@ -208,7 +208,7 @@ const ItineraryEditor = () => {
     if (new Date(startDate) > new Date(endDate)) { alert("Ngày kết thúc phải sau ngày bắt đầu"); return; }
     try {
       setSaving(true);
-      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: itemsToSave.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, custom_lat: item.custom_lat ?? undefined, custom_lng: item.custom_lng ?? undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined })) };
+      const payload = { title: title.trim(), description: description.trim() || undefined, start_date: startDate, end_date: endDate, items: itemsToSave.map((item, idx) => ({ day_number: item.day_number, sort_order: idx, location_id: item.location_id, custom_name: item.custom_name || undefined, custom_address: item.custom_address || undefined, custom_lat: item.custom_lat ?? undefined, custom_lng: item.custom_lng ?? undefined, time: item.time || undefined, note: item.note || undefined, estimated_cost: item.estimated_cost ? Number(item.estimated_cost) : undefined, is_visited: item.visited_at ? true : false })) };
       if (isEdit) await userApi.updateItinerary(Number(id), payload);
       else await userApi.createItinerary(payload);
       if (doNavigate) navigate("/user/itineraries");
