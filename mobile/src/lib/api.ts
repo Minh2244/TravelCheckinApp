@@ -130,7 +130,7 @@ api.interceptors.response.use(
       }
     }
 
-    if (status === 401) {
+    if (status === 401 && (!originalRequest?.url?.includes("/auth/login"))) {
       await authBridge.onSessionExpired(message);
     }
 

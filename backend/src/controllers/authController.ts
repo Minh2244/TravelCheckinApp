@@ -116,13 +116,15 @@ const saveOTP = async (
   email: string,
   otp: string,
   type: "REGISTER" | "FORGOT_PASSWORD",
+  payload?: any
 ): Promise<void> => {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const payloadStr = payload ? JSON.stringify(payload) : null;
 
   await pool.query(
-    `INSERT INTO otp_codes (email, otp_code, type, expires_at) 
-     VALUES (?, ?, ?, ?)`,
-    [email, otp, type, expiresAt],
+    `INSERT INTO otp_codes (email, otp_code, type, expires_at, payload) 
+     VALUES (?, ?, ?, ?, ?)`,
+    [email, otp, type, expiresAt, payloadStr],
   );
 };
 
@@ -130,7 +132,7 @@ const verifyOTPCode = async (
   email: string,
   otp: string,
   type: "REGISTER" | "FORGOT_PASSWORD",
-): Promise<boolean> => {
+): Promise<any | null> => {
   const [rows]: any = await pool.query(
     `SELECT * FROM otp_codes 
      WHERE email = ? AND otp_code = ? AND type = ? 
@@ -140,14 +142,14 @@ const verifyOTPCode = async (
   );
 
   if (rows.length === 0) {
-    return false;
+    return null;
   }
 
   await pool.query(`UPDATE otp_codes SET is_used = 1 WHERE id = ?`, [
     rows[0].id,
   ]);
 
-  return true;
+  return rows[0];
 };
 
 const ensureAccountBlacklistSchema = async (): Promise<void> => {
@@ -272,18 +274,24 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Hash mật khẩu
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Tạo user mới (status = pending, is_verified = 0)
-    await connection.query(
-      `INSERT INTO users (email, phone, password_hash, full_name, role, status, is_verified) 
-       VALUES (?, ?, ?, ?, 'user', 'pending', 0)`,
-      [email || null, phone || null, hashedPassword, full_name.trim()],
-    );
-
-    // Gửi OTP qua email
     if (email) {
       const otp = generateOTP();
-      await saveOTP(email, otp, "REGISTER");
-      await sendOTPEmail(email, otp, "REGISTER");
+      const payload = {
+        full_name: full_name.trim(),
+        phone: phone || null,
+        password_hash: hashedPassword
+      };
+      
+      // Lưu payload vào OTP thay vì Users
+      await saveOTP(email, otp, "REGISTER", payload);
+      sendOTPEmail(email, otp, "REGISTER").catch(err => console.error("OTP send error:", err));
+    } else {
+      // Đăng ký bằng SĐT (chưa có SMS OTP)
+      await connection.query(
+        `INSERT INTO users (email, phone, password_hash, full_name, role, status, is_verified) 
+         VALUES (?, ?, ?, ?, 'user', 'pending', 0)`,
+        [email || null, phone || null, hashedPassword, full_name.trim()],
+      );
     }
 
     res.status(201).json({
@@ -319,9 +327,9 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
     }
 
     // Xác thực OTP
-    const isValid = await verifyOTPCode(email, otp, "REGISTER");
+    const otpRecord = await verifyOTPCode(email, otp, "REGISTER");
 
-    if (!isValid) {
+    if (!otpRecord) {
       res.status(400).json({
         success: false,
         message: "Mã OTP không đúng hoặc đã hết hạn",
@@ -329,11 +337,30 @@ export const verifyOTP = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // User thường chỉ cần xác thực OTP, không cần admin duyệt
-    await connection.query(
-      "UPDATE users SET is_verified = 1, verified_at = NOW(), status = CASE WHEN status = 'locked' THEN 'locked' ELSE 'active' END WHERE email = ?",
-      [email],
-    );
+    if (otpRecord.payload) {
+      const payload = typeof otpRecord.payload === 'string' ? JSON.parse(otpRecord.payload) : otpRecord.payload;
+      
+      // Kiểm tra xem user có tồn tại chưa (để tránh lỗi duplicate key nếu họ cố xác thực 2 lần)
+      const [existingUsers] = await connection.query<User[]>(
+        "SELECT * FROM users WHERE email = ? OR phone = ?",
+        [email, payload.phone || null]
+      );
+      
+      if (existingUsers.length === 0) {
+        // Tạo user mới (status = active, is_verified = 1)
+        await connection.query(
+          `INSERT INTO users (email, phone, password_hash, full_name, role, status, is_verified, verified_at) 
+           VALUES (?, ?, ?, ?, 'user', 'active', 1, NOW())`,
+          [email, payload.phone, payload.password_hash, payload.full_name],
+        );
+      }
+    } else {
+      // Logic cũ cho các OTP chưa có payload (nếu còn)
+      await connection.query(
+        "UPDATE users SET is_verified = 1, verified_at = NOW(), status = CASE WHEN status = 'locked' THEN 'locked' ELSE 'active' END WHERE email = ?",
+        [email],
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -386,7 +413,7 @@ export const forgotPassword = async (
     // Gửi OTP
     const otp = generateOTP();
     await saveOTP(email, otp, "FORGOT_PASSWORD");
-    await sendOTPEmail(email, otp, "FORGOT_PASSWORD");
+    sendOTPEmail(email, otp, "FORGOT_PASSWORD").catch(err => console.error("OTP send error:", err));
 
     res.status(200).json({
       success: true,

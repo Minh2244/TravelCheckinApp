@@ -211,48 +211,54 @@ export const geoReverse = async (req: Request, res: Response) => {
   }
 
   try {
-    const url =
+    const nominatimUrl =
       `${NOMINATIM_BASE}/reverse` +
       `?format=jsonv2` +
       `&addressdetails=1` +
       `&lat=${encodeURIComponent(String(lat))}` +
       `&lon=${encodeURIComponent(String(lng))}`;
 
-    const resp = await axios.get(url, {
-      headers: nominatimHeaders(),
-      timeout: 8000,
-    });
+    const meteoUrl =
+      `https://api.open-meteo.com/v1/forecast` +
+      `?latitude=${encodeURIComponent(String(lat))}` +
+      `&longitude=${encodeURIComponent(String(lng))}` +
+      `&current=temperature_2m,weathercode`;
 
-    const data = resp.data ?? null;
+    const [nominatimResult, meteoResult] = await Promise.allSettled([
+      axios.get(nominatimUrl, { headers: nominatimHeaders(), timeout: 8000 }),
+      axios.get(meteoUrl, { timeout: 5000 }),
+    ]);
+
+    const data = nominatimResult.status === "fulfilled" ? nominatimResult.value.data ?? null : null;
+
+    if (nominatimResult.status === "rejected") {
+      console.error("Nominatim error:", nominatimResult.reason);
+    }
 
     let temperature: number | undefined;
     let weather: string | undefined;
 
-    try {
-      const meteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(String(lat))}&longitude=${encodeURIComponent(String(lng))}&current=temperature_2m,weathercode`;
-      const meteoResp = await axios.get(meteoUrl, { timeout: 5000 });
-      if (meteoResp.data?.current) {
-        temperature = meteoResp.data.current.temperature_2m;
-        const code = meteoResp.data.current.weathercode;
-        
-        weather = "Nhiều mây";
-        if (code === 0) weather = "Trời quang";
-        else if (code >= 1 && code <= 3) weather = "Có mây";
-        else if (code >= 45 && code <= 48) weather = "Có sương mù";
-        else if (code >= 51 && code <= 57) weather = "Mưa phùn";
-        else if (code >= 61 && code <= 67) weather = "Có mưa";
-        else if (code >= 71 && code <= 77) weather = "Có tuyết";
-        else if (code >= 80 && code <= 82) weather = "Mưa rào";
-        else if (code >= 95 && code <= 99) weather = "Có giông bão";
-      }
-    } catch (err) {
-      console.error("Open-Meteo error:", err);
+    if (meteoResult.status === "fulfilled" && meteoResult.value.data?.current) {
+      temperature = meteoResult.value.data.current.temperature_2m;
+      const code = meteoResult.value.data.current.weathercode;
+
+      weather = "Nhiều mây";
+      if (code === 0) weather = "Trời quang";
+      else if (code >= 1 && code <= 3) weather = "Có mây";
+      else if (code >= 45 && code <= 48) weather = "Có sương mù";
+      else if (code >= 51 && code <= 57) weather = "Mưa phùn";
+      else if (code >= 61 && code <= 67) weather = "Có mưa";
+      else if (code >= 71 && code <= 77) weather = "Có tuyết";
+      else if (code >= 80 && code <= 82) weather = "Mưa rào";
+      else if (code >= 95 && code <= 99) weather = "Có giông bão";
+    } else if (meteoResult.status === "rejected") {
+      console.error("Open-Meteo error:", meteoResult.reason);
     }
 
-    const city = data?.address?.city 
-      || data?.address?.town 
-      || data?.address?.county 
-      || data?.address?.state_district 
+    const city = data?.address?.city
+      || data?.address?.town
+      || data?.address?.county
+      || data?.address?.state_district
       || "Vị trí không xác định";
 
     const finalData = {
@@ -268,6 +274,7 @@ export const geoReverse = async (req: Request, res: Response) => {
     res.status(502).json({ message: "Reverse-geocoding upstream error" });
   }
 };
+
 
 export const geoRoute = async (req: Request, res: Response) => {
   const ip = getClientIp(req);

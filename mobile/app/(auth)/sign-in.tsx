@@ -35,6 +35,7 @@ export default function SignInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const signIn = useAuthStore((state) => state.signIn);
+  const notice = useAuthStore((state) => state.notice);
   const clearNotice = useAuthStore((state) => state.clearNotice);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -124,6 +125,13 @@ export default function SignInScreen() {
             <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5">
               <Ionicons name="alert-circle" size={20} color="#be123c" />
               <Text className="flex-1 leading-5 text-rose-700">{submitError}</Text>
+            </View>
+          ) : null}
+
+          {notice ? (
+            <View className="mb-5 flex-row items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3.5">
+              <Ionicons name="alert-circle" size={20} color="#be123c" />
+              <Text className="flex-1 leading-5 text-rose-700">{notice}</Text>
             </View>
           ) : null}
 
