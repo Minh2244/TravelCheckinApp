@@ -8,11 +8,15 @@ import {
   Animated,
   DeviceEventEmitter,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 
+import { getErrorMessage } from "../../../src/lib/error";
 import { sosApi } from "../../../src/services/sos.api";
 
 export default function SosScreen() {
@@ -22,12 +26,104 @@ export default function SosScreen() {
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [alertId, setAlertId] = useState<number | null>(null);
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [coords, setCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
-  const [sosStatus, setSosStatus] = useState<"pending" | "processing" | "resolved" | "cancelled" | null>(null);
+  const [sosStatus, setSosStatus] = useState<
+    "pending" | "processing" | "resolved" | "cancelled" | null
+  >(null);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pingInterval = useRef<any>(null);
+
+  const clearSosPingInterval = () => {
+    if (pingInterval.current) {
+      clearInterval(pingInterval.current);
+      pingInterval.current = null;
+    }
+  };
+
+  const handleSosRequestError = (error: unknown, fallbackMessage: string) => {
+    Alert.alert("Lỗi SOS", getErrorMessage(error) || fallbackMessage);
+  };
+
+  const isUnauthorizedError = (error: unknown) => {
+    return (
+      (error as { response?: { status?: number } } | null)?.response?.status ===
+      401
+    );
+  };
+
+  const handleSosPingError = (error: unknown) => {
+    if (isUnauthorizedError(error)) {
+      clearSosPingInterval();
+      handleSosRequestError(
+        error,
+        "Không thể cập nhật vị trí SOS. Vui lòng đăng nhập lại nếu phiên đã hết hạn.",
+      );
+      return;
+    }
+
+    console.warn("Lỗi gửi ping tọa độ SOS:", getErrorMessage(error));
+  };
+
+  const handleSosStatusUpdate = (event: any) => {
+    if (event?.type !== "sos_status_update" && !event?.status) {
+      return;
+    }
+
+    const status = event.status;
+    if (!status) {
+      return;
+    }
+
+    setSosStatus(status);
+    if (status === "resolved" || status === "cancelled") {
+      setTimeout(() => {
+        clearSosPingInterval();
+        setIsActive(false);
+        setAlertId(null);
+        setCoords(null);
+        setAddress(null);
+        setSosStatus(null);
+      }, 3500);
+    }
+  };
+
+  const activeSosVisual = (() => {
+    switch (sosStatus) {
+      case "resolved":
+        return {
+          buttonClassName: "bg-emerald-600 shadow-emerald-500/35",
+          pulsePrimary: "rgba(16, 185, 129, 0.18)",
+          pulseSecondary: "rgba(16, 185, 129, 0.08)",
+          borderColor: "rgba(16, 185, 129, 0.18)",
+        };
+      case "cancelled":
+        return {
+          buttonClassName: "bg-slate-400 shadow-slate-400/25",
+          pulsePrimary: "rgba(148, 163, 184, 0.16)",
+          pulseSecondary: "rgba(148, 163, 184, 0.08)",
+          borderColor: "rgba(148, 163, 184, 0.18)",
+        };
+      case "processing":
+        return {
+          buttonClassName: "bg-slate-700 shadow-slate-500/35",
+          pulsePrimary: "rgba(51, 65, 85, 0.18)",
+          pulseSecondary: "rgba(51, 65, 85, 0.08)",
+          borderColor: "rgba(244, 63, 94, 0.18)",
+        };
+      default:
+        return {
+          buttonClassName: "bg-slate-800 shadow-slate-500/35",
+          pulsePrimary: "rgba(30, 41, 59, 0.18)",
+          pulseSecondary: "rgba(30, 41, 59, 0.08)",
+          borderColor: "rgba(244, 63, 94, 0.18)",
+        };
+    }
+  })();
 
   useEffect(() => {
     const checkActiveSos = async () => {
@@ -38,8 +134,8 @@ export default function SosScreen() {
           setAlertId(alert.alert_id);
           setIsActive(true);
           setSosStatus(alert.status as any);
-          
-          if (pingInterval.current) clearInterval(pingInterval.current);
+
+          clearSosPingInterval();
           pingInterval.current = setInterval(async () => {
             try {
               const loc = await Location.getCurrentPositionAsync({
@@ -48,23 +144,30 @@ export default function SosScreen() {
               const newLat = loc.coords.latitude;
               const newLng = loc.coords.longitude;
               setCoords({ latitude: newLat, longitude: newLng });
-              
+
               const newAddr = await getAddressFromCoords(newLat, newLng);
               setAddress(newAddr);
 
-              await sosApi.pingSos(alert.alert_id, newLat, newLng, newAddr || "Không xác định");
+              await sosApi.pingSos(
+                alert.alert_id,
+                newLat,
+                newLng,
+                newAddr || "Không xác định",
+              );
             } catch (err) {
-              console.error("Lỗi gửi ping tọa độ SOS:", err);
+              handleSosPingError(err);
             }
           }, 15000);
         }
       } catch (err) {
-        console.error("Lỗi kiểm tra active SOS trên mobile:", err);
+        console.warn(
+          "Lỗi kiểm tra active SOS trên mobile:",
+          getErrorMessage(err),
+        );
       }
     };
     checkActiveSos();
   }, []);
-
 
   // Lắng nghe sự kiện trạng thái SOS từ Admin qua SSE phát ra
   useEffect(() => {
@@ -73,30 +176,22 @@ export default function SosScreen() {
       return;
     }
 
-    const sub = DeviceEventEmitter.addListener("realtime_event", (event: any) => {
-      if (event?.type === "sos_status_update") {
-        const data = event;
-        if (data.status) {
-          setSosStatus(data.status);
-          if (data.status === "resolved" || data.status === "cancelled") {
-          setTimeout(() => {
-            if (pingInterval.current) {
-              clearInterval(pingInterval.current);
-              pingInterval.current = null;
-            }
-            setIsActive(false);
-            setAlertId(null);
-            setCoords(null);
-            setAddress(null);
-            setSosStatus(null);
-          }, 3500);
+    const realtimeSub = DeviceEventEmitter.addListener(
+      "realtime_event",
+      (event: any) => {
+        if (event?.type === "sos_status_update") {
+          handleSosStatusUpdate(event);
         }
-      }
-    }
-    });
+      },
+    );
+    const sseSub = DeviceEventEmitter.addListener(
+      "sos_status_updated",
+      handleSosStatusUpdate,
+    );
 
     return () => {
-      sub.remove();
+      realtimeSub.remove();
+      sseSub.remove();
     };
   }, [isActive]);
 
@@ -116,7 +211,7 @@ export default function SosScreen() {
             duration: 1000,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       );
       anim.start();
     } else {
@@ -132,16 +227,19 @@ export default function SosScreen() {
   useEffect(() => {
     return () => {
       if (pingInterval.current) {
-        clearInterval(pingInterval.current);
+        clearSosPingInterval();
       }
     };
   }, []);
 
-  const getAddressFromCoords = async (latitude: number, longitude: number): Promise<string | null> => {
+  const getAddressFromCoords = async (
+    latitude: number,
+    longitude: number,
+  ): Promise<string | null> => {
     try {
       const result = await Promise.race([
         Location.reverseGeocodeAsync({ latitude, longitude }),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
       if (result && Array.isArray(result) && result.length > 0) {
         const item = result[0];
@@ -167,7 +265,10 @@ export default function SosScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Quyền định vị", "Bạn cần cấp quyền truy cập vị trí để gửi cứu hộ khẩn cấp.");
+        Alert.alert(
+          "Quyền định vị",
+          "Bạn cần cấp quyền truy cập vị trí để gửi cứu hộ khẩn cấp.",
+        );
         setLoading(false);
         return;
       }
@@ -175,14 +276,21 @@ export default function SosScreen() {
       let location;
       try {
         location = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 8000))
+          Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout")), 8000),
+          ),
         ]);
       } catch (err) {
         // Fallback to last known position if current position times out or fails
         location = await Location.getLastKnownPositionAsync();
         if (!location) {
-          Alert.alert("Lỗi", "Không thể lấy được vị trí hiện tại. Vui lòng bật GPS.");
+          Alert.alert(
+            "Lỗi",
+            "Không thể lấy được vị trí hiện tại. Vui lòng bật GPS.",
+          );
           setLoading(false);
           return;
         }
@@ -201,7 +309,7 @@ export default function SosScreen() {
         lat,
         lng,
         resolvedAddress || "Không xác định",
-        "Tôi gặp sự cố cần cứu hộ khẩn cấp!"
+        "Tôi gặp sự cố cần cứu hộ khẩn cấp!",
       );
 
       if (res.success && res.data?.alert_id) {
@@ -218,21 +326,25 @@ export default function SosScreen() {
             const newLat = loc.coords.latitude;
             const newLng = loc.coords.longitude;
             setCoords({ latitude: newLat, longitude: newLng });
-            
+
             const newAddr = await getAddressFromCoords(newLat, newLng);
             setAddress(newAddr);
 
-            await sosApi.pingSos(id, newLat, newLng, newAddr || "Không xác định");
+            await sosApi.pingSos(
+              id,
+              newLat,
+              newLng,
+              newAddr || "Không xác định",
+            );
           } catch (err) {
-            console.error("Lỗi gửi ping tọa độ SOS:", err);
+            handleSosPingError(err);
           }
         }, 15000);
       } else {
         Alert.alert("Lỗi", "Không thể gửi tín hiệu cứu hộ lên hệ thống.");
       }
     } catch (e) {
-      console.error(e);
-      Alert.alert("Lỗi", "Đã xảy ra lỗi khi khởi chạy SOS.");
+      handleSosRequestError(e, "Đã xảy ra lỗi khi khởi chạy SOS.");
     } finally {
       setLoading(false);
     }
@@ -242,8 +354,7 @@ export default function SosScreen() {
     setLoading(true);
     try {
       if (pingInterval.current) {
-        clearInterval(pingInterval.current);
-        pingInterval.current = null;
+        clearSosPingInterval();
       }
 
       await sosApi.stopSos(alertId || undefined);
@@ -251,17 +362,22 @@ export default function SosScreen() {
       setAlertId(null);
       setCoords(null);
       setAddress(null);
-      Alert.alert("Đã kết thúc", "Đã hủy tín hiệu SOS và thông báo trạng thái an toàn.");
+      Alert.alert(
+        "Đã kết thúc",
+        "Đã hủy tín hiệu SOS và thông báo trạng thái an toàn.",
+      );
     } catch (e) {
-      console.error(e);
-      Alert.alert("Lỗi", "Lỗi khi dừng gửi tín hiệu cứu hộ.");
+      handleSosRequestError(e, "Lỗi khi dừng gửi tín hiệu cứu hộ.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-surface" edges={["top", "left", "right"]}>
+    <SafeAreaView
+      className="flex-1 bg-surface"
+      edges={["top", "left", "right"]}
+    >
       {/* Header */}
       <View className="flex-row items-center border-b border-line bg-white px-4 pb-3 pt-2">
         <Pressable
@@ -269,7 +385,11 @@ export default function SosScreen() {
           onPress={() => router.back()}
           disabled={isActive} // Vô hiệu hóa nút quay lại khi SOS đang kích hoạt để người dùng tập trung xử lý khẩn cấp
         >
-          <Ionicons name="chevron-back" size={24} color={isActive ? "#cbd5e1" : "#0f172a"} />
+          <Ionicons
+            name="chevron-back"
+            size={24}
+            color={isActive ? "#cbd5e1" : "#0f172a"}
+          />
         </Pressable>
         <Text className="ml-3 text-[20px] font-extrabold text-slate-900 flex-1">
           Cứu hộ khẩn cấp SOS
@@ -288,7 +408,9 @@ export default function SosScreen() {
                   width: 180,
                   height: 180,
                   borderRadius: 90,
-                  backgroundColor: "rgba(239, 68, 68, 0.2)",
+                  backgroundColor: activeSosVisual.pulsePrimary,
+                  borderWidth: 1,
+                  borderColor: activeSosVisual.borderColor,
                 }}
               />
               <Animated.View
@@ -298,22 +420,37 @@ export default function SosScreen() {
                   width: 220,
                   height: 220,
                   borderRadius: 110,
-                  backgroundColor: "rgba(239, 68, 68, 0.1)",
+                  backgroundColor: activeSosVisual.pulseSecondary,
                 }}
               />
-              <View className="w-40 h-40 rounded-full bg-red-500 justify-center items-center border-4 border-white shadow-xl shadow-red-500/50">
-                <Text className="text-white text-3xl font-black tracking-widest">SOS</Text>
+              <View
+                className={[
+                  "w-40 h-40 rounded-full justify-center items-center border-4 border-white shadow-xl",
+                  activeSosVisual.buttonClassName,
+                ].join(" ")}
+              >
+                <Text className="text-white text-3xl font-black tracking-widest">
+                  DỪNG
+                </Text>
               </View>
             </View>
 
-            <Text className={[
-              "font-extrabold text-xl mb-2 text-center",
-              sosStatus === "processing" ? "text-amber-500" : sosStatus === "resolved" ? "text-emerald-500" : sosStatus === "cancelled" ? "text-slate-400" : "text-red-500"
-            ].join(" ")}>
-              {sosStatus === "processing" 
-                ? "🟡 ĐANG XỬ LÝ" 
-                : sosStatus === "resolved" 
-                  ? "🟢 ĐÃ XỬ LÝ XONG" 
+            <Text
+              className={[
+                "font-extrabold text-xl mb-2 text-center",
+                sosStatus === "processing"
+                  ? "text-amber-500"
+                  : sosStatus === "resolved"
+                    ? "text-emerald-500"
+                    : sosStatus === "cancelled"
+                      ? "text-slate-400"
+                      : "text-red-500",
+              ].join(" ")}
+            >
+              {sosStatus === "processing"
+                ? "🟡 ĐANG XỬ LÝ"
+                : sosStatus === "resolved"
+                  ? "🟢 ĐÃ XỬ LÝ XONG"
                   : sosStatus === "cancelled"
                     ? "⚪ ĐÃ HỦY YÊU CẦU"
                     : "🔴 TÍN HIỆU SOS ĐANG BẬT"}
@@ -339,7 +476,8 @@ export default function SosScreen() {
               {coords ? (
                 <View className="gap-1.5">
                   <Text className="text-xs text-slate-600 font-semibold">
-                    Kinh độ: {coords.longitude.toFixed(6)} | Vĩ độ: {coords.latitude.toFixed(6)}
+                    Kinh độ: {coords.longitude.toFixed(6)} | Vĩ độ:{" "}
+                    {coords.latitude.toFixed(6)}
                   </Text>
                   <Text className="text-xs text-slate-500 leading-[18px]">
                     Địa chỉ: {address || "Đang lấy địa chỉ..."}
@@ -358,7 +496,9 @@ export default function SosScreen() {
               {loading ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                <Text className="text-white font-bold text-base">Tôi đã an toàn - Dừng SOS</Text>
+                <Text className="text-white font-bold text-base">
+                  Tôi đã an toàn - Dừng SOS
+                </Text>
               )}
             </Pressable>
           </View>
@@ -370,7 +510,10 @@ export default function SosScreen() {
               onPress={startSos}
               className="w-48 h-48 rounded-full bg-red-100 justify-center items-center border border-red-200 shadow-md shadow-red-200/50 mb-10 active:bg-red-200/80"
             >
-              <View pointerEvents="none" className="w-40 h-40 rounded-full bg-red-500 justify-center items-center shadow border-4 border-white active:bg-red-600">
+              <View
+                pointerEvents="none"
+                className="w-40 h-40 rounded-full bg-red-500 justify-center items-center shadow border-4 border-white active:bg-red-600"
+              >
                 <Ionicons name="alert-circle" size={54} color="white" />
               </View>
             </Pressable>
@@ -379,7 +522,9 @@ export default function SosScreen() {
               Nhấn để kích hoạt SOS
             </Text>
             <Text className="text-slate-500 text-sm text-center px-4 leading-[22px]">
-              Tính năng này sử dụng trong trường hợp gặp tai nạn nguy hiểm hoặc sự cố bất ngờ. Hệ thống sẽ tự động thông báo và gửi vị trí liên tục đến cứu hộ.
+              Tính năng này sử dụng trong trường hợp gặp tai nạn nguy hiểm hoặc
+              sự cố bất ngờ. Hệ thống sẽ tự động thông báo và gửi vị trí liên
+              tục đến cứu hộ.
             </Text>
           </View>
         )}
