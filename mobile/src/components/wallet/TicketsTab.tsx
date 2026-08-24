@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -19,6 +19,10 @@ import { QRCodeModal } from "../../../src/components/ui/QRCodeModal";
 import { userApi } from "../../../src/services/user.api";
 import type { TouristTicket } from "../../../src/types/booking";
 import { resolveBackendUrl } from "../../../src/lib/url";
+import {
+  TicketDownloadPicker,
+  type TicketDownloadItem,
+} from "./TicketDownloadPicker";
 
 const getFirstImage = (imagesData: any) => {
   if (!imagesData) return null;
@@ -46,7 +50,24 @@ type GroupedTickets = {
   tickets: TouristTicket[];
 };
 
-export function TicketsTab() {
+type TicketsTabProps = {
+  locationId?: number | null;
+  downloadRequestKey?: number;
+};
+
+const formatCurrency = (value: unknown) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `${new Intl.NumberFormat("vi-VN").format(amount)} đ` : "-";
+};
+
+const getExportStatusTone = (status: string) => {
+  if (status === "unused") return "active" as const;
+  if (status === "void" || status === "cancelled" || status === "expired") return "danger" as const;
+  if (status === "pending") return "warning" as const;
+  return "muted" as const;
+};
+
+export function TicketsTab({ locationId, downloadRequestKey = 0 }: TicketsTabProps) {
   const router = useRouter();
   const [tickets, setTickets] = useState<TouristTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,10 +75,12 @@ export function TicketsTab() {
   const [activeTab, setActiveTab] = useState<'single' | 'group'>('single');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [selectedQr, setSelectedQr] = useState<string | null>(null);
+  const [downloadPickerVisible, setDownloadPickerVisible] = useState(false);
+  const lastHandledDownloadKeyRef = useRef(downloadRequestKey);
 
   const fetchTickets = useCallback(async () => {
     try {
-      const res = await userApi.getTouristTickets();
+      const res = await userApi.getTouristTickets(locationId);
       setTickets(res.data || []);
     } catch (err) {
       showToast(getErrorMessage(err));
@@ -65,7 +88,7 @@ export function TicketsTab() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [locationId]);
 
   useEffect(() => {
     fetchTickets();
@@ -148,6 +171,95 @@ export function TicketsTab() {
     if (status === "void" || status === "cancelled" || status === "expired") return "text-red-500";
     return "text-slate-500";
   };
+
+  const downloadItems = useMemo<TicketDownloadItem[]>(() => {
+    const items: TicketDownloadItem[] = [];
+
+    groupedTickets.forEach((group) => {
+      if (group.tickets.length === 1) {
+        const ticket = group.tickets[0];
+        if (!ticket.ticket_code) return;
+
+        items.push({
+          id: `tour-ticket-${ticket.ticket_id}`,
+          pickerTitle: ticket.service_name || "Vé du lịch",
+          pickerSubtitle: `${group.locationName} • ${formatDate(ticket.use_date)} • ${ticket.ticket_code}`,
+          title: "Vé du lịch",
+          heading: ticket.service_name || "Vé du lịch",
+          subheading: group.locationName,
+          code: ticket.ticket_code,
+          qrValue: ticket.ticket_code,
+          statusText: getStatusText(ticket.status),
+          statusTone: getExportStatusTone(ticket.status),
+          imageUrl: getFirstImage(ticket.service_images),
+          details: [
+            { label: "Hóa đơn", value: ticket.invoice_code || (group.bookingId > 0 ? `DL-${group.bookingId}` : "-") },
+            { label: "Ngày dùng", value: formatDate(ticket.use_date) },
+            { label: "Giá vé", value: formatCurrency(ticket.service_price) },
+            { label: "Mã đặt", value: group.bookingId > 0 ? `#${group.bookingId}` : "-" },
+          ],
+        });
+        return;
+      }
+
+      const masterQrCode = `SB-${group.bookingId}-GROUP`;
+      const allUsed = group.tickets.every((ticket) => ticket.status !== "unused");
+      items.push({
+        id: `tour-group-${group.bookingId}`,
+        pickerTitle: `Vé tổng nhóm - ${group.locationName}`,
+        pickerSubtitle: `${formatDate(group.useDate)} • ${group.tickets.length} vé • ${masterQrCode}`,
+        title: "Vé nhóm du lịch",
+        heading: group.locationName,
+        subheading: `Hóa đơn DL-${group.bookingId}`,
+        code: masterQrCode,
+        qrValue: masterQrCode,
+        statusText: allUsed ? "Đã dùng hết" : "Vé nhóm",
+        statusTone: allUsed ? "muted" : "active",
+        imageUrl: getFirstImage(group.tickets[0]?.service_images),
+        details: [
+          { label: "Hóa đơn", value: `DL-${group.bookingId}` },
+          { label: "Ngày dùng", value: formatDate(group.useDate) },
+          { label: "Tổng số", value: `${group.tickets.length} vé` },
+          { label: "Mã nhóm", value: masterQrCode },
+        ],
+      });
+
+      group.tickets.forEach((ticket, index) => {
+        if (!ticket.ticket_code) return;
+        items.push({
+          id: `tour-group-${group.bookingId}-ticket-${ticket.ticket_id}`,
+          pickerTitle: `Vé lẻ ${index + 1} - ${ticket.service_name || "Vé du lịch"}`,
+          pickerSubtitle: `${group.locationName} • ${formatDate(ticket.use_date)} • ${ticket.ticket_code}`,
+          title: "Vé du lịch",
+          heading: ticket.service_name || "Vé du lịch",
+          subheading: group.locationName,
+          code: ticket.ticket_code,
+          qrValue: ticket.ticket_code,
+          statusText: getStatusText(ticket.status),
+          statusTone: getExportStatusTone(ticket.status),
+          imageUrl: getFirstImage(ticket.service_images),
+          details: [
+            { label: "Hóa đơn", value: ticket.invoice_code || `DL-${group.bookingId}` },
+            { label: "Ngày dùng", value: formatDate(ticket.use_date) },
+            { label: "Giá vé", value: formatCurrency(ticket.service_price) },
+            { label: "Thuộc nhóm", value: masterQrCode },
+          ],
+        });
+      });
+    });
+
+    return items;
+  }, [groupedTickets]);
+
+  useEffect(() => {
+    if (!downloadRequestKey || downloadRequestKey === lastHandledDownloadKeyRef.current) return;
+    lastHandledDownloadKeyRef.current = downloadRequestKey;
+    if (loading) {
+      showToast("Đang tải danh sách vé, bạn thử lại sau nhé.");
+      return;
+    }
+    setDownloadPickerVisible(true);
+  }, [downloadRequestKey, loading]);
 
   const renderGroupItem = ({ item: group }: { item: GroupedTickets }) => {
     const groupKey = group.bookingId > 0 ? `booking_${group.bookingId}` : `ticket_${group.tickets[0].ticket_id}`;
@@ -408,6 +520,17 @@ export function TicketsTab() {
           }
         />
       )}
+      <TicketDownloadPicker
+        visible={downloadPickerVisible}
+        title={activeTab === "group" ? "Tải vé nhóm" : "Tải vé du lịch"}
+        contextLabel={
+          locationId
+            ? "Chỉ hiển thị vé QR du lịch tại địa điểm này."
+            : "Chọn vé QR du lịch trong ví của tôi."
+        }
+        items={downloadItems}
+        onClose={() => setDownloadPickerVisible(false)}
+      />
       <QRCodeModal visible={!!selectedQr} qrUrl={selectedQr} onClose={() => setSelectedQr(null)} />
     </View>
   );

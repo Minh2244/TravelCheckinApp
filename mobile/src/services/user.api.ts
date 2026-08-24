@@ -202,8 +202,14 @@ export const userApi = {
     );
     return response.data;
   },
-  async getTouristTickets() {
-    const response = await api.get<ApiResponse<any>>("/user/tickets");
+  async getTouristTickets(locationId?: string | number | null) {
+    const parsedLocationId = Number(locationId);
+    const response = await api.get<ApiResponse<any>>("/user/tickets", {
+      params:
+        Number.isFinite(parsedLocationId) && parsedLocationId > 0
+          ? { location_id: parsedLocationId }
+          : undefined,
+    });
     return response.data;
   },
   async getDiaries(params?: { locationId?: string | number }) {

@@ -1,17 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useState, useEffect } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { TicketsTab } from "../../../src/components/wallet/TicketsTab";
-import { TablePassTab } from "../../../src/components/wallet/TablePassTab";
 import { RoomPassTab } from "../../../src/components/wallet/RoomPassTab";
+import { TablePassTab } from "../../../src/components/wallet/TablePassTab";
+import { TicketsTab } from "../../../src/components/wallet/TicketsTab";
 
 export default function WalletIndexScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [activeTab, setActiveTab] = useState<"tour" | "food" | "hotel">("tour");
+  const [downloadRequestKey, setDownloadRequestKey] = useState(0);
 
   useEffect(() => {
     if (params.tab === "tour" || params.tab === "food" || params.tab === "hotel") {
@@ -33,15 +34,20 @@ export default function WalletIndexScreen() {
         >
           <Ionicons name="chevron-back" size={24} color="#0f172a" />
         </Pressable>
-        <Text className="ml-3 text-[20px] font-extrabold text-slate-900 flex-1">
+        <Text className="ml-3 flex-1 text-[20px] font-extrabold text-slate-900">
           Vé của tôi
         </Text>
+        <Pressable
+          className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+          onPress={() => setDownloadRequestKey((value) => value + 1)}
+        >
+          <Ionicons name="download-outline" size={22} color="#0f172a" />
+        </Pressable>
       </View>
 
-      {/* Main Tabs */}
-      <View className="flex-row bg-white border-b border-line px-2">
+      <View className="flex-row border-b border-line bg-white px-2">
         <Pressable
-          className={`flex-1 py-3 items-center justify-center border-b-2 ${
+          className={`flex-1 items-center justify-center border-b-2 py-3 ${
             activeTab === "tour" ? "border-brand-600" : "border-transparent"
           }`}
           onPress={() => updateTab("tour")}
@@ -55,7 +61,7 @@ export default function WalletIndexScreen() {
           </Text>
         </Pressable>
         <Pressable
-          className={`flex-1 py-3 items-center justify-center border-b-2 ${
+          className={`flex-1 items-center justify-center border-b-2 py-3 ${
             activeTab === "food" ? "border-brand-600" : "border-transparent"
           }`}
           onPress={() => updateTab("food")}
@@ -69,7 +75,7 @@ export default function WalletIndexScreen() {
           </Text>
         </Pressable>
         <Pressable
-          className={`flex-1 py-3 items-center justify-center border-b-2 ${
+          className={`flex-1 items-center justify-center border-b-2 py-3 ${
             activeTab === "hotel" ? "border-brand-600" : "border-transparent"
           }`}
           onPress={() => updateTab("hotel")}
@@ -85,9 +91,9 @@ export default function WalletIndexScreen() {
       </View>
 
       <View className="flex-1 bg-surface">
-        {activeTab === "tour" && <TicketsTab />}
-        {activeTab === "food" && <TablePassTab />}
-        {activeTab === "hotel" && <RoomPassTab />}
+        {activeTab === "tour" && <TicketsTab downloadRequestKey={downloadRequestKey} />}
+        {activeTab === "food" && <TablePassTab downloadRequestKey={downloadRequestKey} />}
+        {activeTab === "hotel" && <RoomPassTab downloadRequestKey={downloadRequestKey} />}
       </View>
     </SafeAreaView>
   );

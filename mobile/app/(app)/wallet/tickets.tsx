@@ -1,5 +1,6 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TicketsTab } from "../../../src/components/wallet/TicketsTab";
@@ -7,10 +8,15 @@ import { TicketsTab } from "../../../src/components/wallet/TicketsTab";
 export default function MyTicketsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ locationId?: string }>();
+  const [downloadRequestKey, setDownloadRequestKey] = useState(0);
+
+  const locationId = useMemo(() => {
+    const parsed = Number(params.locationId);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [params.locationId]);
 
   const handleBack = () => {
-    const locationId = Number(params.locationId);
-    if (Number.isFinite(locationId)) {
+    if (locationId) {
       router.replace(`/booking/ticket/all?locationId=${locationId}` as never);
       return;
     }
@@ -26,11 +32,17 @@ export default function MyTicketsScreen() {
         >
           <Ionicons name="chevron-back" size={24} color="#0f172a" />
         </Pressable>
-        <Text className="ml-3 text-[20px] font-extrabold text-slate-900 flex-1">
+        <Text className="ml-3 flex-1 text-[20px] font-extrabold text-slate-900">
           Vé du lịch của tôi
         </Text>
+        <Pressable
+          className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+          onPress={() => setDownloadRequestKey((value) => value + 1)}
+        >
+          <Ionicons name="download-outline" size={22} color="#0f172a" />
+        </Pressable>
       </View>
-      <TicketsTab />
+      <TicketsTab locationId={locationId} downloadRequestKey={downloadRequestKey} />
     </SafeAreaView>
   );
 }

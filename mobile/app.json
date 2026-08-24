@@ -12,6 +12,14 @@
       "expo-font",
       "expo-asset",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để lưu vé QR về điện thoại.",
+          "savePhotosPermission": "Ứng dụng cần quyền lưu ảnh để tải vé QR về điện thoại.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-navigation-bar",
         {
           "style": "dark",

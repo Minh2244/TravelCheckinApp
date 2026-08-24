@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -19,6 +19,10 @@ import { showToast } from "../../../src/modules/ui/toast-store";
 import { QRCodeModal } from "../../../src/components/ui/QRCodeModal";
 import { bookingApi } from "../../../src/services/booking.api";
 import type { TableReservationItem } from "../../../src/types/booking";
+import {
+  TicketDownloadPicker,
+  type TicketDownloadItem,
+} from "./TicketDownloadPicker";
 
 const STATUS_MAP: Record<string, { text: string; color: string; bg: string }> = {
   pending: { text: "Chờ duyệt", color: "text-amber-600", bg: "bg-amber-100 border-amber-200" },
@@ -31,7 +35,19 @@ function getStatusInfo(status: string) {
   return STATUS_MAP[status] || { text: status, color: "text-slate-600", bg: "bg-slate-200 border-slate-300" };
 }
 
-export function TablePassTab() {
+type TablePassTabProps = {
+  locationId?: number | null;
+  downloadRequestKey?: number;
+};
+
+const getExportStatusTone = (status: string) => {
+  if (status === "pending") return "warning" as const;
+  if (status === "confirmed") return "active" as const;
+  if (status === "cancelled" || status === "expired") return "danger" as const;
+  return "muted" as const;
+};
+
+export function TablePassTab({ locationId, downloadRequestKey = 0 }: TablePassTabProps) {
   const router = useRouter();
   const [passes, setPasses] = useState<TableReservationItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,10 +55,12 @@ export function TablePassTab() {
   const [canceling, setCanceling] = useState<number | null>(null);
   const [tab, setTab] = useState<"active" | "cancelled">("active");
   const [selectedQr, setSelectedQr] = useState<string | null>(null);
+  const [downloadPickerVisible, setDownloadPickerVisible] = useState(false);
+  const lastHandledDownloadKeyRef = useRef(downloadRequestKey);
 
   const fetchPasses = useCallback(async () => {
     try {
-      const res = await bookingApi.getMyTablePass();
+      const res = await bookingApi.getMyTablePass(locationId || undefined);
       setPasses(res.data || []);
     } catch (err) {
       showToast(getErrorMessage(err));
@@ -50,7 +68,7 @@ export function TablePassTab() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [locationId]);
 
   useEffect(() => {
     fetchPasses();
@@ -73,6 +91,48 @@ export function TablePassTab() {
       return tab === "cancelled" ? isCancelled : !isCancelled;
     });
   }, [passes, tab]);
+
+  const downloadItems = useMemo<TicketDownloadItem[]>(() => {
+    return filteredPasses
+      .map((item) => {
+        const statusInfo = getStatusInfo(item.bookingStatus);
+        const code = item.secureCode || `DI-${item.bookingId}`;
+        const qrValue = item.qrPayload || item.secureCode || code;
+        if (!qrValue) return null;
+
+        return {
+          id: `table-pass-${item.bookingId}`,
+          pickerTitle: item.locationName || "Vé ăn uống",
+          pickerSubtitle: `${item.invoiceCode || `NH-${item.bookingId}`} • ${formatDate(item.checkInDate)} • ${code}`,
+          title: "Vé ăn uống",
+          heading: item.locationName || "Nhà hàng",
+          subheading: item.invoiceCode || `NH-${item.bookingId}`,
+          code,
+          qrValue,
+          statusText: statusInfo.text,
+          statusTone: getExportStatusTone(item.bookingStatus),
+          details: [
+            { label: "Thời gian", value: formatDate(item.checkInDate) },
+            { label: "Khung giờ", value: `${formatTime(item.startTime)} - ${formatTime(item.endTime)}` },
+            { label: "Bàn ăn", value: item.tableNames?.length ? item.tableNames.join(", ") : "-" },
+            { label: "Khách hàng", value: item.contactName || "-" },
+            { label: "Số điện thoại", value: item.contactPhone || "-" },
+            { label: "Đặt cọc", value: item.totalAmount ? `${item.totalAmount.toLocaleString("vi-VN")} đ` : "Miễn phí" },
+          ],
+        } satisfies TicketDownloadItem;
+      })
+      .filter(Boolean) as TicketDownloadItem[];
+  }, [filteredPasses]);
+
+  useEffect(() => {
+    if (!downloadRequestKey || downloadRequestKey === lastHandledDownloadKeyRef.current) return;
+    lastHandledDownloadKeyRef.current = downloadRequestKey;
+    if (loading) {
+      showToast("Đang tải danh sách vé, bạn thử lại sau nhé.");
+      return;
+    }
+    setDownloadPickerVisible(true);
+  }, [downloadRequestKey, loading]);
 
   const handleCancel = (bookingId: number) => {
     Alert.alert(
@@ -270,6 +330,17 @@ export function TablePassTab() {
           }
         />
       )}
+      <TicketDownloadPicker
+        visible={downloadPickerVisible}
+        title="Tải vé ăn uống"
+        contextLabel={
+          locationId
+            ? "Chỉ hiển thị vé QR ăn uống tại địa điểm này."
+            : "Chọn vé QR ăn uống trong ví của tôi."
+        }
+        items={downloadItems}
+        onClose={() => setDownloadPickerVisible(false)}
+      />
       <QRCodeModal visible={!!selectedQr} qrUrl={selectedQr} onClose={() => setSelectedQr(null)} />
     </View>
   );
