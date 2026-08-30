@@ -3,6 +3,7 @@ import * as Location from "expo-location";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   AppState,
   Pressable,
   StyleSheet,
@@ -30,7 +31,7 @@ import { useLocationPermissionStore } from "../../../src/modules/location-permis
 import { showToast } from "../../../src/modules/ui/toast-store";
 import { osrmApi, type RouteInfo } from "../../../src/services/osrm.api";
 import { userApi } from "../../../src/services/user.api";
-import { locationApi } from "../../../src/services/location.api";
+import { locationApi, type GeoSearchResult } from "../../../src/services/location.api";
 import { isPrivateUserLocation, type LocationItem } from "../../../src/types/location";
 
 function getLocationCoordinate(location: LocationItem) {
@@ -142,10 +143,66 @@ export default function ExploreScreen() {
       return true;
     });
   }, [locations, privateMapLocations]);
-  const searchResults = useMemo(
-    () => (keyword.trim() ? mapLocations.slice(0, 5) : []),
-    [keyword, mapLocations],
-  );
+  // --- Search state ---
+  // System results: filter mapLocations theo keyword (owner/admin locations)
+  const systemSearchResults = useMemo(() => {
+    const trimmed = keyword.trim().toLowerCase();
+    if (!trimmed) return [];
+    return locations
+      .filter(
+        (loc) =>
+          loc.location_name.toLowerCase().includes(trimmed) ||
+          loc.address.toLowerCase().includes(trimmed),
+      )
+      .slice(0, 5);
+  }, [keyword, locations]);
+
+  // Nominatim results: gọi API backend /geo/search khi system < 3
+  const [nominatimResults, setNominatimResults] = useState<GeoSearchResult[]>([]);
+  const [nominatimLoading, setNominatimLoading] = useState(false);
+
+  // 2-layer search effect: tầng 1 = hệ thống (instant), tầng 2 = Nominatim (debounced 500ms)
+  useEffect(() => {
+    const trimmed = keyword.trim();
+    if (!trimmed) {
+      setNominatimResults([]);
+      setNominatimLoading(false);
+      return;
+    }
+
+    // Nếu hệ thống đã có >= 3 kết quả thì không cần Nominatim
+    if (systemSearchResults.length >= 3) {
+      setNominatimResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setNominatimLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await locationApi.geoSearch(trimmed, 6, controller.signal);
+        // Lọc trùng với system results
+        const sysIds = new Set(systemSearchResults.map((l) => `${l.latitude},${l.longitude}`));
+        const filtered = results.filter((r) => {
+          const key = `${Number(r.lat).toFixed(5)},${Number(r.lon).toFixed(5)}`;
+          return !sysIds.has(key);
+        });
+        setNominatimResults(filtered.slice(0, 5 - systemSearchResults.length));
+      } catch {
+        // Nominatim lỗi không block UI
+        setNominatimResults([]);
+      } finally {
+        setNominatimLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      setNominatimLoading(false);
+    };
+  }, [keyword, systemSearchResults]);
 
   const loadFavorites = useCallback(async () => {
     try {
@@ -291,6 +348,31 @@ export default function ExploreScreen() {
     [isRouting],
   );
 
+  // Khi user chọn kết quả Nominatim: pan camera + drop temporary pin
+  const handleSelectGeoResult = useCallback(
+    (result: GeoSearchResult) => {
+      const latitude = Number(result.lat);
+      const longitude = Number(result.lon);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+      setKeyword("");
+      setSearchFocused(false);
+      searchInputRef.current?.blur();
+      setSelectedLocation(null);
+      setTemporaryPin({ latitude, longitude });
+      setTemporaryPinPurpose("draft");
+      setTemporaryPinName(result.display_name.split(",")[0]?.trim() || "");
+
+      mapRef.current?.animateToRegion({
+        latitude,
+        longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    },
+    [setKeyword],
+  );
+
   const toggleSelectedFavorite = useCallback(async () => {
     if (!selectedLocation) {
       return;
@@ -372,7 +454,14 @@ export default function ExploreScreen() {
       const targetLat = Number(params.focusRouteLat);
       const targetLng = Number(params.focusRouteLng);
       
+      const routeKey = `route:${targetLat}:${targetLng}:${params.requestKey || "default"}`;
+      
+      if (processedNavigationRef.current === routeKey) {
+        return;
+      }
+      
       if (Number.isFinite(targetLat) && Number.isFinite(targetLng)) {
+        processedNavigationRef.current = routeKey;
         // Automatically start routing to the target
         const dummyTarget: any = {
           location_id: -999, // Treat as temporary target
@@ -384,7 +473,7 @@ export default function ExploreScreen() {
         startRouteToLocation(dummyTarget);
       }
     }
-  }, [params.focusRouteLat, params.focusRouteLng, params.focusRouteName, params.focusRouteAddress, startRouteToLocation]);
+  }, [params.focusRouteLat, params.focusRouteLng, params.focusRouteName, params.focusRouteAddress, params.requestKey, startRouteToLocation]);
 
   const saveTemporaryPin = useCallback(async () => {
     if (!temporaryPin || savingTemporaryPin) return;
@@ -680,27 +769,56 @@ export default function ExploreScreen() {
 
           {searchFocused && keyword.trim() ? (
             <View style={styles.searchResults}>
-              {searchResults.length > 0 ? (
-                searchResults.map((location) => (
-                  <Pressable
-                    key={location.location_id}
-                    style={styles.searchResultItem}
-                    onPress={() => handleSelectLocation(location)}
-                  >
-                    <Ionicons name="location-outline" size={18} color="#0f766e" />
-                    <View style={styles.searchResultText}>
-                      <Text style={styles.searchResultTitle} numberOfLines={1}>
-                        {location.location_name}
-                      </Text>
-                      <Text style={styles.searchResultAddress} numberOfLines={1}>
-                        {location.address}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))
-              ) : (
+              {/* Kết quả từ hệ thống (owner/admin) */}
+              {systemSearchResults.map((location) => (
+                <Pressable
+                  key={`sys-${location.location_id}`}
+                  style={styles.searchResultItem}
+                  onPress={() => handleSelectLocation(location)}
+                >
+                  <Ionicons name="location" size={18} color="#0f766e" />
+                  <View style={styles.searchResultText}>
+                    <Text style={styles.searchResultTitle} numberOfLines={1}>
+                      {location.location_name}
+                    </Text>
+                    <Text style={styles.searchResultAddress} numberOfLines={1}>
+                      {location.address}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              {/* Kết quả từ Nominatim (địa danh bên ngoài hệ thống) */}
+              {nominatimResults.map((result) => (
+                <Pressable
+                  key={`nom-${result.place_id}`}
+                  style={styles.searchResultItem}
+                  onPress={() => handleSelectGeoResult(result)}
+                >
+                  <Ionicons name="location-outline" size={18} color="#64748b" />
+                  <View style={styles.searchResultText}>
+                    <Text style={styles.searchResultTitle} numberOfLines={1}>
+                      {result.display_name.split(",")[0]?.trim()}
+                    </Text>
+                    <Text style={styles.searchResultAddress} numberOfLines={1}>
+                      {result.display_name.split(",").slice(1).join(",").trim()}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              {/* Loading indicator khi đang tìm Nominatim */}
+              {nominatimLoading && systemSearchResults.length < 3 ? (
+                <View style={styles.searchLoadingRow}>
+                  <ActivityIndicator size="small" color="#0f766e" />
+                  <Text style={styles.searchLoadingText}>Đang tìm thêm...</Text>
+                </View>
+              ) : null}
+
+              {/* Không có kết quả nào */}
+              {systemSearchResults.length === 0 && nominatimResults.length === 0 && !nominatimLoading ? (
                 <Text style={styles.emptySearch}>Không tìm thấy địa điểm phù hợp.</Text>
-              )}
+              ) : null}
             </View>
           ) : null}
         </View>
@@ -865,6 +983,17 @@ const styles = StyleSheet.create({
     padding: 14,
     color: "#64748b",
     fontSize: 13,
+  },
+  searchLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchLoadingText: {
+    fontSize: 13,
+    color: "#64748b",
   },
   routeHeader: {
     position: "absolute",

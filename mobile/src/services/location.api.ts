@@ -18,6 +18,21 @@ export type LocationQueryParams = {
   source?: "mobile";
 };
 
+export type GeoSearchResult = {
+  place_id: string;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type?: string;
+  class?: string;
+  address?: {
+    state?: string;
+    city?: string;
+    county?: string;
+    country?: string;
+  };
+};
+
 export const locationApi = {
   async getLocations(params: LocationQueryParams = { source: "mobile" }) {
     const response = await api.get<LocationListResponse>("/locations", { params });
@@ -29,6 +44,13 @@ export const locationApi = {
       { params: { source: "mobile" } },
     );
     return response.data;
+  },
+  async geoSearch(query: string, limit = 6, signal?: AbortSignal): Promise<GeoSearchResult[]> {
+    const response = await api.get<GeoSearchResult[]>("/geo/search", {
+      params: { q: query, limit },
+      signal,
+    });
+    return Array.isArray(response.data) ? response.data : [];
   },
   async getServices(id: string | number, params?: { type?: string }) {
     const response = await api.get<{

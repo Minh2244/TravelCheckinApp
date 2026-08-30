@@ -83,6 +83,7 @@ export const getLocations = async (req: Request, res: Response) => {
       filters.push("l.source IN ('owner', 'admin')");
       filters.push("l.location_name != 'Vị trí tự do'");
       filters.push("(l.owner_id IS NULL OR u.role != 'user')");
+      filters.push("l.deleted_at IS NULL");
     }
 
     if (filters.length > 0) {

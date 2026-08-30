@@ -10,6 +10,7 @@ import {
   RefreshControl,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -17,9 +18,8 @@ import { Ionicons } from "@expo/vector-icons";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
 import { itineraryApi, ItineraryDetail, ItineraryItemInput } from "../../src/services/itinerary.api";
-import { locationApi } from "../../src/services/location.api";
+import { locationApi, type GeoSearchResult } from "../../src/services/location.api";
 import type { LocationItem } from "../../src/types/location";
-import { AppAlert as Alert } from "../../src/modules/ui/app-alert";
 
 export default function ItineraryDetailScreen() {
   const router = useRouter();
@@ -52,6 +52,16 @@ export default function ItineraryDetailScreen() {
   const [customLat, setCustomLat] = useState<number | null>(null);
   const [customLng, setCustomLng] = useState<number | null>(null);
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<GeoSearchResult[]>([]);
+  const [mapSearchLoading, setMapSearchLoading] = useState(false);
+  const mapRef = React.useRef<MapView>(null);
+  
+  const [modalError, setModalError] = useState<string | null>(null);
+  const showModalError = (msg: string) => {
+    setModalError(msg);
+    setTimeout(() => setModalError(null), 5000);
+  };
 
   // Trip Info Edit State
   const [tripInfoModalVisible, setTripInfoModalVisible] = useState(false);
@@ -120,6 +130,80 @@ export default function ItineraryDetailScreen() {
     );
   }, [allLocations, searchQuery]);
 
+  // Handle map picker search filtering & Nominatim
+  const filteredMapLocations = useMemo(() => {
+    if (!mapSearchQuery.trim()) return [];
+    return allLocations.filter((loc) =>
+      loc.location_name.toLowerCase().includes(mapSearchQuery.toLowerCase()) ||
+      loc.address?.toLowerCase().includes(mapSearchQuery.toLowerCase())
+    ).slice(0, 3);
+  }, [allLocations, mapSearchQuery]);
+
+  useEffect(() => {
+    const trimmed = mapSearchQuery.trim();
+    if (!trimmed || !mapPickerVisible) {
+      setMapSearchResults([]);
+      setMapSearchLoading(false);
+      return;
+    }
+
+    // Nếu hệ thống gợi ý đã đủ 3 kết quả thì thôi không gọi Nominatim
+    if (filteredMapLocations.length >= 3) {
+      setMapSearchResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setMapSearchLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await locationApi.geoSearch(trimmed, 5, controller.signal);
+        setMapSearchResults(results.slice(0, 5 - filteredMapLocations.length));
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          setMapSearchResults([]);
+        }
+      } finally {
+        setMapSearchLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [mapSearchQuery, mapPickerVisible, filteredMapLocations]);
+
+  const handleSelectMapSearchResult = (result: GeoSearchResult | LocationItem) => {
+    let lat: number;
+    let lng: number;
+
+    if ('lat' in result) {
+      // Nominatim Result
+      lat = Number(result.lat);
+      lng = Number(result.lon);
+    } else {
+      // System Result
+      lat = Number(result.latitude);
+      lng = Number(result.longitude);
+    }
+
+    setCustomLat(lat);
+    setCustomLng(lng);
+    setMapSearchQuery("");
+    setMapSearchResults([]);
+
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: lat,
+        longitude: lng,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 1000);
+    }
+  };
+
   const handleToggleVisited = async (item: ItineraryItemInput) => {
     if (!detail || !(item.item_id || item.itinerary_item_id)) return;
     const currentVisited = !!item.is_visited || !!item.visited_at;
@@ -159,7 +243,7 @@ export default function ItineraryDetailScreen() {
 
   const openAddStopModal = () => {
     setEditingStopIndex(null);
-    setStopType("system");
+    setStopType("custom");
     setSelectedLocation(null);
     setCustomName("");
     setCustomAddress("");
@@ -175,21 +259,26 @@ export default function ItineraryDetailScreen() {
 
   const openEditStopModal = (itemIndex: number, item: ItineraryItemInput) => {
     setEditingStopIndex(itemIndex);
+    setStopType("custom"); // Always use custom form UI now
+    
     if (item.location_id) {
-      setStopType("system");
       const matched = allLocations.find((l) => l.location_id === item.location_id);
       setSelectedLocation(matched || null);
-      setSearchQuery(matched?.location_name || "");
+      setCustomName(item.custom_name || matched?.location_name || "");
+      setCustomAddress(item.custom_address || matched?.address || "");
+      setCustomLat(item.custom_lat ? Number(item.custom_lat) : (matched?.latitude ? Number(matched.latitude) : null));
+      setCustomLng(item.custom_lng ? Number(item.custom_lng) : (matched?.longitude ? Number(matched.longitude) : null));
     } else {
-      setStopType("custom");
+      setSelectedLocation(null);
       setCustomName(item.custom_name || "");
       setCustomAddress(item.custom_address || "");
+      setCustomLat(item.custom_lat ? Number(item.custom_lat) : null);
+      setCustomLng(item.custom_lng ? Number(item.custom_lng) : null);
     }
+    
     setStopTime(item.time || "");
     setStopNote(item.note || "");
     setStopCost(item.estimated_cost ? String(item.estimated_cost) : "");
-    setCustomLat(item.custom_lat ? Number(item.custom_lat) : null);
-    setCustomLng(item.custom_lng ? Number(item.custom_lng) : null);
     setStopModalVisible(true);
   };
 
@@ -256,12 +345,8 @@ export default function ItineraryDetailScreen() {
   const handleSaveStop = async () => {
     if (!detail) return;
 
-    if (stopType === "system" && !selectedLocation) {
-      Alert.alert("Lỗi", "Vui lòng chọn một địa điểm trên hệ thống.");
-      return;
-    }
-    if (stopType === "custom" && !customName.trim()) {
-      Alert.alert("Lỗi", "Vui lòng điền tên địa điểm tự do.");
+    if (!customName.trim()) {
+      showModalError("Vui lòng điền tên địa điểm.");
       return;
     }
 
@@ -272,19 +357,13 @@ export default function ItineraryDetailScreen() {
       estimated_cost: stopCost.trim() ? Number(stopCost) : null,
       is_visited: false,
       visited_at: null,
+      // Preserve location_id if editing an old system stop to prevent data loss
+      location_id: selectedLocation?.location_id || null,
+      custom_name: customName.trim(),
+      custom_address: customAddress.trim() || null,
+      custom_lat: customLat,
+      custom_lng: customLng,
     };
-
-    if (stopType === "system" && selectedLocation) {
-      newItem.location_id = selectedLocation.location_id;
-      newItem.custom_name = selectedLocation.location_name;
-      newItem.custom_address = selectedLocation.address;
-    } else {
-      newItem.location_id = null;
-      newItem.custom_name = customName.trim();
-      newItem.custom_address = customAddress.trim() || null;
-      newItem.custom_lat = customLat;
-      newItem.custom_lng = customLng;
-    }
 
     let updatedItems = [...detail.items];
 
@@ -330,6 +409,7 @@ export default function ItineraryDetailScreen() {
         focusRouteLng: lng.toString(),
         focusRouteName: item.custom_name || item.location_name || "",
         focusRouteAddress: item.custom_address || item.location_address || "",
+        requestKey: Date.now().toString(),
       },
     });
   };
@@ -627,6 +707,14 @@ export default function ItineraryDetailScreen() {
       {/* Add/Edit Stop Modal */}
       <Modal visible={stopModalVisible} animationType="slide" transparent>
         <View className="flex-1 bg-black/60 justify-end">
+          {/* Local Notification Toast */}
+          {modalError && (
+            <View className="absolute top-12 right-4 bg-rose-50 px-4 py-3 rounded-xl shadow-lg border border-rose-200 z-50 flex-row items-center max-w-[80%]">
+              <Ionicons name="warning" size={20} color="#f43f5e" className="mr-2" />
+              <Text className="text-rose-600 font-bold text-xs flex-shrink">{modalError}</Text>
+            </View>
+          )}
+
           <View className="bg-white rounded-t-3xl p-5 max-h-[88%]">
             <View className="flex-row justify-between items-center mb-4">
               <Text className="text-base font-extrabold text-slate-900">
@@ -638,99 +726,35 @@ export default function ItineraryDetailScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Type Select */}
-              <Text className="text-xs text-slate-400 font-bold uppercase mb-2">Loại địa điểm</Text>
-              <View className="flex-row gap-3 mb-4">
-                <Pressable
-                  onPress={() => setStopType("system")}
-                  className={`flex-1 py-2 rounded-xl border items-center ${
-                    stopType === "system"
-                      ? "bg-indigo-50 border-indigo-400 text-indigo-700"
-                      : "bg-slate-50 border-slate-200 text-slate-500"
-                  }`}
-                >
-                  <Text className="text-xs font-bold">Hệ thống gợi ý</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setStopType("custom")}
-                  className={`flex-1 py-2 rounded-xl border items-center ${
-                    stopType === "custom"
-                      ? "bg-indigo-50 border-indigo-400 text-indigo-700"
-                      : "bg-slate-50 border-slate-200 text-slate-500"
-                  }`}
-                >
-                  <Text className="text-xs font-bold">Địa điểm tự do</Text>
-                </Pressable>
-              </View>
-
-              {/* System Location Search & Selector */}
-              {stopType === "system" ? (
-                <View className="mb-4 relative">
-                  <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tìm địa điểm</Text>
+              <View className="gap-3 mb-4 mt-2">
+                <View>
+                  <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tên địa điểm</Text>
                   <TextInput
-                    value={searchQuery}
-                    onChangeText={(text) => {
-                      setSearchQuery(text);
-                      setShowLocationList(true);
-                    }}
-                    placeholder="Gõ tên khách sạn, nhà hàng, điểm du lịch..."
+                    value={customName}
+                    onChangeText={setCustomName}
+                    placeholder="Ví dụ: Chợ nổi Cái Răng, Quán cafe..."
                     className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white"
                   />
-                  {showLocationList && searchQuery.trim().length > 0 && (
-                    <View className="border border-line rounded-xl mt-1.5 max-h-[160px] overflow-hidden bg-white shadow-lg">
-                      <ScrollView nestedScrollEnabled>
-                        {filteredLocations.map((loc) => (
-                          <Pressable
-                            key={loc.location_id}
-                            onPress={() => {
-                              setSelectedLocation(loc);
-                              setSearchQuery(loc.location_name);
-                              setShowLocationList(false);
-                            }}
-                            className="p-3 border-b border-slate-50 active:bg-slate-50"
-                          >
-                            <Text className="text-xs font-bold text-slate-800">{loc.location_name}</Text>
-                            <Text className="text-[10px] text-slate-400 mt-0.5" numberOfLines={1}>{loc.address}</Text>
-                          </Pressable>
-                        ))}
-                        {filteredLocations.length === 0 && (
-                          <Text className="p-3 text-center text-slate-400 text-xs">Không tìm thấy kết quả</Text>
-                        )}
-                      </ScrollView>
-                    </View>
-                  )}
                 </View>
-              ) : (
-                <View className="gap-3 mb-4">
-                  <View>
-                    <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tên địa điểm tự tạo</Text>
-                    <TextInput
-                      value={customName}
-                      onChangeText={setCustomName}
-                      placeholder="Ví dụ: Ăn sáng bún bò đầu hẻm, Ghé nhà bạn..."
-                      className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white"
-                    />
-                  </View>
-                  <View>
-                    <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tọa độ & Địa chỉ</Text>
-                    <Pressable
-                      onPress={() => setMapPickerVisible(true)}
-                      className="border border-line rounded-xl px-4 py-3 bg-white flex-row items-center justify-between"
-                    >
-                      <Text className={`text-xs ${customLat && customLng ? "text-slate-800" : "text-slate-400"}`} numberOfLines={1}>
-                        {customLat && customLng ? `${customLat.toFixed(5)}, ${customLng.toFixed(5)}` : "Chạm để chọn trên bản đồ..."}
-                      </Text>
-                      <Ionicons name="map-outline" size={16} color="#6366f1" />
-                    </Pressable>
-                    <TextInput
-                      value={customAddress}
-                      onChangeText={customAddress => setCustomAddress(customAddress)}
-                      placeholder="Số nhà, tên đường, khu vực..."
-                      className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white mt-3"
-                    />
-                  </View>
+                <View>
+                  <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Tọa độ & Địa chỉ</Text>
+                  <Pressable
+                    onPress={() => setMapPickerVisible(true)}
+                    className="border border-line rounded-xl px-4 py-3 bg-white flex-row items-center justify-between"
+                  >
+                    <Text className={`text-xs ${customLat && customLng ? "text-slate-800" : "text-slate-400"}`} numberOfLines={1}>
+                      {customLat && customLng ? `${customLat.toFixed(5)}, ${customLng.toFixed(5)}` : "Chạm để chọn trên bản đồ..."}
+                    </Text>
+                    <Ionicons name="map-outline" size={16} color="#6366f1" />
+                  </Pressable>
+                  <TextInput
+                    value={customAddress}
+                    onChangeText={customAddress => setCustomAddress(customAddress)}
+                    placeholder="Số nhà, tên đường, khu vực..."
+                    className="border border-line rounded-xl px-4 py-3 text-xs text-slate-800 bg-white mt-3"
+                  />
                 </View>
-              )}
+              </View>
 
               {/* Time */}
               <Text className="text-xs text-slate-400 font-bold uppercase mb-1.5">Thời gian dự kiến</Text>
@@ -794,7 +818,92 @@ export default function ItineraryDetailScreen() {
               </Pressable>
             </View>
             <View className="flex-1 relative">
+              {/* Map Search Bar */}
+              <View className="absolute top-4 left-4 right-4 z-20">
+                <View className="flex-row items-center bg-white rounded-2xl shadow-lg border border-slate-100 px-4 min-h-[50px]">
+                  <Ionicons name="search" size={20} color="#94a3b8" />
+                  <TextInput
+                    value={mapSearchQuery}
+                    onChangeText={setMapSearchQuery}
+                    placeholder="Tìm địa điểm trên bản đồ..."
+                    placeholderTextColor="#94a3b8"
+                    className="flex-1 ml-3 text-sm text-slate-800"
+                    returnKeyType="search"
+                  />
+                  {mapSearchQuery.length > 0 && (
+                    <Pressable onPress={() => setMapSearchQuery("")} className="p-2">
+                      <Ionicons name="close-circle" size={18} color="#cbd5e1" />
+                    </Pressable>
+                  )}
+                </View>
+
+                {/* Dropdown Results */}
+                {mapSearchQuery.trim().length > 0 && (filteredMapLocations.length > 0 || mapSearchResults.length > 0 || mapSearchLoading) && (
+                  <View className="bg-white rounded-2xl mt-2 shadow-lg border border-slate-100 overflow-hidden max-h-[220px]">
+                    <ScrollView keyboardShouldPersistTaps="handled">
+                      {/* System Results */}
+                      {filteredMapLocations.map((loc) => (
+                        <Pressable
+                          key={`sys-${loc.location_id}`}
+                          onPress={() => handleSelectMapSearchResult(loc)}
+                          className="flex-row items-center px-4 py-3 border-b border-slate-50 active:bg-slate-50"
+                        >
+                          <View className="w-8 h-8 rounded-full bg-emerald-50 items-center justify-center mr-3">
+                            <Ionicons name="location" size={16} color="#10b981" />
+                          </View>
+                          <View className="flex-1">
+                            <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
+                              {loc.location_name}
+                            </Text>
+                            {loc.address && (
+                              <Text className="text-xs text-slate-400 mt-0.5" numberOfLines={1}>
+                                {loc.address}
+                              </Text>
+                            )}
+                          </View>
+                        </Pressable>
+                      ))}
+
+                      {/* Nominatim Results */}
+                      {mapSearchResults.map((result) => {
+                        const parts = result.display_name.split(",");
+                        const name = parts[0]?.trim() || "";
+                        const address = parts.slice(1).join(",").trim();
+                        return (
+                          <Pressable
+                            key={`nom-${result.place_id}`}
+                            onPress={() => handleSelectMapSearchResult(result)}
+                            className="flex-row items-center px-4 py-3 border-b border-slate-50 active:bg-slate-50"
+                          >
+                            <View className="w-8 h-8 rounded-full bg-slate-100 items-center justify-center mr-3">
+                              <Ionicons name="location-outline" size={16} color="#64748b" />
+                            </View>
+                            <View className="flex-1">
+                              <Text className="text-sm font-bold text-slate-800" numberOfLines={1}>
+                                {name}
+                              </Text>
+                              <Text className="text-xs text-slate-400 mt-0.5" numberOfLines={1}>
+                                {address}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+
+                      {/* Loading indicator */}
+                      {mapSearchLoading && filteredMapLocations.length < 3 && (
+                        <View className="flex-row items-center px-4 py-3 gap-2">
+                          <ActivityIndicator size="small" color="#6366f1" />
+                          <Text className="text-xs text-slate-500 font-medium">Đang tìm kiếm mở rộng...</Text>
+                        </View>
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
               <MapView
+                ref={mapRef}
                 provider={PROVIDER_GOOGLE}
                 style={{ flex: 1 }}
                 initialRegion={{

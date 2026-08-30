@@ -576,7 +576,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const [users] = await connection.query<User[]>(
-      "SELECT * FROM users WHERE email = ? AND (deleted_at IS NULL OR status = 'locked')",
+      "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL",
       [trimmedEmail],
     );
 
@@ -1052,53 +1052,61 @@ export const socialLogin = async (
       user = users[0];
       console.log(`✅ Tìm thấy user theo ${socialIdColumn}: ${user.user_id}`);
 
-      if (user.deleted_at) {
-        res.status(403).json({
-          success: false,
-          message:
-            "Tài khoản của bạn đã bị xóa. Vui lòng liên hệ admin để được hỗ trợ.",
-        });
-        return;
-      }
-
-      if (user.status === "locked") {
+      // Tài khoản đã bị xóa (deleted_at có giá trị) HOẶC email đã bị rename thành dạng
+      // deleted_*@travelcheckin.local (soft-delete pattern) — không cho đăng nhập,
+      // thay vào đó sẽ tìm/tạo tài khoản mới bên dưới.
+      const isSoftDeletedEmail =
+        typeof user.email === "string" &&
+        /^deleted_.*@travelcheckin\.local$/.test(user.email);
+      if (user.deleted_at || isSoftDeletedEmail) {
+        console.warn(
+          `⚠️ Social login gặp tài khoản đã xóa (user_id=${user.user_id}). Tìm/tạo tài khoản mới.`,
+        );
+        // Gỡ google_id khỏi tài khoản cũ để tránh xung đột
+        await connection.query(
+          `UPDATE users SET ${socialIdColumn} = NULL WHERE user_id = ?`,
+          [user.user_id],
+        );
+        // Reset users array để rơi xuống nhánh tạo/liên kết tài khoản mới
+        users.length = 0;
+      } else if (user.status === "locked") {
         res.status(403).json({
           success: false,
           message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin.",
         });
         return;
+      } else {
+        const hasAnyAvatar =
+          (typeof user.avatar_path === "string" && user.avatar_path.trim()) ||
+          (typeof user.avatar_url === "string" && user.avatar_url.trim());
+        const avatarToSet = !hasAnyAvatar ? normalizedProviderAvatarUrl : null;
+
+        // Only set provider avatar when user has no avatar yet.
+        // This prevents social login from overwriting a custom avatar URL set in Profile.
+        await connection.query(
+          `UPDATE users SET 
+            full_name = COALESCE(?, full_name),
+            email = COALESCE(?, email),
+            avatar_url = COALESCE(?, avatar_url),
+            avatar_source = CASE WHEN ? IS NOT NULL THEN 'url' ELSE avatar_source END,
+            is_verified = 1
+          WHERE user_id = ?`,
+          [
+            processedFullName,
+            processedEmail,
+            avatarToSet,
+            avatarToSet,
+            user.user_id,
+          ],
+        );
+
+        // Lấy lại user sau khi update
+        const [updatedUsers] = await connection.query<User[]>(
+          "SELECT * FROM users WHERE user_id = ?",
+          [user.user_id],
+        );
+        user = updatedUsers[0];
       }
-
-      const hasAnyAvatar =
-        (typeof user.avatar_path === "string" && user.avatar_path.trim()) ||
-        (typeof user.avatar_url === "string" && user.avatar_url.trim());
-      const avatarToSet = !hasAnyAvatar ? normalizedProviderAvatarUrl : null;
-
-      // Only set provider avatar when user has no avatar yet.
-      // This prevents social login from overwriting a custom avatar URL set in Profile.
-      await connection.query(
-        `UPDATE users SET 
-          full_name = COALESCE(?, full_name),
-          email = COALESCE(?, email),
-          avatar_url = COALESCE(?, avatar_url),
-          avatar_source = CASE WHEN ? IS NOT NULL THEN 'url' ELSE avatar_source END,
-          is_verified = 1
-        WHERE user_id = ?`,
-        [
-          processedFullName,
-          processedEmail,
-          avatarToSet,
-          avatarToSet,
-          user.user_id,
-        ],
-      );
-
-      // Lấy lại user sau khi update
-      const [updatedUsers] = await connection.query<User[]>(
-        "SELECT * FROM users WHERE user_id = ?",
-        [user.user_id],
-      );
-      user = updatedUsers[0];
     } else {
       const [existingUsers] = processedEmail
         ? await connection.query<User[]>(
