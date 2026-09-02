@@ -4,6 +4,8 @@ import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
+  FlatList,
   Image,
   Modal,
   Pressable,
@@ -261,6 +263,9 @@ export default function LocationDetailScreen() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [galleryViewerVisible, setGalleryViewerVisible] = useState(false);
+  const [galleryViewerIndex, setGalleryViewerIndex] = useState(0);
+  const lastTapRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [temperature, setTemperature] = useState<number | null>(null);
   const [weather, setWeather] = useState<string | null>(null);
@@ -463,6 +468,16 @@ export default function LocationDetailScreen() {
     const cover = resolveBackendUrl(location.first_image);
     return cover && !items.includes(cover) ? [cover, ...items] : items;
   }, [location]);
+
+  const galleryImages = useMemo(() => {
+    if (!location) return [];
+    const items = normalizeImages(location.images)
+      .map((item) => resolveBackendUrl(item))
+      .filter((item): item is string => Boolean(item));
+    const cover = resolveBackendUrl(location.first_image);
+    return items.filter(img => img !== cover);
+  }, [location]);
+
 
   const toggleFavorite = async () => {
     if (!location || favoriteLoading) return;
@@ -1175,12 +1190,34 @@ export default function LocationDetailScreen() {
           ) : null}
 
           {activeTab === "about" ? (
-            <View style={styles.section}>
+            <View style={styles.aboutSection}>
               <Text style={styles.aboutText}>
                 {locationDescription}
               </Text>
               {location.website ? (
                 <InfoRow icon="globe-outline" text={location.website} />
+              ) : null}
+
+              {galleryImages.length > 0 ? (
+                <View style={styles.aboutGallery}>
+                  {galleryImages.slice(0, 4).map((image, index) => (
+                    <Pressable 
+                      key={`${image}-${index}`} 
+                      style={styles.aboutGalleryItem}
+                      onPress={() => {
+                        const now = Date.now();
+                        if (now - lastTapRef.current < 300) {
+                          setGalleryViewerIndex(index);
+                          setGalleryViewerVisible(true);
+                        } else {
+                          lastTapRef.current = now;
+                        }
+                      }}
+                    >
+                      <Image source={{ uri: image }} style={styles.aboutGalleryImage} />
+                    </Pressable>
+                  ))}
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -1202,6 +1239,40 @@ export default function LocationDetailScreen() {
             <Ionicons name="close" size={24} color="#ffffff" />
           </Pressable>
           {zoomDiaryImage ? <DiaryZoomImage image={zoomDiaryImage} /> : null}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={galleryViewerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGalleryViewerVisible(false)}
+      >
+        <View style={styles.galleryZoomBackdrop}>
+          <Pressable
+            style={[styles.diaryZoomClose, { top: Math.max(insets.top, 18) }]}
+            onPress={() => setGalleryViewerVisible(false)}
+          >
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </Pressable>
+          <FlatList
+            data={galleryImages}
+            keyExtractor={(item, index) => `${item}-${index}`}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={galleryViewerIndex}
+            getItemLayout={(data, index) => ({
+              length: Dimensions.get("window").width,
+              offset: Dimensions.get("window").width * index,
+              index,
+            })}
+            renderItem={({ item }) => (
+              <View style={styles.galleryViewerSlide}>
+                <Image source={{ uri: item }} style={styles.galleryViewerImage} resizeMode="contain" />
+              </View>
+            )}
+          />
         </View>
       </Modal>
 
@@ -1672,10 +1743,49 @@ const styles = StyleSheet.create({
     color: travelColors.teal,
     fontWeight: "700",
   },
+  aboutSection: {
+    backgroundColor: travelColors.surfaceSoft,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
   aboutText: {
     color: travelColors.ink,
     fontSize: 15,
     lineHeight: 23,
+  },
+  aboutGallery: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  aboutGalleryItem: {
+    width: "48%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: travelColors.line,
+  },
+  aboutGalleryImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  galleryViewerSlide: {
+    width: Dimensions.get("window").width,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  galleryViewerImage: {
+    width: "100%",
+    height: "80%",
+  },
+  galleryZoomBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.98)",
+    justifyContent: "center",
   },
   voucherSection: {
     gap: 10,

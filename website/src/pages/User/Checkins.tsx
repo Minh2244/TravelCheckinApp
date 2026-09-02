@@ -541,7 +541,14 @@ const Checkins = () => {
                               <div className="flex flex-wrap gap-2 pt-1.5">
                                 {getDiaryImages(matchedDiary).map((img, idx) => (
                                   <div key={idx} className="h-20 w-20 rounded-xl overflow-hidden border border-white/80 bg-white flex-shrink-0 shadow-sm transition hover:scale-105">
-                                    <Image src={resolveBackendUrl(img) || ""} alt="memories" className="h-full w-full object-cover" preview={{ mask: <span className="text-[10px]">Xem</span> }} />
+                                    <Image 
+                                      src={resolveBackendUrl(img) || ""} 
+                                      alt="memories" 
+                                      rootClassName="h-full w-full"
+                                      className="h-full w-full"
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                      preview={{ mask: <span className="text-[10px]">Xem</span> }} 
+                                    />
                                   </div>
                                 ))}
                               </div>

@@ -1314,13 +1314,13 @@ const LocationDetail = () => {
                       <div className="grid grid-cols-2 gap-2">
                         <Image.PreviewGroup>
                           {galleryImages.slice(0, 4).map((image, index) => (
-                            <div key={`${image}-${index}`} className="h-28 w-full rounded-xl overflow-hidden">
+                            <div key={`${image}-${index}`} className="aspect-square w-full rounded-xl overflow-hidden bg-slate-50">
                               <Image
                                 src={image}
                                 alt={`gallery-${index + 1}`}
-                                width="100%"
-                                height="100%"
-                                className="object-cover"
+                                rootClassName="h-full w-full"
+                                className="h-full w-full"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               />
                             </div>
                           ))}
