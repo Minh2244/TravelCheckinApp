@@ -55,8 +55,10 @@ export default function ProfileScreen() {
         setPhone(resp.data?.phone || "");
         setAddress(resp.data?.address || "");
       }
-    } catch (error) {
-      console.error("Lỗi lấy thông tin cá nhân:", error);
+    } catch (error: any) {
+      if (error?.response?.status !== 401 && error?.response?.status !== 403) {
+        console.error("Lỗi lấy thông tin cá nhân:", error);
+      }
     } finally {
       setLoading(false);
     }

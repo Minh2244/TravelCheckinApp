@@ -521,6 +521,18 @@ const OwnerServices = () => {
     }
   };
 
+  const sortedServices = useMemo(
+    () =>
+      [...services].sort((a, b) =>
+        String(a.service_name || "").localeCompare(
+          String(b.service_name || ""),
+          "vi",
+          { numeric: true, sensitivity: "base" },
+        ),
+      ),
+    [services],
+  );
+
   const columns: ColumnsType<ServiceRow> = useMemo(() => {
     const cols: ColumnsType<ServiceRow> = [
       {
@@ -529,7 +541,7 @@ const OwnerServices = () => {
         width: 52,
         align: "center",
         render: (_: unknown, __: ServiceRow, index: number) =>
-          services.length - index,
+          index + 1,
       },
       {
         title: "Dịch vụ",
@@ -861,7 +873,7 @@ const OwnerServices = () => {
           <Table<ServiceRow>
             rowKey="service_id"
             loading={loading}
-            dataSource={services}
+            dataSource={sortedServices}
             columns={columns}
             pagination={false}
             tableLayout="fixed"
@@ -1022,13 +1034,10 @@ const OwnerServices = () => {
                               { value: "unavailable", label: "Hết vé" },
                             ]
                           : [
-                              {
-                                value: "available",
-                                label: "Available (Có sẵn)",
-                              },
-                              { value: "reserved", label: "Reserved" },
-                              { value: "booked", label: "Booked" },
-                              { value: "unavailable", label: "Unavailable" },
+                              { value: "available", label: "Có sẵn" },
+                              { value: "reserved", label: "Đã giữ chỗ" },
+                              { value: "booked", label: "Đã đặt" },
+                              { value: "unavailable", label: "Không khả dụng" },
                             ]
                     }
                   />

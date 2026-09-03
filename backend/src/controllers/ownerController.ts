@@ -8766,7 +8766,6 @@ export const getHotelRooms = async (
          WHERE s.location_id = ?
            AND s.deleted_at IS NULL
            AND s.service_type = 'room'
-           AND s.admin_status = 'approved'
          ORDER BY s.service_id ASC`,
         [locationId],
       );
@@ -8877,7 +8876,6 @@ export const getHotelRooms = async (
        LEFT JOIN services srv
          ON srv.service_id = r.service_id
          AND srv.deleted_at IS NULL
-        AND srv.admin_status = 'approved'
        LEFT JOIN service_categories sc
          ON sc.category_id = srv.category_id
          AND sc.deleted_at IS NULL
@@ -9389,7 +9387,6 @@ export const createHotelRoom = async (
            AND location_id = ?
            AND deleted_at IS NULL
            AND service_type = 'room'
-           AND admin_status = 'approved'
          LIMIT 1`,
         [serviceId, locationId],
       );

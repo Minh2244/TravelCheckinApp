@@ -516,10 +516,10 @@ export default function OwnerLocationOpsConfig() {
       roomMapCategory === "all"
         ? sorted
         : (() => {
-            const id = Number(roomMapCategory);
-            if (!Number.isFinite(id)) return sorted;
-            return sorted.filter((r) => Number(r.category_id) === id);
-          })();
+          const id = Number(roomMapCategory);
+          if (!Number.isFinite(id)) return sorted;
+          return sorted.filter((r) => Number(r.category_id) === id);
+        })();
 
     if (roomMultiSelect) {
       if ((roomMapAreas || []).length === 0) return sorted;
@@ -863,10 +863,10 @@ export default function OwnerLocationOpsConfig() {
     const list = tableListArea === "all"
       ? tables
       : (() => {
-          const areaId = Number(tableListArea);
-          if (!Number.isFinite(areaId)) return tables;
-          return tables.filter((table) => Number(table.area_id) === areaId);
-        })();
+        const areaId = Number(tableListArea);
+        if (!Number.isFinite(areaId)) return tables;
+        return tables.filter((table) => Number(table.area_id) === areaId);
+      })();
     // Natural sort: "Bàn 2" trước "Bàn 10"
     return [...list].sort((a, b) =>
       String(a.table_name || "").localeCompare(String(b.table_name || ""), "vi", { numeric: true, sensitivity: "base" })
@@ -1673,13 +1673,13 @@ export default function OwnerLocationOpsConfig() {
                   const categoryLabel = r.category_name
                     ? String(r.category_name)
                     : typeof r.category_id === "number" &&
-                        Number.isFinite(r.category_id)
+                      Number.isFinite(r.category_id)
                       ? `#${r.category_id}`
                       : "";
                   const areaLabel = r.area_name
                     ? String(r.area_name)
                     : typeof r.area_id === "number" &&
-                        Number.isFinite(r.area_id)
+                      Number.isFinite(r.area_id)
                       ? areaNameById[r.area_id] || `#${r.area_id}`
                       : "";
                   const isSelected = selectedRoomIdSet.has(id);
@@ -1926,15 +1926,15 @@ export default function OwnerLocationOpsConfig() {
                 rowSelection={
                   roomMultiSelect
                     ? {
-                        selectedRowKeys: selectedRoomIds,
-                        preserveSelectedRowKeys: true,
-                        onChange: (keys) =>
-                          setSelectedRoomIds(
-                            (keys || [])
-                              .map((x) => Number(x))
-                              .filter((x) => Number.isFinite(x)),
-                          ),
-                      }
+                      selectedRowKeys: selectedRoomIds,
+                      preserveSelectedRowKeys: true,
+                      onChange: (keys) =>
+                        setSelectedRoomIds(
+                          (keys || [])
+                            .map((x) => Number(x))
+                            .filter((x) => Number.isFinite(x)),
+                        ),
+                    }
                     : undefined
                 }
                 columns={[
@@ -2340,15 +2340,15 @@ export default function OwnerLocationOpsConfig() {
                 rowSelection={
                   tableMultiSelect
                     ? {
-                        selectedRowKeys: selectedTableIds,
-                        preserveSelectedRowKeys: true,
-                        onChange: (keys) =>
-                          setSelectedTableIds(
-                            (keys || [])
-                              .map((x) => Number(x))
-                              .filter((x) => Number.isFinite(x)),
-                          ),
-                      }
+                      selectedRowKeys: selectedTableIds,
+                      preserveSelectedRowKeys: true,
+                      onChange: (keys) =>
+                        setSelectedTableIds(
+                          (keys || [])
+                            .map((x) => Number(x))
+                            .filter((x) => Number.isFinite(x)),
+                        ),
+                    }
                     : undefined
                 }
                 columns={[
@@ -2410,7 +2410,7 @@ export default function OwnerLocationOpsConfig() {
                             title="Xóa bàn này?"
                             description={
                               reason ||
-                              "Bàn sẽ bị xóa khỏi sơ đồ. Các order cũ (nếu có) sẽ được giữ lại (table_id sẽ NULL)."
+                              "Bàn sẽ bị xóa khỏi sơ đồ. Các order cũ (nếu có) sẽ được giữ lại."
                             }
                             okText="Xóa"
                             cancelText="Hủy"
@@ -2731,7 +2731,7 @@ export default function OwnerLocationOpsConfig() {
             <Space style={{ width: "100%" }} size="middle" align="start">
               <Form.Item
                 name="prefix"
-                label="Prefix (tuỳ chọn)"
+                label="Tên"
                 style={{ flex: 1 }}
               >
                 <Input placeholder="Ví dụ: P (để trống nếu dùng số phòng)" />
@@ -2753,8 +2753,8 @@ export default function OwnerLocationOpsConfig() {
             </Space>
 
             <div className="text-xs text-gray-500">
-              Nếu có prefix: Prefix + số (ví dụ P + 101..110 → P101..P110). Nếu
-              prefix trống: dùng số phòng (101..110).
+              Nếu có phòng: phòng + số (ví dụ P + 101..110 → P101..P110). Nếu
+              phòng trống: dùng số phòng (101..110).
             </div>
 
             <Form.Item
