@@ -461,7 +461,7 @@ const Users = () => {
         <Popconfirm
           placement="topRight"
           title="Xóa tài khoản này?"
-          description="Tài khoản sẽ bị xóa mềm (ẩn khỏi hệ thống) và có thể khôi phục khi cần."
+          description="Tài khoản sẽ bị xóa mềm."
           onConfirm={() => handleDelete(record.user_id)}
         >
           <Tooltip title="Xóa">

@@ -109,7 +109,18 @@ async function run() {
   try {
     // 0. Xóa các đánh giá giả mạo đã tạo trước đó để "không bị bừa"
     console.log("Đang dọn dẹp các đánh giá cũ do script tạo...");
-    await connection.execute("DELETE FROM reviews WHERE user_id IN (SELECT user_id FROM users WHERE username LIKE 'fake_%')");
+    
+    // Tìm các ID của user ảo (đang dùng email @seed.demo.com hoặc username bắt đầu bằng fake_)
+    const [oldSeedUsers] = await connection.execute<any>(
+      "SELECT user_id FROM users WHERE username LIKE 'fake_%' OR email LIKE '%@seed.demo.com'"
+    );
+    
+    if (oldSeedUsers.length > 0) {
+      const userIds = oldSeedUsers.map((u: any) => u.user_id).join(',');
+      await connection.execute(`DELETE FROM reviews WHERE user_id IN (${userIds})`);
+      await connection.execute(`DELETE FROM users WHERE user_id IN (${userIds})`);
+    }
+
     await connection.execute(`
       UPDATE locations l
       SET 
@@ -128,22 +139,38 @@ async function run() {
       return;
     }
 
+    // Hash mật khẩu chung: "123456"
+    // Import động bcrypt ở đây để không làm lỗi file nếu nó chạy ở môi trường khác
+    const bcrypt = require("bcrypt");
+    const defaultPasswordHash = await bcrypt.hash("123456", 10);
+
     // 2. Tạo hoặc lấy 20 user ảo
     const [existingFakeUsers] = await connection.execute<any>(
-      "SELECT user_id, full_name FROM users WHERE username LIKE 'fake_%'"
+      "SELECT user_id, full_name, email FROM users WHERE email LIKE '%@seed.demo.com'"
     );
     
+    // Helper: Bỏ dấu tiếng Việt
+    const removeAccents = (str: string) => {
+      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+    };
+
     let fakeUsers = [...existingFakeUsers];
     if (fakeUsers.length < 20) {
-      console.log("Đang tạo thêm user ảo...");
+      console.log("Đang tạo thêm user ảo với email giống thật...");
       for (const name of names) {
-        const username = `fake_${name.toLowerCase()}_${getRandomInt(10000, 99999)}`;
-        const email = `${username}@example.com`;
+        // Tạo username và email không dấu
+        const randomNum = getRandomInt(10, 99);
+        const baseName = removeAccents(name.toLowerCase());
+        const naturalUsername = `${baseName}.${getRandomItem(["nguyen", "tran", "le", "pham", "hoang"])}${randomNum}`;
+        const email = `${naturalUsername}@seed.demo.com`; // Dùng @seed.demo.com để dễ quản lý
+        
         const [result] = await connection.execute<any>(
-          "INSERT INTO users (full_name, email, username, role, status) VALUES (?, ?, ?, 'user', 'active')",
-          [name, email, username]
+          `INSERT INTO users (
+            full_name, email, username, password_hash, role, status, is_verified, verified_at
+          ) VALUES (?, ?, ?, ?, 'user', 'active', 1, CURRENT_TIMESTAMP)`,
+          [name, email, naturalUsername, defaultPasswordHash]
         );
-        fakeUsers.push({ user_id: result.insertId, full_name: name });
+        fakeUsers.push({ user_id: result.insertId, full_name: name, email });
       }
     }
 

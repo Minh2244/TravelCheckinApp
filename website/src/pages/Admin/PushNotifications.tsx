@@ -294,9 +294,7 @@ const PushNotifications = () => {
               Gửi (lưu thông báo)
             </Button>
             <p className="text-xs text-gray-400 mt-2">
-              Lưu ý: backend luôn lưu vào bảng <code>push_notifications</code>.
-              Với <b>all_users</b>/<b>all_owners</b> backend sẽ gửi FCM tới
-              Topic tương ứng; với <b>specific_user</b> hiện chỉ lưu DB.
+              Lưu ý: Thông báo sẽ được hệ thống lưu lại và gửi trực tiếp đến thiết bị di động của nhóm đối tượng mà bạn đã chọn.
             </p>
           </Form>
         </Card>
