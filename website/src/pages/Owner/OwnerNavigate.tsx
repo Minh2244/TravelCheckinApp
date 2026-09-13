@@ -227,8 +227,8 @@ const OwnerNavigate = () => {
                   className="w-full sm:w-[calc(50%-12px)] md:w-[calc(33.333%-16px)] xl:w-[calc(25%-18px)] max-w-[200px]"
                 >
                   <div
-                    onClick={() => onSelectLocation(l.location_id)}
-                    className="group relative cursor-pointer overflow-hidden rounded-[20px] border border-slate-100 bg-white p-2 shadow-sm hover:shadow-xl hover:shadow-blue-500/15 transition-all duration-300 transform hover:-translate-y-1 flex flex-col h-full justify-between"
+                    onClick={() => l.status === "active" && onSelectLocation(l.location_id)}
+                    className={`group relative overflow-hidden rounded-[20px] border border-slate-100 bg-white p-2 shadow-sm transition-all duration-300 flex flex-col h-full justify-between ${l.status === "active" ? "cursor-pointer hover:shadow-xl hover:shadow-blue-500/15 transform hover:-translate-y-1" : "opacity-75 grayscale-[30%] cursor-not-allowed"}`}
                   >
                     {/* Location Image Cover */}
                     <div className="relative h-36 w-full overflow-hidden rounded-[14px] bg-slate-50">
@@ -307,12 +307,14 @@ const OwnerNavigate = () => {
 
                       {/* Eye-catching Primary Call to Action Button */}
                       <div className="mt-2 w-full">
-                        <div className="w-full h-9 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-[12px] flex items-center justify-center transition-all duration-300 shadow-md group-hover:shadow-lg group-hover:from-blue-600 group-hover:to-indigo-700 overflow-hidden relative">
+                        <div className={`w-full h-9 rounded-xl font-bold text-[12px] flex items-center justify-center transition-all duration-300 overflow-hidden relative ${l.status === "active" ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md group-hover:shadow-lg group-hover:from-blue-600 group-hover:to-indigo-700" : "bg-slate-200 text-slate-400"}`}>
                           <span className="relative z-10 flex items-center gap-1.5">
-                            Vào quầy vận hành
-                            <svg className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                            </svg>
+                            {l.status === "active" ? "Vào quầy vận hành" : "Đã tạm dừng"}
+                            {l.status === "active" && (
+                              <svg className="w-3.5 h-3.5 transform group-hover:translate-x-1 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                              </svg>
+                            )}
                           </span>
                         </div>
                       </div>

@@ -46,6 +46,9 @@ const Login = () => {
       sessionStorage.setItem("refreshToken", response.data.refreshToken);
       sessionStorage.setItem("user", JSON.stringify(response.data.user));
 
+      // Trigger socket re-initialization
+      window.dispatchEvent(new CustomEvent("tc-auth-changed"));
+
       console.log(
         "✅ Login success, redirecting to:",
         response.data.redirectUrl,
@@ -151,6 +154,9 @@ const Login = () => {
           sessionStorage.setItem("accessToken", response.data.accessToken);
           sessionStorage.setItem("refreshToken", response.data.refreshToken);
           sessionStorage.setItem("user", JSON.stringify(response.data.user));
+
+          // Trigger socket re-initialization
+          window.dispatchEvent(new CustomEvent("tc-auth-changed"));
 
           console.log("💾 Verify sessionStorage:", {
             token: sessionStorage.getItem("accessToken") ? "✅" : "❌",
@@ -264,6 +270,9 @@ const Login = () => {
           sessionStorage.setItem("accessToken", response.data.accessToken);
           sessionStorage.setItem("refreshToken", response.data.refreshToken);
           sessionStorage.setItem("user", JSON.stringify(response.data.user));
+
+          // Trigger socket re-initialization
+          window.dispatchEvent(new CustomEvent("tc-auth-changed"));
 
           message.success("Đăng nhập Facebook thành công! 🎉");
 

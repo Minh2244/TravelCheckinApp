@@ -252,17 +252,17 @@ export default function TableBookingScreen() {
   const usableVouchers = useMemo(() => {
     return savedVouchers.filter((v) => {
       if (!voucherStillUsable(v)) return false;
-      
+
       // Filter by location type
       if (v.apply_to_location_type && v.apply_to_location_type !== "all" && location?.location_type) {
         if (v.apply_to_location_type !== location.location_type) return false;
       }
-      
+
       // Filter by service type (table maps to food)
       if (v.apply_to_service_type && v.apply_to_service_type !== "all") {
         if (v.apply_to_service_type !== "food") return false;
       }
-      
+
       return true;
     });
   }, [savedVouchers, location]);
@@ -437,8 +437,8 @@ export default function TableBookingScreen() {
       await loadTables();
 
       Alert.alert(
-        "Đặt bàn thành công! 🎉",
-        `Booking #${response.data.bookingId} đã được gửi.\n\nChủ địa điểm (Owner) sẽ duyệt yêu cầu đặt bàn của bạn. Bạn sẽ nhận thông báo khi được xác nhận.`,
+        "Đặt bàn thành công !",
+        "",
         [
           {
             text: "Đóng",

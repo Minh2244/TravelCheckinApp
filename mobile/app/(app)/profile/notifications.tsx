@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -56,6 +57,13 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     void fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("booking_updated", () => {
+      void fetchNotifications(true);
+    });
+    return () => sub.remove();
   }, []);
 
   const handleMarkAllRead = async () => {

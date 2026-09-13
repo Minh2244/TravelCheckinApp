@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
+  DeviceEventEmitter,
   FlatList,
   Image,
   ImageBackground,
@@ -275,6 +276,10 @@ export default function HomeScreen() {
   useEffect(() => {
     void loadStats();
 
+    const sub = DeviceEventEmitter.addListener("booking_updated", () => {
+      void loadStats();
+    });
+
     const init = async () => {
       const ready = await ensureLocationAccess("ứng dụng");
 
@@ -287,6 +292,7 @@ export default function HomeScreen() {
     };
 
     void init();
+    return () => sub.remove();
   }, [loadStats, ensureLocationAccess, fetchGeo]);
 
   useFocusEffect(

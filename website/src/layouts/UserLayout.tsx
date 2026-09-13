@@ -7,6 +7,7 @@ import type { UserNotificationItem } from "../types/user.types";
 import aiApi from "../api/aiApi";
 import type { AiChatHistoryItem } from "../types/user.types";
 import { getAiLocationContext } from "../utils/aiLocationContext";
+import { useSocket } from "../contexts/SocketContext";
 
 // Dùng để định nghĩa input cho layout user, giúp tái sử dụng UI thống nhất
 interface UserLayoutProps {
@@ -71,6 +72,7 @@ const UserLayout = ({
   const navigate = useNavigate();
   const location = useLocation();
   const [searchValue, setSearchValue] = useState("");
+  const socket = useSocket();
 
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
@@ -416,6 +418,17 @@ const UserLayout = ({
     };
   }, [refreshAlerts]);
 
+  useEffect(() => {
+    if (!socket) return;
+    const handleStatusChanged = () => {
+      void refreshAlerts();
+    };
+    socket.on("booking_status_changed", handleStatusChanged);
+    return () => {
+      socket.off("booking_status_changed", handleStatusChanged);
+    };
+  }, [socket, refreshAlerts]);
+
   const unreadNotificationCount = useMemo(
     () =>
       notifications.filter(
@@ -664,9 +677,12 @@ const UserLayout = ({
                                 item.title?.toLowerCase().includes("lịch") ||
                                 item.title?.toLowerCase().includes("đặt trước") ||
                                 item.title?.toLowerCase().includes("đơn hàng") ||
+                                item.title?.toLowerCase().includes("đơn đặt") ||
                                 item.title?.toLowerCase().includes("hủy") ||
                                 item.title?.toLowerCase().includes("quá hạn") ||
                                 item.title?.toLowerCase().includes("xác nhận") ||
+                                item.title?.toLowerCase().includes("duyệt") ||
+                                item.title?.toLowerCase().includes("từ chối") ||
                                 item.title?.toLowerCase().includes("đã dùng") ||
                                 item.title?.toLowerCase().includes("vé");
 

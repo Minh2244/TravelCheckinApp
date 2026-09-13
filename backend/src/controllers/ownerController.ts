@@ -4849,6 +4849,7 @@ export const updateBookingStatus = async (
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT b.location_id,
               b.user_id,
+              l.location_name,
               b.status as cur_status,
               l.owner_id,
               l.location_type,
@@ -4971,6 +4972,13 @@ export const updateBookingStatus = async (
       // Notify the booking user (if any) so user-side UI can clear notices.
       if (bookingUserId != null && Number.isFinite(bookingUserId)) {
         const uid = Number(bookingUserId);
+        const locName = String(rows[0]?.location_name || "cơ sở");
+        
+        await pool.query(
+          `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, ?)`,
+          [`Đơn đặt #${bookingId} bị từ chối`, `Chủ ${locName} đã từ chối đơn đặt của bạn.`, uid, auth.userId]
+        );
+        
         publishToUser(uid, {
           type: "booking_cancelled",
           booking_id: bookingId,
@@ -5028,7 +5036,13 @@ export const updateBookingStatus = async (
 
       if (bookingUserId != null && Number.isFinite(bookingUserId)) {
         const uid = Number(bookingUserId);
+        const locName = String(rows[0]?.location_name || "cơ sở");
+        
         if (status === "confirmed") {
+          await pool.query(
+            `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, ?)`,
+            [`Đơn đặt #${bookingId} đã được duyệt`, `Chủ ${locName} đã xác nhận đơn đặt của bạn.`, uid, auth.userId]
+          );
           publishToUser(uid, {
             type: "booking_confirmed",
             booking_id: bookingId,

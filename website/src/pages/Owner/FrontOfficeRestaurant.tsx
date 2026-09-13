@@ -759,7 +759,7 @@ export default function FrontOfficeRestaurant(props: {
 
                 <div className="text-xs text-slate-700 bg-white/70 p-2.5 rounded-xl border border-slate-100 space-y-1.5">
                   <div>
-                    🪑 Bàn ăn đặt trước: <b className="text-blue-700">{b.table_name || "Chưa gán"}</b>
+                    🪑 Bàn ăn đặt trước: <b className="text-blue-700">{b.table_names?.join(", ") || "Chưa gán"}</b>
                   </div>
                   <div>
                     ⏰ Giờ hẹn đến: <b>{b.check_in_date ? formatDateTimeVi(b.check_in_date) : "-"}</b>

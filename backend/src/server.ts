@@ -20,7 +20,7 @@ import geoRoutes from "./routes/geoRoutes";
 import internalAiRoutes from "./routes/internalAiRoutes";
 import { addSseClient, publishToUser, removeSseClient } from "./utils/realtime";
 import { ensureBookingTableReservationsSchema } from "./utils/tableReservations";
-import { initSocketHub } from "./utils/socketHub";
+import { initSocketHub, emitToUser } from "./utils/socketHub";
 import { ensureLocationChatSchema } from "./utils/locationChat";
 import locationChatRoutes from "./routes/locationChatRoutes";
 // import { startCommissionCron } from "./cron/commissionJob";
@@ -173,6 +173,15 @@ const startServer = async () => {
       const rangeStart = lastAutoCancelAndExpireAt;
       try {
         // A) Tự động duyệt đơn pending quá thời gian chờ duyệt cấu hình bởi Owner (auto_confirm_minutes)
+        const [pendingConfirmRows] = await pool.query<import("mysql2").RowDataPacket[]>(
+          `SELECT b.booking_id, b.user_id, l.location_name 
+           FROM bookings b
+           JOIN locations l ON l.location_id = b.location_id
+           JOIN payments p ON p.booking_id = b.booking_id AND p.status = 'completed'
+           WHERE b.status = 'pending'
+             AND TIMESTAMPDIFF(MINUTE, p.payment_time, NOW()) >= COALESCE(l.auto_confirm_minutes, 30)`
+        );
+
         await pool.query(
           `UPDATE bookings b
            JOIN locations l ON l.location_id = b.location_id
@@ -183,11 +192,49 @@ const startServer = async () => {
                  CASE WHEN b.notes IS NULL OR b.notes = '' THEN '' ELSE '\n' END,
                  CONCAT('[SYSTEM] Tự động xác nhận đơn sau ', COALESCE(l.auto_confirm_minutes, 30), ' phút chờ duyệt')
                )
-           WHERE b.status = 'pending'
-             AND TIMESTAMPDIFF(MINUTE, p.payment_time, NOW()) >= COALESCE(l.auto_confirm_minutes, 30)`,
-        );
+             WHERE b.status = 'pending'
+               AND TIMESTAMPDIFF(MINUTE, p.payment_time, NOW()) >= COALESCE(l.auto_confirm_minutes, 30)`,
+          );
+
+          for (const row of pendingConfirmRows) {
+            const bId = Number(row.booking_id);
+            const uId = Number(row.user_id);
+            const locName = String(row.location_name || "cơ sở");
+            if (Number.isFinite(uId) && uId > 0) {
+              await pool.query(
+                `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, NULL)`,
+                [
+                  `Đơn đặt #${bId} đã được duyệt`,
+                  `Hệ thống đã tự động xác nhận đơn đặt của bạn tại ${locName}.`,
+                  uId,
+                ]
+              );
+              try {
+                publishToUser(uId, {
+                  type: "booking_confirmed",
+                  booking_id: bId,
+                  message: `Đơn đặt #${bId} tại ${locName} đã được hệ thống tự động duyệt!`,
+                });
+                emitToUser(uId, "booking_status_changed", {
+                  type: "booking_confirmed",
+                  booking_id: bId,
+                  message: `Đơn đặt #${bId} tại ${locName} đã được hệ thống tự động duyệt!`,
+                });
+              } catch {}
+            }
+          }
 
         // B) Tự động hủy đơn đặt bàn trễ hạn check-in (auto_cancel_food_minutes)
+        const [cancelFoodRows] = await pool.query<import("mysql2").RowDataPacket[]>(
+          `SELECT b.booking_id, b.user_id, l.location_name
+           FROM bookings b
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'table'
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_food_minutes, 60)`
+        );
+
         await pool.query(
           `UPDATE vouchers v
            JOIN bookings b ON v.code = b.voucher_code
@@ -214,6 +261,22 @@ const startServer = async () => {
              AND s.service_type = 'table'
              AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_food_minutes, 60)`,
         );
+
+        for (const row of cancelFoodRows) {
+          const bId = Number(row.booking_id);
+          const uId = Number(row.user_id);
+          const locName = String(row.location_name || "cơ sở");
+          if (Number.isFinite(uId) && uId > 0) {
+            await pool.query(
+              `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, NULL)`,
+              [`Đơn đặt #${bId} bị hủy`, `Hệ thống đã tự động hủy đơn đặt bàn tại ${locName} do trễ hạn check-in.`, uId]
+            );
+            try {
+              publishToUser(uId, { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt #${bId} tại ${locName} đã bị tự động hủy do trễ hạn.` });
+              emitToUser(uId, "booking_status_changed", { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt #${bId} tại ${locName} đã bị tự động hủy do trễ hạn.` });
+            } catch {}
+          }
+        }
 
         // B2) Giải phóng POS tables cho các booking vừa bị auto-cancel
         try {
@@ -249,6 +312,19 @@ const startServer = async () => {
         }
 
         // C) Tự động hủy phòng khách sạn trễ hạn check-in (auto_cancel_hotel_minutes)
+        const [cancelHotelRows] = await pool.query<import("mysql2").RowDataPacket[]>(
+          `SELECT b.booking_id, b.user_id, l.location_name
+           FROM bookings b
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'room'
+             AND NOT EXISTS (
+               SELECT 1 FROM hotel_stays hs WHERE hs.booking_id = b.booking_id AND hs.status IN ('inhouse','checked_out')
+             )
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_hotel_minutes, 60)`
+        );
+
         await pool.query(
           `UPDATE vouchers v
            JOIN bookings b ON v.code = b.voucher_code
@@ -288,7 +364,33 @@ const startServer = async () => {
              AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_hotel_minutes, 60)`,
         );
 
+        for (const row of cancelHotelRows) {
+          const bId = Number(row.booking_id);
+          const uId = Number(row.user_id);
+          const locName = String(row.location_name || "cơ sở");
+          if (Number.isFinite(uId) && uId > 0) {
+            await pool.query(
+              `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, NULL)`,
+              [`Đơn đặt #${bId} bị hủy`, `Hệ thống đã tự động hủy đơn đặt phòng tại ${locName} do trễ hạn check-in.`, uId]
+            );
+            try {
+              publishToUser(uId, { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt phòng #${bId} tại ${locName} đã bị hủy do trễ hạn.` });
+              emitToUser(uId, "booking_status_changed", { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt phòng #${bId} tại ${locName} đã bị hủy do trễ hạn.` });
+            } catch {}
+          }
+        }
+
         // D) Tự động hết hạn vé du lịch trễ hạn sử dụng (auto_cancel_ticket_minutes)
+        const [cancelTicketRows] = await pool.query<import("mysql2").RowDataPacket[]>(
+          `SELECT b.booking_id, b.user_id, l.location_name
+           FROM bookings b
+           JOIN services s ON s.service_id = b.service_id
+           JOIN locations l ON l.location_id = b.location_id
+           WHERE b.status IN ('pending','confirmed')
+             AND s.service_type = 'ticket'
+             AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_ticket_minutes, 1440)`
+        );
+
         await pool.query(
           `UPDATE vouchers v
            JOIN bookings b ON v.code = b.voucher_code
@@ -316,7 +418,32 @@ const startServer = async () => {
              AND TIMESTAMPDIFF(MINUTE, b.check_in_date, NOW()) >= COALESCE(l.auto_cancel_ticket_minutes, 1440)`,
         );
 
+        for (const row of cancelTicketRows) {
+          const bId = Number(row.booking_id);
+          const uId = Number(row.user_id);
+          const locName = String(row.location_name || "cơ sở");
+          if (Number.isFinite(uId) && uId > 0) {
+            await pool.query(
+              `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, NULL)`,
+              [`Vé #${bId} bị hủy`, `Hệ thống đã tự động hủy vé tại ${locName} do quá hạn sử dụng.`, uId]
+            );
+            try {
+              publishToUser(uId, { type: "booking_cancelled", booking_id: bId, message: `Vé #${bId} tại ${locName} đã bị hủy do quá hạn.` });
+              emitToUser(uId, "booking_status_changed", { type: "booking_cancelled", booking_id: bId, message: `Vé #${bId} tại ${locName} đã bị hủy do quá hạn.` });
+            } catch {}
+          }
+        }
+
         // E) Tự động hủy các đơn CHƯA THANH TOÁN (pending) sau 60 phút
+        const [cancelUnpaidRows] = await pool.query<import("mysql2").RowDataPacket[]>(
+          `SELECT b.booking_id, b.user_id, l.location_name
+           FROM bookings b
+           JOIN locations l ON l.location_id = b.location_id
+           JOIN payments p ON p.booking_id = b.booking_id
+           WHERE b.status = 'pending'
+             AND p.status = 'pending'
+             AND TIMESTAMPDIFF(MINUTE, b.created_at, NOW()) >= 60`
+        );
         await pool.query(
           `UPDATE vouchers v
            JOIN bookings b ON v.code = b.voucher_code
@@ -341,6 +468,22 @@ const startServer = async () => {
              AND p.status = 'pending'
              AND TIMESTAMPDIFF(MINUTE, b.created_at, NOW()) >= 60`
         );
+
+        for (const row of cancelUnpaidRows) {
+          const bId = Number(row.booking_id);
+          const uId = Number(row.user_id);
+          const locName = String(row.location_name || "cơ sở");
+          if (Number.isFinite(uId) && uId > 0) {
+            await pool.query(
+              `INSERT INTO push_notifications (title, body, target_audience, target_user_id, sent_by) VALUES (?, ?, 'specific_user', ?, NULL)`,
+              [`Đơn đặt #${bId} bị hủy`, `Hệ thống đã tự động hủy đơn tại ${locName} do chưa thanh toán quá 60 phút.`, uId]
+            );
+            try {
+              publishToUser(uId, { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt #${bId} tại ${locName} bị hủy do chưa thanh toán.` });
+              emitToUser(uId, "booking_status_changed", { type: "booking_cancelled", booking_id: bId, message: `Đơn đặt #${bId} tại ${locName} bị hủy do chưa thanh toán.` });
+            } catch {}
+          }
+        }
 
         // Đồng bộ giải phóng các tài nguyên bàn, phòng
         await pool.query(

@@ -24,11 +24,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     let activeSocket: Socket | null = null;
-    
-    // We get the initial token (might be null for guests)
-    const token = sessionStorage.getItem("accessToken") || "";
 
     const initSocket = (currentToken: string) => {
+      if (activeSocket) {
+        activeSocket.disconnect();
+      }
+
       const socketUrl = resolveSocketUrl();
       const newSocket = io(socketUrl, {
         auth: { token: currentToken },
@@ -50,14 +51,20 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({
       activeSocket = newSocket;
     };
 
-    initSocket(token);
+    // Initialize the socket once on mount
+    const initialToken = sessionStorage.getItem("accessToken") || "";
+    initSocket(initialToken);
 
-    // Polling or listening is handled by App's auth changes, 
-    // but to be safe we just initialize it once when mounted.
-    // If user logs out, they usually refresh or get redirected,
-    // which unmounts or we can rely on standard refresh.
+    // Listen for manual auth changes (e.g., successful login without refresh)
+    const handleAuthChange = () => {
+      const newToken = sessionStorage.getItem("accessToken") || "";
+      initSocket(newToken);
+    };
+
+    window.addEventListener("tc-auth-changed", handleAuthChange);
 
     return () => {
+      window.removeEventListener("tc-auth-changed", handleAuthChange);
       if (activeSocket) {
         activeSocket.disconnect();
       }
