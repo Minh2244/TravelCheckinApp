@@ -1358,22 +1358,6 @@ const UserMap = () => {
         maxZoom: MAX_ZOOM,
       },
       {
-        key: "positron",
-        label: "Bản đồ sáng",
-        url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: MAX_ZOOM,
-      },
-      {
-        key: "voyager",
-        label: "Bản đồ đường phố",
-        url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: MAX_ZOOM,
-      },
-      {
         key: "satellite",
         label: "Vệ tinh",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -4340,7 +4324,6 @@ const UserMap = () => {
                           [
                             { key: "info", label: "Tổng quan" },
                             { key: "review", label: "Bài đánh giá" },
-                            { key: "about", label: "Giới thiệu" },
                           ] as const
                         ).map((tab) => (
                           <button

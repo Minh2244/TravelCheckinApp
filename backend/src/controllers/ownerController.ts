@@ -11380,6 +11380,13 @@ export const checkoutHotelStay = async (
         [roomId],
       );
 
+      if (bookingId) {
+        await conn.query(
+          `UPDATE bookings SET status = 'completed', updated_at = NOW() WHERE booking_id = ?`,
+          [bookingId],
+        );
+      }
+
       await conn.commit();
 
       await publishHotelUpdated(conn, locationId, ownerId, {
@@ -12294,6 +12301,13 @@ export const checkoutHotelStaysBatch = async (
         await conn.query(
           `UPDATE hotel_rooms SET status = 'cleaning' WHERE room_id IN (?)`,
           [roomIds],
+        );
+      }
+
+      if (bookingIdsInStays.length > 0) {
+        await conn.query(
+          `UPDATE bookings SET status = 'completed', updated_at = NOW() WHERE booking_id IN (?)`,
+          [bookingIdsInStays],
         );
       }
 

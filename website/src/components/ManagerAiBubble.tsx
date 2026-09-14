@@ -11,14 +11,14 @@ import {
   message,
 } from "antd";
 import {
-  BulbOutlined,
+
   CloseOutlined,
   RobotOutlined,
   SendOutlined,
 } from "@ant-design/icons";
 import managerAiApi, {
   type ManagerAiRole,
-  type ManagerAiSuggestion,
+
 } from "../api/managerAiApi";
 import { getErrorMessage } from "../utils/safe";
 
@@ -111,7 +111,7 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
   );
 
   const [open, setOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<ManagerAiSuggestion[]>([]);
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
       const stored = sessionStorage.getItem(`managerAiMessages_${getStoredRole()}`);
@@ -127,10 +127,8 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
     }
   }, [messages, storedRole]);
   const [input, setInput] = useState("");
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestionsConsumed, setSuggestionsConsumed] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -142,40 +140,9 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
       setOpen(false);
       return;
     }
-    setSuggestions([]);
     setInput("");
     setError(null);
-    setSuggestionsConsumed(false);
   }, [role, pathname]);
-
-  useEffect(() => {
-    if (!open || !role) return;
-
-    let cancelled = false;
-    setLoadingSuggestions(true);
-    setError(null);
-
-    managerAiApi
-      .getSuggestions(role, pathname)
-      .then((res) => {
-        if (cancelled) return;
-        setSuggestions(Array.isArray(res.suggestions) ? res.suggestions : []);
-        if (res.disabled_reason) {
-          setError(res.message || "AI không hoạt động trên màn này.");
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(getErrorMessage(err, "Không tải được gợi ý AI."));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSuggestions(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, role, pathname]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -199,7 +166,6 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
     setInput("");
     setError(null);
     setSending(true);
-    setSuggestionsConsumed(true);
 
     try {
       const res = await managerAiApi.chat(role, {
@@ -317,7 +283,7 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
     }
   };
 
-  const visibleSuggestions = suggestionsConsumed ? [] : suggestions;
+
 
   return (
     <>
@@ -371,31 +337,7 @@ const ManagerAiBubble = ({ screenContext }: ManagerAiBubbleProps) => {
               />
             ) : null}
 
-            {loadingSuggestions ? (
-              <div className="py-4 text-center text-slate-500">
-                <Spin size="small" /> <span className="ml-2">Đang lấy gợi ý...</span>
-              </div>
-            ) : visibleSuggestions.length > 0 ? (
-              <div className="mb-4 rounded-2xl border border-violet-100 bg-white p-3 shadow-sm">
-                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                  <BulbOutlined className="text-violet-500" />
-                  Câu hỏi nhanh
-                </div>
-                <Space size={[8, 8]} wrap>
-                  {visibleSuggestions.map((item) => (
-                    <Button
-                      key={item.id}
-                      size="small"
-                      className="rounded-full"
-                      disabled={sending}
-                      onClick={() => void sendMessage(item.prompt)}
-                    >
-                      {item.title}
-                    </Button>
-                  ))}
-                </Space>
-              </div>
-            ) : null}
+
 
             {messages.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-600 shadow-sm">

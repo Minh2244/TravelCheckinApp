@@ -9,6 +9,7 @@ import {
   View,
   Image,
   ScrollView,
+  Alert,
 } from "react-native";
 
 import * as ImagePicker from "expo-image-picker";
@@ -18,6 +19,7 @@ import { showToast } from "../../modules/ui/toast-store";
 import { locationApi } from "../../services/location.api";
 import { userApi } from "../../services/user.api";
 import type { LocationReview } from "../../types/location";
+import { useAuthStore } from "../../modules/auth/store";
 
 const resolveBackendUrl = (url: string) => {
   if (!url) return "";
@@ -80,6 +82,7 @@ export function LocationReviews({
   locationId: string;
   onSubmitted?: () => void;
 }) {
+  const user = useAuthStore((state) => state.user);
   const [reviews, setReviews] = useState<LocationReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -99,6 +102,25 @@ export function LocationReviews({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteReview = (reviewId: number) => {
+    Alert.alert("Xóa đánh giá", "Bạn có chắc chắn muốn xóa đánh giá này?", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await userApi.deleteReview(reviewId);
+            showToast("Đã xóa đánh giá");
+            void loadReviews();
+          } catch {
+            showToast("Có lỗi xảy ra khi xóa");
+          }
+        },
+      },
+    ]);
   };
 
   useEffect(() => {
@@ -314,9 +336,20 @@ export function LocationReviews({
                 <Text className="text-[15px] font-bold text-slate-700">
                   {review.user_name || "Người dùng"}
                 </Text>
-                <View className="flex-row items-center gap-1 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md">
-                  <Text className="text-[12px] font-bold text-amber-700">{review.rating}</Text>
-                  <Ionicons name="star" size={11} color="#eab308" />
+                <View className="flex-row items-center gap-2">
+                  <View className="flex-row items-center gap-1 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-md">
+                    <Text className="text-[12px] font-bold text-amber-700">{review.rating}</Text>
+                    <Ionicons name="star" size={11} color="#eab308" />
+                  </View>
+                  {user?.user_id === review.user_id ? (
+                    <Pressable
+                      onPress={() => handleDeleteReview(review.review_id)}
+                      hitSlop={8}
+                      className="ml-1"
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
 

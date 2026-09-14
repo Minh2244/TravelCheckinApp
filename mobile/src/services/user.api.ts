@@ -159,6 +159,10 @@ export const userApi = {
       return response.data;
     }
   },
+  async deleteReview(reviewId: number) {
+    const response = await api.delete<ApiResponse<null>>(`/user/reviews/${reviewId}`);
+    return response.data;
+  },
   async createReview(data: {
     location_id: string | number;
     rating: number;
