@@ -5947,10 +5947,8 @@ export const getCheckinAnalytics = async (
     const params: any[] = [];
 
     if (from !== "all" && to !== "all") {
-      const endDate = typeof to === "string" ? new Date(to) : new Date();
-      const startDate = typeof from === "string" ? new Date(from) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const fromSql = startDate.toISOString().slice(0, 19).replace("T", " ");
-      const toSql = endDate.toISOString().slice(0, 19).replace("T", " ");
+      const fromSql = typeof from === "string" ? `${from} 00:00:00` : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
+      const toSql = typeof to === "string" ? `${to} 23:59:59` : new Date().toISOString().slice(0, 19).replace("T", " ");
       whereSql += " AND c.checkin_time BETWEEN ? AND ?";
       params.push(fromSql, toSql);
     }
@@ -11987,15 +11985,6 @@ export const getAdminNotificationSummary = async (
         body: `${pendingServices} dịch vụ owner gửi lên đang chờ duyệt.`,
         link: "/admin/owner-services",
         count: pendingServices,
-        at: now,
-      },
-      {
-        id: "pending-owner-vouchers",
-        type: "voucher",
-        title: "Voucher Owner chờ duyệt",
-        body: `${pendingOwnerVouchers} voucher owner đang chờ duyệt.`,
-        link: "/admin/vouchers",
-        count: pendingOwnerVouchers,
         at: now,
       },
       {

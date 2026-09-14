@@ -2924,16 +2924,6 @@ const UserMap = () => {
                           </div>
                         ) : null}
 
-                        {/* Optional Name Input */}
-                        <div className="mb-2">
-                          <label className="text-[8px] font-extrabold text-slate-400 uppercase block mb-0.5">Tên địa danh (tự đặt)</label>
-                          <input
-                            value={pickedName}
-                            onChange={(event) => setPickedName(event.target.value)}
-                            placeholder="Ví dụ: Điểm cắm trại, Quán ăn..."
-                            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 transition focus:border-teal-500 focus:bg-white focus:outline-none"
-                          />
-                        </div>
 
                         {/* Action buttons list */}
                         <div className="space-y-1">
@@ -5010,17 +5000,6 @@ const UserMap = () => {
                                 </button>
                               </div>
                             ) : null}
-
-                            {/* Optional Name Input */}
-                            <div className="mb-2">
-                              <label className="text-[8px] font-extrabold text-slate-400 uppercase block mb-0.5">Tên địa danh (tự đặt)</label>
-                              <input
-                                value={pickedName}
-                                onChange={(event) => setPickedName(event.target.value)}
-                                placeholder="Ví dụ: Điểm cắm trại, Quán ăn..."
-                                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 transition focus:border-teal-500 focus:bg-white focus:outline-none"
-                              />
-                            </div>
 
                             {/* Action buttons list */}
                             <div className="space-y-1">
